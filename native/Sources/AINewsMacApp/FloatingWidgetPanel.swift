@@ -168,14 +168,20 @@ private struct FloatingWidgetView: View {
         }
     }
 
+    private var coversEnabled: Bool { state.accountSettings.showNewsCovers != false }
+
     private func storyRow(_ story: WidgetStory) -> some View {
         Button {
             if let link = story.link, let url = URL(string: link) {
                 NSWorkspace.shared.open(url)
             }
         } label: {
-            VStack(alignment: .leading, spacing: 6) {
-                Text(story.source ?? story.feedUrl)
+            HStack(alignment: .top, spacing: 10) {
+                if coversEnabled, let cover = story.coverUrl, let url = URL(string: cover) {
+                    StoryThumbnail(url: url, size: 52)
+                }
+                VStack(alignment: .leading, spacing: 6) {
+                    Text(story.source ?? story.feedUrl)
                     .font(.caption2)
                     .foregroundStyle(AINewsTheme.textMuted)
                     .lineLimit(1)
@@ -191,8 +197,9 @@ private struct FloatingWidgetView: View {
                 }
                 block("Summary", story.summary, pending: story.summaryPending, accent: AINewsTheme.accentBlue)
                 block("Research", story.research, pending: story.researchPending, accent: AINewsTheme.accentCyan)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
             .padding(12)
             .background(AINewsTheme.panel.opacity(0.7))
             .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))

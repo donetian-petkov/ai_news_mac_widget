@@ -166,6 +166,7 @@ public struct WidgetStory: Codable, Equatable, Hashable, Identifiable, Sendable 
     public var hasSummary: Bool
     public var hasResearch: Bool
     public var hasTranslation: Bool
+    public var coverUrl: String?
     public var imagesEnabled: Bool
 
     public init(
@@ -188,6 +189,7 @@ public struct WidgetStory: Codable, Equatable, Hashable, Identifiable, Sendable 
         hasSummary: Bool = false,
         hasResearch: Bool = false,
         hasTranslation: Bool = false,
+        coverUrl: String? = nil,
         imagesEnabled: Bool = false
     ) {
         self.id = id
@@ -209,6 +211,7 @@ public struct WidgetStory: Codable, Equatable, Hashable, Identifiable, Sendable 
         self.hasSummary = hasSummary
         self.hasResearch = hasResearch
         self.hasTranslation = hasTranslation
+        self.coverUrl = coverUrl
         self.imagesEnabled = imagesEnabled
     }
 

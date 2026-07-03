@@ -163,6 +163,37 @@ public enum AINewsTheme {
     }
 }
 
+/// A rounded, square cover thumbnail that loads asynchronously and degrades to a
+/// placeholder while loading or on failure.
+public struct StoryThumbnail: View {
+    private let url: URL
+    private let size: CGFloat
+
+    public init(url: URL, size: CGFloat = 72) {
+        self.url = url
+        self.size = size
+    }
+
+    public var body: some View {
+        AsyncImage(url: url) { phase in
+            switch phase {
+            case .success(let image):
+                image.resizable().aspectRatio(contentMode: .fill)
+            case .failure:
+                AINewsTheme.panel.overlay(
+                    Image(systemName: "photo").foregroundStyle(AINewsTheme.textMuted)
+                )
+            case .empty:
+                AINewsTheme.panel.overlay(ProgressView().controlSize(.small))
+            @unknown default:
+                AINewsTheme.panel
+            }
+        }
+        .frame(width: size, height: size)
+        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+    }
+}
+
 public extension View {
     func aiNewsPanelStyle() -> some View {
         self

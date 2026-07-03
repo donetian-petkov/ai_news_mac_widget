@@ -989,7 +989,8 @@ productFeatures = registerProductFeatureApi({
     filteredOk: item.filteredOk,
     summaryPending: !!item.summaryPending,
     researchPending: !!item.researchPending,
-    titleTranslatePending: !!item.titleTranslatePending
+    titleTranslatePending: !!item.titleTranslatePending,
+    coverUrl: item.coverUrl
   })),
   getAiUsage: buildAiUsagePayload,
   resetAiUsage: resetAiUsageCounters,

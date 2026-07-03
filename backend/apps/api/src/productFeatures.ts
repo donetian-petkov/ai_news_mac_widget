@@ -40,6 +40,7 @@ type ProductNews = {
   summaryPending?: boolean;
   researchPending?: boolean;
   titleTranslatePending?: boolean;
+  coverUrl?: string;
 };
 
 type AiUsagePayload = {
@@ -211,6 +212,7 @@ function toWidgetStory(news: ProductNews) {
     hasSummary: !!trimStoryText(news.summary),
     hasResearch: !!trimStoryText(news.research),
     hasTranslation: !!translatedTitle,
+    coverUrl: trimStoryText(news.coverUrl) || null,
     imagesEnabled: false
   };
 }

@@ -485,9 +485,14 @@ private struct StoryCardView: View {
     @EnvironmentObject private var state: WidgetAppState
     let story: WidgetStory
 
+    private var coversEnabled: Bool { state.accountSettings.showNewsCovers != false }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
-            HStack {
+            HStack(alignment: .top, spacing: 12) {
+                if coversEnabled, let cover = story.coverUrl, let url = URL(string: cover) {
+                    StoryThumbnail(url: url, size: 84)
+                }
                 VStack(alignment: .leading, spacing: 6) {
                     Text(story.source ?? story.feedUrl)
                         .font(.headline)
@@ -1561,9 +1566,9 @@ private struct SettingsView: View {
                 ))
                 .textFieldStyle(.roundedBorder)
 
-                Toggle("Disable cover images in this product", isOn: Binding(
-                    get: { !(state.accountSettings.showNewsCovers ?? false) },
-                    set: { state.accountSettings.showNewsCovers = !$0 }
+                Toggle("Show cover thumbnails on stories", isOn: Binding(
+                    get: { state.accountSettings.showNewsCovers != false },
+                    set: { state.accountSettings.showNewsCovers = $0 }
                 ))
 
                 Button("Save settings") {
