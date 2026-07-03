@@ -581,6 +581,41 @@ private struct SettingsView: View {
                                 .foregroundStyle(AINewsTheme.textPrimary)
                         }
                     }
+
+                    if !usage.recent.isEmpty {
+                        VStack(alignment: .leading, spacing: 10) {
+                            Text("Recent requests")
+                                .font(.headline)
+                                .foregroundStyle(AINewsTheme.textSecondary)
+
+                            ForEach(Array(usage.recent.prefix(8))) { item in
+                                HStack(alignment: .top) {
+                                    VStack(alignment: .leading, spacing: 4) {
+                                        Text(item.label)
+                                            .foregroundStyle(AINewsTheme.textPrimary)
+                                        Text("\(item.kind) • \(item.model)")
+                                            .font(.caption)
+                                            .foregroundStyle(AINewsTheme.textMuted)
+                                    }
+                                    Spacer()
+                                    VStack(alignment: .trailing, spacing: 4) {
+                                        Text("\(item.totalTokens) tokens")
+                                            .foregroundStyle(AINewsTheme.accentCyan)
+                                        Text(Date(timeIntervalSince1970: TimeInterval(item.createdAt) / 1000).formatted(date: .omitted, time: .shortened))
+                                            .font(.caption)
+                                            .foregroundStyle(AINewsTheme.textMuted)
+                                    }
+                                }
+                                .padding(.vertical, 6)
+                                if item.id != usage.recent.prefix(8).last?.id {
+                                    Divider()
+                                        .overlay(AINewsTheme.panelBorder.opacity(0.4))
+                                }
+                            }
+                        }
+                        .padding(16)
+                        .aiNewsPanelStyle()
+                    }
                 }
             }
 
