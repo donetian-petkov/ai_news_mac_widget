@@ -332,6 +332,13 @@ private struct StoryCardView: View {
 
             storyBlock(title: "Summary", text: story.summary, pending: story.summaryPending, accent: AINewsTheme.accentBlue)
             storyBlock(title: "Research", text: story.research, pending: story.researchPending, accent: AINewsTheme.accentCyan)
+            storyBlock(
+                title: "Translation",
+                text: translatedStoryText,
+                pending: story.translationPending,
+                accent: AINewsTheme.accentGold,
+                emptyLabel: "Not translated yet."
+            )
 
             HStack(spacing: 12) {
                 actionButton("Summary", systemImage: "text.bubble", tint: AINewsTheme.accentBlue) {
@@ -362,7 +369,7 @@ private struct StoryCardView: View {
     }
 
     @ViewBuilder
-    private func storyBlock(title: String, text: String?, pending: Bool, accent: Color) -> some View {
+    private func storyBlock(title: String, text: String?, pending: Bool, accent: Color, emptyLabel: String = "Not generated yet.") -> some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack {
                 Text(title.uppercased())
@@ -383,10 +390,17 @@ private struct StoryCardView: View {
                     .font(.body)
                     .foregroundStyle(AINewsTheme.textPrimary)
             } else {
-                Text(pending ? "Waiting for the local AI queue." : "Not generated yet.")
+                Text(pending ? "Waiting for the local AI queue." : emptyLabel)
                     .foregroundStyle(AINewsTheme.textMuted)
             }
         }
+    }
+
+    private var translatedStoryText: String? {
+        guard let translated = story.translatedTitle, !translated.isEmpty, translated != story.title else {
+            return nil
+        }
+        return translated
     }
 
     private func actionButton(_ title: String, systemImage: String, tint: Color, action: @escaping () -> Void) -> some View {
