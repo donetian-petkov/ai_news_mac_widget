@@ -687,6 +687,13 @@ public final class WidgetAppState: ObservableObject {
             }
             return
         }
+        // During background/startup loads (suppress flag set), a 404 usually just means
+        // the freshly started backend hasn't loaded the cached category/feed yet. Don't
+        // raise a scary alert for that — only surface 404s from explicit user actions.
+        if case APIClientError.notFound = error, suppressUnauthorizedAlert {
+            statusMessage = "Connecting to the local backend…"
+            return
+        }
         errorMessage = error.localizedDescription
     }
 
