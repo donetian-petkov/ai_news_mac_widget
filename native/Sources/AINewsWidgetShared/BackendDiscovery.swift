@@ -8,8 +8,7 @@ private struct BackendRuntimeInfo: Codable {
 }
 
 public enum BackendDiscovery {
-    private static let runtimeInfoURL = URL(fileURLWithPath: NSTemporaryDirectory())
-        .appendingPathComponent("ai-news-mac-widget-runtime.json")
+    private static let runtimeInfoURL = URL(fileURLWithPath: "/tmp/ai-news-mac-widget-runtime.json")
 
     public static func discoveredBackendURLString(fallback: String) -> String {
         guard
