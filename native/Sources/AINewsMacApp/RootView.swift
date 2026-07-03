@@ -115,6 +115,19 @@ private struct LoginView: View {
 
 private struct DashboardView: View {
     @EnvironmentObject private var state: WidgetAppState
+    @AppStorage("ai_news_show_hidden_categories") private var showHiddenCategories = true
+
+    private var sidebarCategories: [WidgetCategory] {
+        showHiddenCategories ? state.categories : state.categories.filter { !$0.hidden }
+    }
+
+    private var visibleCategoryCount: Int {
+        state.categories.filter { !$0.hidden }.count
+    }
+
+    private var hiddenCategoryCount: Int {
+        state.categories.filter { $0.hidden }.count
+    }
 
     var body: some View {
         NavigationSplitView {
@@ -152,6 +165,12 @@ private struct DashboardView: View {
                     .font(.system(size: 12, weight: .semibold))
                     .foregroundStyle(AINewsTheme.textMuted)
                     .textCase(.uppercase)
+                HStack(spacing: 8) {
+                    Text("\(visibleCategoryCount) visible")
+                    Text("\(hiddenCategoryCount) hidden")
+                }
+                .font(.caption)
+                .foregroundStyle(AINewsTheme.textMuted)
             }
 
             List(selection: Binding(
@@ -162,7 +181,7 @@ private struct DashboardView: View {
                     }
                 }
             )) {
-                ForEach(state.categories) { category in
+                ForEach(sidebarCategories) { category in
                     HStack(spacing: 10) {
                         VStack(alignment: .leading, spacing: 4) {
                             Text(category.name)
@@ -190,6 +209,10 @@ private struct DashboardView: View {
             .scrollContentBackground(.hidden)
             .background(AINewsTheme.panel.opacity(0.7))
             .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+
+            Toggle("Show hidden", isOn: $showHiddenCategories)
+                .toggleStyle(.switch)
+                .foregroundStyle(AINewsTheme.textSecondary)
 
             Button("Settings & AI") {
                 state.showingSettings = true
