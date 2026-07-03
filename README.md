@@ -49,13 +49,33 @@ swift build
 swift run AINewsMacApp
 ```
 
-Install like a normal Mac app:
+### Install / update the app (recommended)
+
+Run these from the repo root, in order:
 
 ```bash
-cd /Users/donetianpetkov/ai_news/ai_news_mac_widget
-npm run install:app
-open "$HOME/Applications/AI News Widget.app"
+# 1. Fully stop the app AND its backend
+#    (the installer quits the app but NOT the node backend, so a stale
+#    old-code backend can survive and the new app will reuse it)
+killall AINewsMacApp 2>/dev/null; pkill -f "dist/server.js" 2>/dev/null; rm -f /tmp/ai-news-mac-widget-runtime.json
+
+# 2. Build + install (regenerates the Xcode project, builds the backend,
+#    builds the app, copies it to /Applications, and codesigns it)
+./scripts/install-mac-app.sh
+
+# 3. Launch
+open "/Applications/AI News Widget.app"
 ```
+
+`install-mac-app.sh` does the full build for you — you do not run `xcodebuild` or the project generator yourself.
+
+**Gotchas:**
+
+- **Step 1 is not optional.** The installer stops the *app* but leaves the old *node backend* running. If you skip it, the freshly built app connects to the stale old-code backend and looks "still old."
+- **Fully quit the app (⌘Q) before reinstalling.** A lingering window keeps showing the old build even after a successful install.
+- **Do not run `npm run start` (the dev stack) at the same time as the installed app.** It spawns its own backend on port `4000` with possibly-old code and causes port confusion. Use *either* the installed app *or* the dev stack, not both.
+
+The app auto-launches its own backend on start, so once installed you normally just `open` it — no separate backend command needed.
 
 ## Notes
 
