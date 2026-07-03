@@ -96,7 +96,12 @@ if [[ -z "$BACKEND_URL" ]]; then
   BACKEND_URL="http://127.0.0.1:4000"
 fi
 
-if ! /usr/bin/curl -fsS "$BACKEND_URL/api/health" >/dev/null 2>&1; then
+HEALTH_JSON=""
+if /usr/bin/curl -fsS "$BACKEND_URL/api/health" >/dev/null 2>&1; then
+  HEALTH_JSON="$(/usr/bin/curl -fsS "$BACKEND_URL/api/health" 2>/dev/null || true)"
+fi
+
+if [[ -z "$HEALTH_JSON" || "$HEALTH_JSON" != *'"authConfigured":true'* ]]; then
   if [[ -n "$REPO_ROOT" && -d "$REPO_ROOT" ]]; then
     nohup /bin/bash -lc "cd \"$REPO_ROOT\" && npm run start:backend" >>"$BACKEND_LOG" 2>&1 &
   fi

@@ -13,6 +13,7 @@ import { z } from 'zod';
 import { registerProductFeatureApi, type ProductFeatureRuntime } from './productFeatures';
 
 function bootstrapEnv() {
+  const randomSecret = (bytes = 48) => crypto.randomBytes(bytes).toString('base64url');
   const envCandidates = [
     path.resolve(process.cwd(), '.env'),
     path.resolve(process.cwd(), '..', '.env'),
@@ -26,6 +27,31 @@ function bootstrapEnv() {
       dotenv.config({ path: envPath, override: false });
     }
   }
+
+  const preferredEnvPath = envCandidates[0];
+  const ensureLocalSecret = (key: 'AUTH_TOKEN_SECRET' | 'KEY_ENCRYPTION_SECRET') => {
+    const current = String(process.env[key] || '').trim();
+    if (current) return current;
+    const generated = randomSecret();
+    process.env[key] = generated;
+    let content = '';
+    try {
+      content = fs.existsSync(preferredEnvPath) ? fs.readFileSync(preferredEnvPath, 'utf8') : '';
+      const withoutKey = content
+        .split(/\r?\n/)
+        .filter(line => !new RegExp(`^\\s*${key}\\s*=`).test(line))
+        .join('\n')
+        .replace(/\n*$/, '\n');
+      fs.writeFileSync(preferredEnvPath, `${withoutKey}${key}=${generated}\n`, 'utf8');
+      console.log(`[startup] Generated local ${key} in ${preferredEnvPath}`);
+    } catch (error) {
+      console.warn(`[startup] Failed to persist ${key}: ${String((error as Error).message || error)}`);
+    }
+    return generated;
+  };
+
+  ensureLocalSecret('AUTH_TOKEN_SECRET');
+  ensureLocalSecret('KEY_ENCRYPTION_SECRET');
 
   const prismaDirCandidates = [
     path.resolve(process.cwd(), 'prisma'),
@@ -842,6 +868,8 @@ app.get('/api/health', (_req, res) => {
     ok: true,
     service: 'ai-news-mac-widget-backend',
     port: Number(process.env.PORT || PORT),
+    authConfigured: !!AUTH_TOKEN_SECRET,
+    encryptionConfigured: !!(KEY_ENCRYPTION_SECRET || AUTH_TOKEN_SECRET),
     pid: process.pid,
     now: new Date().toISOString()
   });
