@@ -1,6 +1,6 @@
 import Foundation
 
-public enum JSONValue: Codable, Hashable, Sendable {
+public enum JSONValue: Codable, Equatable, Sendable {
     case string(String)
     case number(Double)
     case bool(Bool)
@@ -387,7 +387,7 @@ public struct SavedStoryPayload: Codable, Equatable, Hashable, Sendable {
     public var archived: Bool
 }
 
-public struct HistoryEntry: Codable, Equatable, Hashable, Sendable, Identifiable {
+public struct HistoryEntry: Codable, Equatable, Sendable, Identifiable {
     public var id: Int
     public var userId: Int?
     public var feedUrl: String?
@@ -423,7 +423,7 @@ public struct HistoryResponse: Codable, Sendable {
     public var fetched: [HistoryFetchedEntry]
 }
 
-public struct SourceProfile: Codable, Equatable, Hashable, Sendable, Identifiable {
+public struct SourceProfile: Codable, Equatable, Sendable, Identifiable {
     public var id: String { url }
     public var url: String
     public var label: String
