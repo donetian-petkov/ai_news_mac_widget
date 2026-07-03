@@ -93,11 +93,11 @@ private struct LoginView: View {
 
 private struct DashboardView: View {
     @EnvironmentObject private var state: WidgetAppState
-    @State private var selectedStoryIDForScroll: String?
 
     var body: some View {
         NavigationSplitView {
             sidebar
+                .navigationSplitViewColumnWidth(min: 220, ideal: 250, max: 280)
         } detail: {
             detail
         }
@@ -110,17 +110,26 @@ private struct DashboardView: View {
 
     private var sidebar: some View {
         VStack(alignment: .leading, spacing: 16) {
-            HStack {
-                Text("Categories")
-                    .font(.system(size: 26, weight: .bold))
-                    .foregroundStyle(AINewsTheme.textPrimary)
-                Spacer()
-                Button {
-                    Task { await state.reloadEverything() }
-                } label: {
-                    Image(systemName: "arrow.clockwise")
+            VStack(alignment: .leading, spacing: 8) {
+                HStack(spacing: 10) {
+                    Image(systemName: "newspaper.fill")
+                        .foregroundStyle(AINewsTheme.accentBlue)
+                    Text("AI News")
+                        .font(.system(size: 18, weight: .bold))
+                        .foregroundStyle(AINewsTheme.textPrimary)
+                    Spacer()
+                    Button {
+                        Task { await state.reloadEverything() }
+                    } label: {
+                        Image(systemName: "arrow.clockwise")
+                    }
+                    .buttonStyle(.bordered)
+                    .help("Refresh categories")
                 }
-                .buttonStyle(.bordered)
+                Text("Categories")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(AINewsTheme.textMuted)
+                    .textCase(.uppercase)
             }
 
             List(selection: Binding(
@@ -135,7 +144,10 @@ private struct DashboardView: View {
                     HStack(spacing: 10) {
                         VStack(alignment: .leading, spacing: 4) {
                             Text(category.name)
+                                .font(.system(size: 15, weight: .semibold))
                                 .foregroundStyle(AINewsTheme.textPrimary)
+                                .lineLimit(2)
+                                .fixedSize(horizontal: false, vertical: true)
                             Text(category.hidden ? "Hidden" : "\(category.activeCount) visible")
                                 .font(.caption)
                                 .foregroundStyle(AINewsTheme.textMuted)
@@ -149,7 +161,8 @@ private struct DashboardView: View {
                         .buttonStyle(.plain)
                     }
                     .tag(category.id)
-                    .padding(.vertical, 4)
+                    .padding(.vertical, 6)
+                    .frame(maxWidth: .infinity, alignment: .leading)
                 }
             }
             .scrollContentBackground(.hidden)
@@ -191,6 +204,16 @@ private struct DashboardView: View {
                 .buttonStyle(.bordered)
             }
 
+            HStack(spacing: 12) {
+                Label(state.backendURLString, systemImage: "network")
+                    .font(.caption)
+                    .foregroundStyle(AINewsTheme.textMuted)
+                if state.isBusy {
+                    ProgressView()
+                        .controlSize(.small)
+                }
+            }
+
             if let runtimeConfig = state.runtimeConfig {
                 HStack(spacing: 14) {
                     Label(runtimeConfig.aiProvider.uppercased(), systemImage: runtimeConfig.aiEnabled ? "brain.head.profile" : "brain")
@@ -205,6 +228,24 @@ private struct DashboardView: View {
                 Text(statusMessage)
                     .font(.subheadline)
                     .foregroundStyle(AINewsTheme.accentCyan)
+            }
+
+            if state.categories.isEmpty {
+                VStack(alignment: .leading, spacing: 12) {
+                    Text("No categories loaded yet")
+                        .font(.title3.weight(.semibold))
+                        .foregroundStyle(AINewsTheme.textPrimary)
+                    Text("If the backend moved to another port, this app now follows it automatically. Try Refresh once the backend is running.")
+                        .foregroundStyle(AINewsTheme.textSecondary)
+                    Button("Refresh now") {
+                        Task { await state.reloadEverything(selectFirstCategory: true) }
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .tint(AINewsTheme.accentBlue)
+                }
+                .padding(22)
+                .frame(maxWidth: 560, alignment: .leading)
+                .aiNewsPanelStyle()
             }
 
             ScrollViewReader { proxy in

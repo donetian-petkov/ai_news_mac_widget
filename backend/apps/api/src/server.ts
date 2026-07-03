@@ -4,6 +4,7 @@ import Parser from 'rss-parser';
 import { WebSocketServer, WebSocket } from 'ws';
 import path from 'path';
 import fs from 'fs';
+import os from 'os';
 import crypto from 'crypto';
 import dotenv from 'dotenv';
 import OpenAI from 'openai';
@@ -54,6 +55,9 @@ bootstrapEnv();
 const app = express();
 const PORT = Number(process.env.PORT || 4000);
 const PORT_SEARCH_LIMIT = Math.max(1, Number.parseInt(process.env.PORT_SEARCH_LIMIT || '20', 10) || 20);
+const RUNTIME_INFO_PATH = process.env.AI_NEWS_MAC_WIDGET_RUNTIME_FILE
+  ? path.resolve(process.env.AI_NEWS_MAC_WIDGET_RUNTIME_FILE)
+  : path.join(os.tmpdir(), 'ai-news-mac-widget-runtime.json');
 const prisma = new PrismaClient({
   datasources: {
     db: {
@@ -834,6 +838,16 @@ app.get('/api/runtime/config', async (req, res) => {
   }
 });
 
+app.get('/api/health', (_req, res) => {
+  res.json({
+    ok: true,
+    service: 'ai-news-mac-widget-backend',
+    port: Number(process.env.PORT || PORT),
+    pid: process.pid,
+    now: new Date().toISOString()
+  });
+});
+
 productFeatures = registerProductFeatureApi({
   app,
   prisma,
@@ -1151,6 +1165,14 @@ const RUNTIME_MS =
 function shutdown(reason: string) {
   console.log(`Shutting down: ${reason}`);
   try {
+    const currentRuntimeInfo = fs.existsSync(RUNTIME_INFO_PATH)
+      ? JSON.parse(fs.readFileSync(RUNTIME_INFO_PATH, 'utf8')) as { pid?: unknown }
+      : null;
+    if (!currentRuntimeInfo || Number(currentRuntimeInfo.pid || 0) === process.pid) {
+      fs.rmSync(RUNTIME_INFO_PATH, { force: true });
+    }
+  } catch {}
+  try {
     stopAiJobLogFlushTimer();
     flushAiJobLogBufferNow();
     productFeatures?.stop();
@@ -1172,6 +1194,16 @@ void bindServer(PORT)
     server = boundServer;
     wss = new WebSocketServer({ server });
     registerWebSocketHandlers(wss);
+    try {
+      fs.writeFileSync(RUNTIME_INFO_PATH, JSON.stringify({
+        url: `http://127.0.0.1:${port}`,
+        port,
+        pid: process.pid,
+        startedAt: new Date().toISOString()
+      }, null, 2));
+    } catch (error) {
+      console.warn(`[startup] Failed to write runtime info: ${String((error as Error).message || error)}`);
+    }
     console.log(`Live RSS running at http://localhost:${port}`);
   })
   .catch(error => {

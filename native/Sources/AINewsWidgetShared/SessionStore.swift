@@ -13,12 +13,16 @@ public final class SessionStore {
     public init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
         if defaults.string(forKey: baseURLKey) == nil {
-            defaults.set("http://127.0.0.1:4000", forKey: baseURLKey)
+            defaults.set(BackendDiscovery.discoveredBackendURLString(fallback: "http://127.0.0.1:4000"), forKey: baseURLKey)
         }
     }
 
     public var baseURLString: String {
-        get { defaults.string(forKey: baseURLKey) ?? "http://127.0.0.1:4000" }
+        get {
+            BackendDiscovery.discoveredBackendURLString(
+                fallback: defaults.string(forKey: baseURLKey) ?? "http://127.0.0.1:4000"
+            )
+        }
         set { defaults.set(newValue, forKey: baseURLKey) }
     }
 

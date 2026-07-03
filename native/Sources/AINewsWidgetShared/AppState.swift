@@ -39,11 +39,16 @@ public final class WidgetAppState: ObservableObject {
         set { sessionStore.baseURLString = newValue }
     }
 
+    public func refreshDiscoveredBackendURL() {
+        sessionStore.baseURLString = BackendDiscovery.discoveredBackendURLString(fallback: sessionStore.baseURLString)
+    }
+
     public var selectedCategory: WidgetCategory? {
         categories.first(where: { $0.id == selectedCategoryID })
     }
 
     public func bootstrapIfNeeded() async {
+        refreshDiscoveredBackendURL()
         guard session != nil else { return }
         if categories.isEmpty {
             await reloadEverything(selectFirstCategory: true)
@@ -55,6 +60,7 @@ public final class WidgetAppState: ObservableObject {
 
     public func signIn(username: String, password: String, register: Bool) async {
         await runBusy("Signing in...") {
+            self.refreshDiscoveredBackendURL()
             let api = try self.makeAPIClient()
             let session = try await (register ? api.register(username: username, password: password) : api.login(username: username, password: password))
             self.sessionStore.save(session: session)
@@ -78,6 +84,7 @@ public final class WidgetAppState: ObservableObject {
 
     public func reloadEverything(selectFirstCategory: Bool = false) async {
         await runBusy("Refreshing categories...") {
+            self.refreshDiscoveredBackendURL()
             let api = try self.makeAPIClient()
             let bootstrap = try await api.fetchBootstrap()
             self.categories = bootstrap.categories.sorted(by: { lhs, rhs in
@@ -95,6 +102,7 @@ public final class WidgetAppState: ObservableObject {
 
     public func loadRuntimeContext() async {
         do {
+            refreshDiscoveredBackendURL()
             let api = try makeAPIClient()
             runtimeConfig = try await api.fetchRuntimeConfig()
             accountSettings = try await api.fetchAccountSettings()
@@ -114,6 +122,7 @@ public final class WidgetAppState: ObservableObject {
     public func loadStoriesForSelectedCategory(limit: Int? = nil) async {
         guard let category = selectedCategory else { return }
         do {
+            refreshDiscoveredBackendURL()
             let api = try makeAPIClient()
             let response = try await api.fetchStories(categoryID: category.id, limit: limit ?? category.activeCount)
             stories = response.stories
@@ -204,6 +213,7 @@ public final class WidgetAppState: ObservableObject {
 
     public func refreshUsage() async {
         do {
+            refreshDiscoveredBackendURL()
             let api = try makeAPIClient()
             usage = try await api.fetchUsage()
         } catch {

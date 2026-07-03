@@ -37,6 +37,7 @@ npm run start:backend
 
 `npm run start:backend` builds the backend first, so you do not need a separate manual build step for a clean clone.
 If port `4000` is already in use, the backend will automatically move to the next available port and print the final URL.
+The backend also writes its active local URL to a runtime file in your macOS temp directory so the Swift app can follow port changes automatically.
 
 Native:
 
