@@ -1,6 +1,7 @@
 import SwiftUI
 import AppKit
 import AINewsWidgetShared
+import Combine
 
 struct RootView: View {
     @EnvironmentObject private var state: WidgetAppState
@@ -18,6 +19,14 @@ struct RootView: View {
             Task {
                 await state.handleIncomingURL(url)
             }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .aiNewsRefreshRequested)) { _ in
+            Task {
+                await state.reloadEverything(selectFirstCategory: state.selectedCategoryID == nil)
+            }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .aiNewsOpenSettings)) { _ in
+            state.showingSettings = true
         }
         .alert("Something needs attention", isPresented: Binding(
             get: { state.errorMessage != nil },
