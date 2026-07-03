@@ -295,6 +295,15 @@ private struct DashboardView: View {
                 TextField("Search stories in this category", text: $storySearch)
                     .textFieldStyle(.plain)
                     .foregroundStyle(AINewsTheme.textPrimary)
+                if !storySearch.isEmpty {
+                    Button {
+                        storySearch = ""
+                    } label: {
+                        Image(systemName: "xmark.circle.fill")
+                            .foregroundStyle(AINewsTheme.textMuted)
+                    }
+                    .buttonStyle(.plain)
+                }
             }
             .padding(.horizontal, 14)
             .padding(.vertical, 10)
@@ -304,6 +313,12 @@ private struct DashboardView: View {
                     .stroke(AINewsTheme.panelBorder.opacity(0.45), lineWidth: 1)
             )
             .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+
+            if !storySearch.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                Text("\(filteredStories.count) result\(filteredStories.count == 1 ? "" : "s")")
+                    .font(.caption)
+                    .foregroundStyle(AINewsTheme.textMuted)
+            }
 
             if state.categories.isEmpty {
                 VStack(alignment: .leading, spacing: 12) {
