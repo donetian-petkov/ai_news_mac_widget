@@ -623,6 +623,17 @@ function normalizeAccountSettings(raw: unknown): Record<string, unknown> {
   return parsed.data as Record<string, unknown>;
 }
 
+function defaultAccountSettings(): Record<string, unknown> {
+  const activeSelection = currentModelSelection(aiProvider);
+  return {
+    aiProvider,
+    summaryModel: activeSelection.summary,
+    researchModel: activeSelection.research,
+    askModel: activeSelection.ask,
+    showNewsCovers: false
+  };
+}
+
 function isNewsAccessLocked(): boolean {
   return REQUIRE_LOGIN_AND_KEY_FOR_NEWS && !newsAccessUnlocked;
 }
@@ -801,7 +812,7 @@ app.get('/api/account/settings', async (req, res) => {
       select: { settingsJson: true }
     }));
     if (!row || !row.settingsJson) {
-      res.json({ settings: {} });
+      res.json({ settings: defaultAccountSettings() });
       return;
     }
     let parsed: unknown = {};
@@ -810,7 +821,8 @@ app.get('/api/account/settings', async (req, res) => {
     } catch {
       parsed = {};
     }
-    res.json({ settings: normalizeAccountSettings(parsed) });
+    const normalized = normalizeAccountSettings(parsed);
+    res.json({ settings: { ...defaultAccountSettings(), ...normalized } });
   } catch (error) {
     res.status(500).json({ error: (error as Error).message || 'Failed to load account settings.' });
   }

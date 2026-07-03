@@ -16,10 +16,16 @@ RESOURCES_DIR="$INSTALL_DIR/Contents/Resources"
 WIDGET_APPEX="$INSTALL_DIR/Contents/PlugIns/AINewsWidgets.appex"
 LOG_DIR="${HOME}/Library/Logs/AINewsMacWidget"
 RUNTIME_INFO_PATH="/tmp/ai-news-mac-widget-runtime.json"
+NODE_PATH="$(command -v node || true)"
+NPM_PATH="$(command -v npm || true)"
 
 mkdir -p "$LOG_DIR"
 ruby "$ROOT_DIR/scripts/generate-xcodeproj.rb"
 rm -rf "$DERIVED_DATA_DIR"
+
+/usr/bin/osascript -e 'tell application "AI News Widget" to quit' >/dev/null 2>&1 || true
+sleep 1
+
 /usr/bin/xcodebuild \
   -project "$PROJECT_PATH" \
   -scheme AINewsMacApp \
@@ -37,7 +43,9 @@ cat > "$RESOURCES_DIR/backend-launch.json" <<JSON
 {
   "repoRoot": "$ROOT_DIR",
   "runtimeInfoPath": "$RUNTIME_INFO_PATH",
-  "logFile": "$LOG_DIR/backend.log"
+  "logFile": "$LOG_DIR/backend.log",
+  "nodePath": "$NODE_PATH",
+  "npmPath": "$NPM_PATH"
 }
 JSON
 

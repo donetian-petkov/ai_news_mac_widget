@@ -12,4 +12,6 @@ if [[ ! -d "$APP_PATH" ]]; then
   exit 1
 fi
 
-open "$APP_PATH"
+/usr/bin/osascript -e 'tell application "AI News Widget" to quit' >/dev/null 2>&1 || true
+sleep 1
+open -n "$APP_PATH"

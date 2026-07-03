@@ -13,19 +13,22 @@ private struct BackendCapabilities: Codable {
     var widgetAPI: Bool?
 }
 
+private struct BackendLaunchConfig: Decodable {
+    var repoRoot: String?
+    var runtimeInfoPath: String?
+    var logFile: String?
+    var nodePath: String?
+    var npmPath: String?
+}
+
 public enum BackendDiscovery {
-    private static let runtimeInfoURL = URL(fileURLWithPath: "/tmp/ai-news-mac-widget-runtime.json")
     private static let runtimeAppID = "ai-news-mac-widget"
+    private static let runtimeInfoPathDefaultsKey = "ai-news.mac-widget.runtime-info-path"
 
     public static func discoveredBackendURLString(fallback: String) -> String {
-        guard
-            let data = try? Data(contentsOf: runtimeInfoURL),
-            let info = try? JSONDecoder().decode(BackendRuntimeInfo.self, from: data),
-            info.app == runtimeAppID,
-            info.capabilities?.widgetAPI == true,
-            let url = URL(string: info.url),
-            ["http", "https"].contains(url.scheme?.lowercased() ?? "")
-        else {
+        guard let info = loadRuntimeInfo(),
+              let url = URL(string: info.url),
+              ["http", "https"].contains(url.scheme?.lowercased() ?? "") else {
             return fallback
         }
 
@@ -40,14 +43,51 @@ public enum BackendDiscovery {
     }
 
     public static func runtimeBackendURLString() -> String? {
-        guard
-            let data = try? Data(contentsOf: runtimeInfoURL),
-            let info = try? JSONDecoder().decode(BackendRuntimeInfo.self, from: data),
-            info.app == runtimeAppID,
-            info.capabilities?.widgetAPI == true
-        else {
-            return nil
+        loadRuntimeInfo()?.url
+    }
+
+    private static func loadRuntimeInfo() -> BackendRuntimeInfo? {
+        for url in runtimeInfoURLs() {
+            guard let data = try? Data(contentsOf: url),
+                  let info = try? JSONDecoder().decode(BackendRuntimeInfo.self, from: data),
+                  info.app == runtimeAppID,
+                  info.capabilities?.widgetAPI == true else {
+                continue
+            }
+            return info
         }
-        return info.url
+        return nil
+    }
+
+    private static func runtimeInfoURLs() -> [URL] {
+        var urls: [URL] = []
+        let defaults = UserDefaults.standard
+        if let persisted = defaults.string(forKey: runtimeInfoPathDefaultsKey), !persisted.isEmpty {
+            urls.append(URL(fileURLWithPath: persisted))
+        }
+        if
+            let configURL = Bundle.main.url(forResource: "backend-launch", withExtension: "json"),
+            let data = try? Data(contentsOf: configURL),
+            let config = try? JSONDecoder().decode(BackendLaunchConfig.self, from: data),
+            let runtimeInfoPath = config.runtimeInfoPath?.trimmingCharacters(in: .whitespacesAndNewlines),
+            let runtimeInfoPath,
+            !runtimeInfoPath.isEmpty {
+            urls.append(URL(fileURLWithPath: runtimeInfoPath))
+        }
+        urls.append(URL(fileURLWithPath: "/tmp/ai-news-mac-widget-runtime.json"))
+        urls.append(URL(fileURLWithPath: "/private/tmp/ai-news-mac-widget-runtime.json"))
+        return unique(urls)
+    }
+
+    private static func unique(_ urls: [URL]) -> [URL] {
+        var seen = Set<String>()
+        var out: [URL] = []
+        for url in urls {
+            let path = url.standardizedFileURL.path
+            if seen.insert(path).inserted {
+                out.append(URL(fileURLWithPath: path))
+            }
+        }
+        return out
     }
 }
