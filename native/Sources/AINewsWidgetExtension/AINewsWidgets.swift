@@ -186,24 +186,30 @@ struct CategoryWidgetView: View {
                         }
                         .buttonStyle(.plain)
 
-                        if index == 0 {
+                        if family != .systemSmall {
                             HStack(spacing: 12) {
-                                Link(destination: storyURL(story, action: .summary) ?? URL(string: "ainewswidget://story")!) {
-                                    Image(systemName: "text.bubble")
+                                Button(intent: OpenSummaryIntent(categoryID: category.id, storyID: story.id, feedURL: story.feedUrl)) {
+                                    Image(systemName: story.hasSummary ? "text.bubble.fill" : "text.bubble")
                                 }
-                                Link(destination: storyURL(story, action: .research) ?? URL(string: "ainewswidget://story")!) {
-                                    Image(systemName: "sparkles.magnifyingglass")
+                                .buttonStyle(.plain)
+
+                                Button(intent: OpenResearchIntent(categoryID: category.id, storyID: story.id, feedURL: story.feedUrl)) {
+                                    Image(systemName: story.hasResearch ? "sparkles.rectangle.stack.fill" : "sparkles.rectangle.stack")
                                 }
-                                Link(destination: storyURL(story, action: .translation) ?? URL(string: "ainewswidget://story")!) {
-                                    Image(systemName: "globe")
+                                .buttonStyle(.plain)
+
+                                Button(intent: OpenTranslationIntent(categoryID: category.id, storyID: story.id, feedURL: story.feedUrl)) {
+                                    Image(systemName: story.hasTranslation ? "globe.americas.fill" : "globe")
                                 }
+                                .buttonStyle(.plain)
+
                                 Button(intent: PinStoryIntent(categoryID: category.id, storyID: story.id, feedURL: story.feedUrl)) {
                                     Image(systemName: category.isPinned(story) ? "pin.fill" : "pin")
                                 }
                                 .buttonStyle(.plain)
                             }
                             .font(.caption.weight(.semibold))
-                            .foregroundStyle(AINewsTheme.accentCyan)
+                            .foregroundStyle(actionTint(for: story))
                         }
                     }
                     if story.storyKey != entry.stories.prefix(category.activeCount).last?.storyKey {
@@ -231,6 +237,16 @@ struct CategoryWidgetView: View {
                 AINewsTheme.background
             }
         }
+    }
+
+    private func actionTint(for story: WidgetStory) -> some ShapeStyle {
+        if story.summaryPending || story.researchPending || story.translationPending {
+            return AINewsTheme.accentGold
+        }
+        if story.hasSummary || story.hasResearch || story.hasTranslation {
+            return AINewsTheme.accentCyan
+        }
+        return AINewsTheme.textMuted
     }
 }
 

@@ -114,6 +114,11 @@ public struct OpenSummaryIntent: AppIntent {
     @Parameter(title: "Feed URL") public var feedURL: String
 
     public init() {}
+    public init(categoryID: Int, storyID: String, feedURL: String) {
+        self.categoryID = categoryID
+        self.storyID = storyID
+        self.feedURL = feedURL
+    }
 
     public func perform() async throws -> some IntentResult {
         try await persist(WidgetCommand(kind: .openSummary, categoryID: categoryID, storyID: storyID, feedURL: feedURL))
@@ -131,6 +136,11 @@ public struct OpenResearchIntent: AppIntent {
     @Parameter(title: "Feed URL") public var feedURL: String
 
     public init() {}
+    public init(categoryID: Int, storyID: String, feedURL: String) {
+        self.categoryID = categoryID
+        self.storyID = storyID
+        self.feedURL = feedURL
+    }
 
     public func perform() async throws -> some IntentResult {
         try await persist(WidgetCommand(kind: .openResearch, categoryID: categoryID, storyID: storyID, feedURL: feedURL))
@@ -148,6 +158,11 @@ public struct OpenTranslationIntent: AppIntent {
     @Parameter(title: "Feed URL") public var feedURL: String
 
     public init() {}
+    public init(categoryID: Int, storyID: String, feedURL: String) {
+        self.categoryID = categoryID
+        self.storyID = storyID
+        self.feedURL = feedURL
+    }
 
     public func perform() async throws -> some IntentResult {
         try await persist(WidgetCommand(kind: .openTranslation, categoryID: categoryID, storyID: storyID, feedURL: feedURL))
