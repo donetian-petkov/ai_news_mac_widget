@@ -8,9 +8,13 @@ APP_BUNDLE_NAME="$APP_NAME.app"
 PROJECT_PATH="$NATIVE_DIR/AINewsMacWidget.xcodeproj"
 DERIVED_DATA_DIR="$ROOT_DIR/.build/xcode"
 SOURCE_APP="$DERIVED_DATA_DIR/Build/Products/Release/AINewsMacApp.app"
-INSTALL_DIR="/Applications/$APP_BUNDLE_NAME"
+SYSTEM_INSTALL_DIR="/Applications/$APP_BUNDLE_NAME"
+USER_INSTALL_DIR="${HOME}/Applications/$APP_BUNDLE_NAME"
+INSTALL_DIR="$SYSTEM_INSTALL_DIR"
+STALE_INSTALL_DIR="$USER_INSTALL_DIR"
 if [[ ! -w "/Applications" ]]; then
-  INSTALL_DIR="${HOME}/Applications/$APP_BUNDLE_NAME"
+  INSTALL_DIR="$USER_INSTALL_DIR"
+  STALE_INSTALL_DIR="$SYSTEM_INSTALL_DIR"
 fi
 RESOURCES_DIR="$INSTALL_DIR/Contents/Resources"
 WIDGET_APPEX="$INSTALL_DIR/Contents/PlugIns/AINewsWidgets.appex"
@@ -35,6 +39,11 @@ sleep 1
   build >/dev/null
 
 mkdir -p "${HOME}/Applications"
+HAD_STALE_COPY=0
+if [[ -d "$STALE_INSTALL_DIR" ]]; then
+  HAD_STALE_COPY=1
+fi
+rm -rf "$STALE_INSTALL_DIR"
 rm -rf "$INSTALL_DIR"
 cp -R "$SOURCE_APP" "$INSTALL_DIR"
 mkdir -p "$RESOURCES_DIR"
@@ -57,4 +66,7 @@ fi
 touch "$INSTALL_DIR"
 
 echo "Installed $APP_NAME to $INSTALL_DIR"
+if [[ "$HAD_STALE_COPY" -eq 1 ]]; then
+  echo "Removed stale copy at $STALE_INSTALL_DIR"
+fi
 echo "Launch it with: open \"$INSTALL_DIR\""
