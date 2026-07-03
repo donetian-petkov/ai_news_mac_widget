@@ -168,7 +168,7 @@ private struct FloatingWidgetView: View {
         }
     }
 
-    private var coversEnabled: Bool { state.accountSettings.showNewsCovers != false }
+    @AppStorage("ai_news_show_thumbnails") private var coversEnabled = true
 
     private func storyRow(_ story: WidgetStory) -> some View {
         Button {

@@ -490,7 +490,7 @@ private struct StoryCardView: View {
     @EnvironmentObject private var state: WidgetAppState
     let story: WidgetStory
 
-    private var coversEnabled: Bool { state.accountSettings.showNewsCovers != false }
+    @AppStorage("ai_news_show_thumbnails") private var coversEnabled = true
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
@@ -1413,6 +1413,7 @@ private func header(title: String, subtitle: String) -> some View {
 private struct SettingsView: View {
     @EnvironmentObject private var state: WidgetAppState
     @EnvironmentObject private var theme: ThemeSettings
+    @AppStorage("ai_news_show_thumbnails") private var showThumbnails = true
     @State private var newCategoryName = ""
     @State private var newCategoryDescription = ""
     @State private var newCategoryFeedURLs = Set<String>()
@@ -1577,10 +1578,7 @@ private struct SettingsView: View {
                 ))
                 .textFieldStyle(.roundedBorder)
 
-                Toggle("Show cover thumbnails on stories", isOn: Binding(
-                    get: { state.accountSettings.showNewsCovers != false },
-                    set: { state.accountSettings.showNewsCovers = $0 }
-                ))
+                Toggle("Show cover thumbnails on stories", isOn: $showThumbnails)
 
                 Button("Save settings") {
                     Task { await state.saveSettings() }
