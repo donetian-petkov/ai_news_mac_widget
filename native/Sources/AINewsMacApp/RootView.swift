@@ -28,6 +28,10 @@ struct RootView: View {
         .onReceive(NotificationCenter.default.publisher(for: .aiNewsOpenSettings)) { _ in
             state.showingSettings = true
         }
+        .onChange(of: state.exportedUsageURL) { _, newValue in
+            guard let newValue else { return }
+            NSWorkspace.shared.activateFileViewerSelecting([newValue])
+        }
         .alert("Something needs attention", isPresented: Binding(
             get: { state.errorMessage != nil },
             set: { if !$0 { state.errorMessage = nil } }
@@ -493,6 +497,8 @@ private struct SettingsView: View {
                             .foregroundStyle(AINewsTheme.textSecondary)
                         Spacer()
                         Button("Refresh") { Task { await state.refreshUsage() } }
+                        Button("Export JSON") { Task { await state.exportUsageJSON() } }
+                        Button("Export CSV") { Task { await state.exportUsageCSV() } }
                         Button("Reset usage") { Task { await state.resetUsage() } }
                     }
 

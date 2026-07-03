@@ -17,6 +17,7 @@ public final class WidgetAppState: ObservableObject {
     @Published public var providerKeyStatus: [String: Bool] = [:]
     @Published public var scrollToStoryID: String?
     @Published public var showingSettings = false
+    @Published public var exportedUsageURL: URL?
 
     private let sessionStore: SessionStore
     private let snapshotStore: SnapshotStore
@@ -246,6 +247,43 @@ public final class WidgetAppState: ObservableObject {
         }
     }
 
+    public func exportUsageJSON() async {
+        do {
+            if usage == nil {
+                refreshDiscoveredBackendURL()
+                let api = try makeAPIClient()
+                usage = try await api.fetchUsage()
+            }
+            guard let usage else { return }
+            let data = try JSONEncoder.pretty.encode(usage)
+            let url = try writeUsageExport(data: data, fileExtension: "json")
+            exportedUsageURL = url
+            statusMessage = "Exported AI usage JSON."
+        } catch {
+            handleAsyncError(error, suppressUnauthorizedAlert: false)
+        }
+    }
+
+    public func exportUsageCSV() async {
+        do {
+            if usage == nil {
+                refreshDiscoveredBackendURL()
+                let api = try makeAPIClient()
+                usage = try await api.fetchUsage()
+            }
+            guard let usage else { return }
+            let csv = usageCSV(usage)
+            guard let data = csv.data(using: .utf8) else {
+                throw CocoaError(.fileWriteUnknown)
+            }
+            let url = try writeUsageExport(data: data, fileExtension: "csv")
+            exportedUsageURL = url
+            statusMessage = "Exported AI usage CSV."
+        } catch {
+            handleAsyncError(error, suppressUnauthorizedAlert: false)
+        }
+    }
+
     public func saveProviderKey() async {
         guard let provider = runtimeConfig?.aiProvider, !providerKeyDraft.isEmpty else { return }
         await runBusy("Saving provider key...") {
@@ -448,5 +486,54 @@ public final class WidgetAppState: ObservableObject {
                 try? await Task.sleep(nanoseconds: 1_000_000_000)
             }
         }
+    }
+
+    private func writeUsageExport(data: Data, fileExtension: String) throws -> URL {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withDashSeparatorInDate, .withColonSeparatorInTime]
+        let stamp = formatter.string(from: Date()).replacingOccurrences(of: ":", with: "-")
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("ai-news-usage-\(stamp)")
+            .appendingPathExtension(fileExtension)
+        try data.write(to: url, options: .atomic)
+        return url
+    }
+
+    private func usageCSV(_ usage: AIUsageExport) -> String {
+        var lines = [
+            "scope,kind,requests,inputTokens,outputTokens,totalTokens,model,label,createdAt",
+            "totals,,,\(usage.inputTokens),\(usage.outputTokens),\(usage.totalTokens),,,"
+        ]
+        for key in usage.byKind.keys.sorted() {
+            guard let stats = usage.byKind[key] else { continue }
+            lines.append("byKind,\(csvField(key)),\(stats.requests),\(stats.inputTokens),\(stats.outputTokens),\(stats.totalTokens),,,")
+        }
+        for item in usage.recent {
+            lines.append([
+                "recent",
+                csvField(item.kind),
+                "",
+                "\(item.inputTokens)",
+                "\(item.outputTokens)",
+                "\(item.totalTokens)",
+                csvField(item.model),
+                csvField(item.label),
+                "\(item.createdAt)"
+            ].joined(separator: ","))
+        }
+        return lines.joined(separator: "\n")
+    }
+
+    private func csvField(_ value: String) -> String {
+        let escaped = value.replacingOccurrences(of: "\"", with: "\"\"")
+        return "\"\(escaped)\""
+    }
+}
+
+private extension JSONEncoder {
+    static var pretty: JSONEncoder {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+        return encoder
     }
 }
