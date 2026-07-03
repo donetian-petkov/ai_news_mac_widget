@@ -55,6 +55,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         menu.addItem(NSMenuItem(title: "Settings & AI", action: #selector(openSettings), keyEquivalent: ","))
         menu.addItem(NSMenuItem(title: "Widget Help", action: #selector(openWidgetHelp), keyEquivalent: "w"))
         menu.addItem(NSMenuItem(title: "Floating Widget", action: #selector(toggleFloatingWidget), keyEquivalent: "f"))
+        let reopenItem = NSMenuItem(title: "Reopen Closed Widget", action: #selector(reopenClosedWidget), keyEquivalent: "t")
+        reopenItem.keyEquivalentModifierMask = [.command, .shift]
+        menu.addItem(reopenItem)
         menu.addItem(NSMenuItem.separator())
         menu.addItem(NSMenuItem(title: "Quit", action: #selector(quitApp), keyEquivalent: "q"))
         menu.items.forEach { $0.target = self }
@@ -100,6 +103,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             floatingWidgetManager = FloatingWidgetManager(state: appState)
         }
         floatingWidgetManager?.openForSelectedCategory()
+    }
+
+    @MainActor
+    @objc private func reopenClosedWidget() {
+        floatingWidgetManager?.reopenLastClosed()
     }
 
     @objc private func quitApp() {

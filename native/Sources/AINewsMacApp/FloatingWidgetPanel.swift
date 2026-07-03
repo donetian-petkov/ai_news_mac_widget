@@ -6,13 +6,16 @@ import AINewsWidgetShared
 /// own panel, so several can float at once. Unlike a WidgetKit widget, these are
 /// windows the app controls, so they float above other apps and scroll.
 @MainActor
-final class FloatingWidgetManager {
+final class FloatingWidgetManager: NSObject, NSWindowDelegate {
     private var panels: [Int: NSPanel] = [:]
+    private var names: [Int: String] = [:]
+    private var closedStack: [Int] = []
     private let state: WidgetAppState
     private var cascadeIndex = 0
 
     init(state: WidgetAppState) {
         self.state = state
+        super.init()
     }
 
     /// Open (or focus) a floating widget for whichever category is selected.
@@ -21,7 +24,25 @@ final class FloatingWidgetManager {
         openWidget(categoryID: category.id, categoryName: category.name)
     }
 
+    /// Reopen the most recently closed widget (⌘⇧T, browser-style).
+    func reopenLastClosed() {
+        guard let id = closedStack.popLast(), let name = names[id] else { return }
+        openWidget(categoryID: id, categoryName: name)
+    }
+
+    func windowWillClose(_ notification: Notification) {
+        guard
+            let window = notification.object as? NSWindow,
+            let entry = panels.first(where: { $0.value === window })
+        else { return }
+        let id = entry.key
+        closedStack.removeAll { $0 == id }
+        closedStack.append(id)
+    }
+
     func openWidget(categoryID: Int, categoryName: String) {
+        names[categoryID] = categoryName
+        closedStack.removeAll { $0 == categoryID }
         if let existing = panels[categoryID] {
             existing.makeKeyAndOrderFront(nil)
             return
@@ -61,6 +82,7 @@ final class FloatingWidgetManager {
         }
         cascadeIndex += 1
 
+        panel.delegate = self
         panels[categoryID] = panel
         panel.makeKeyAndOrderFront(nil)
     }
