@@ -17,7 +17,7 @@ public final class SnapshotStore {
 
     public init(rootDirectory: URL? = nil) {
         let baseDirectory = rootDirectory
-            ?? Self.sharedContainerURL(fileManager: fm)
+            ?? Self.preferredContainerURL(fileManager: fm)
             ?? fm.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
                 .appendingPathComponent("AINewsMacWidget", isDirectory: true)
         self.rootDirectory = baseDirectory
@@ -64,10 +64,33 @@ public final class SnapshotStore {
         reloadWidgetTimelines()
     }
 
-    private static func sharedContainerURL(fileManager: FileManager) -> URL? {
-        fileManager
+    private static func preferredContainerURL(fileManager: FileManager) -> URL? {
+        for url in containerCandidates(fileManager: fileManager) {
+            if fileManager.fileExists(atPath: url.path) {
+                return url
+            }
+        }
+        return containerCandidates(fileManager: fileManager).first
+    }
+
+    private static func containerCandidates(fileManager: FileManager) -> [URL] {
+        var urls: [URL] = []
+
+        if let appGroupURL = fileManager
             .containerURL(forSecurityApplicationGroupIdentifier: appGroupIdentifier)?
-            .appendingPathComponent("AINewsMacWidget", isDirectory: true)
+            .appendingPathComponent("AINewsMacWidget", isDirectory: true) {
+            urls.append(appGroupURL)
+        }
+
+        let explicitGroupURL = fileManager.homeDirectoryForCurrentUser
+            .appendingPathComponent("Library/Group Containers/\(appGroupIdentifier)/AINewsMacWidget", isDirectory: true)
+        urls.append(explicitGroupURL)
+
+        var seen = Set<String>()
+        return urls.filter { url in
+            let key = url.standardizedFileURL.path
+            return seen.insert(key).inserted
+        }
     }
 
     private func reloadWidgetTimelines() {
