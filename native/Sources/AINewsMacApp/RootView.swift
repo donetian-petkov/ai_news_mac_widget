@@ -116,6 +116,7 @@ private struct LoginView: View {
 private struct DashboardView: View {
     @EnvironmentObject private var state: WidgetAppState
     @AppStorage("ai_news_show_hidden_categories") private var showHiddenCategories = true
+    @State private var storySearch = ""
 
     private var sidebarCategories: [WidgetCategory] {
         showHiddenCategories ? state.categories : state.categories.filter { !$0.hidden }
@@ -127,6 +128,19 @@ private struct DashboardView: View {
 
     private var hiddenCategoryCount: Int {
         state.categories.filter { $0.hidden }.count
+    }
+
+    private var filteredStories: [WidgetStory] {
+        let query = storySearch.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !query.isEmpty else { return state.stories }
+        let lowered = query.lowercased()
+        return state.stories.filter { story in
+            story.title.lowercased().contains(lowered)
+                || (story.source?.lowercased().contains(lowered) ?? false)
+                || (story.summary?.lowercased().contains(lowered) ?? false)
+                || (story.research?.lowercased().contains(lowered) ?? false)
+                || (story.translatedTitle?.lowercased().contains(lowered) ?? false)
+        }
     }
 
     var body: some View {
@@ -275,6 +289,22 @@ private struct DashboardView: View {
                     .foregroundStyle(AINewsTheme.accentCyan)
             }
 
+            HStack(spacing: 12) {
+                Image(systemName: "magnifyingglass")
+                    .foregroundStyle(AINewsTheme.textMuted)
+                TextField("Search stories in this category", text: $storySearch)
+                    .textFieldStyle(.plain)
+                    .foregroundStyle(AINewsTheme.textPrimary)
+            }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 10)
+            .background(AINewsTheme.panel.opacity(0.7))
+            .overlay(
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .stroke(AINewsTheme.panelBorder.opacity(0.45), lineWidth: 1)
+            )
+            .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+
             if state.categories.isEmpty {
                 VStack(alignment: .leading, spacing: 12) {
                     Text("No categories loaded yet")
@@ -296,7 +326,7 @@ private struct DashboardView: View {
             ScrollViewReader { proxy in
                 ScrollView {
                     LazyVStack(spacing: 18) {
-                        ForEach(state.stories) { story in
+                        ForEach(filteredStories) { story in
                             StoryCardView(story: story)
                                 .id(story.id)
                         }
