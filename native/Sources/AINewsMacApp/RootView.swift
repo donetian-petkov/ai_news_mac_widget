@@ -323,6 +323,11 @@ private struct DashboardView: View {
                     Label(runtimeConfig.aiProvider.uppercased(), systemImage: runtimeConfig.aiEnabled ? "brain.head.profile" : "brain")
                     Label(runtimeConfig.summaryModel, systemImage: "text.bubble")
                     Label(runtimeConfig.researchModel, systemImage: "sparkles.rectangle.stack")
+                    if let usage = state.usage {
+                        Label("\(formatTokens(usage.totalTokens)) tokens", systemImage: "gauge.with.needle")
+                            .foregroundStyle(AINewsTheme.accentCyan)
+                            .help("\(usage.inputTokens) in / \(usage.outputTokens) out — total AI tokens used. Details in Settings & AI.")
+                    }
                 }
                 .font(.caption)
                 .foregroundStyle(AINewsTheme.textMuted)
@@ -1387,6 +1392,12 @@ private struct OpmlWorkspaceTab: View {
             state.errorMessage = error.localizedDescription
         }
     }
+}
+
+private func formatTokens(_ n: Int) -> String {
+    if n >= 1_000_000 { return String(format: "%.1fM", Double(n) / 1_000_000) }
+    if n >= 1_000 { return String(format: "%.1fk", Double(n) / 1_000) }
+    return "\(n)"
 }
 
 private func header(title: String, subtitle: String) -> some View {

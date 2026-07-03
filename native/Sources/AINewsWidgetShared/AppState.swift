@@ -138,10 +138,12 @@ public final class WidgetAppState: ObservableObject {
             if q.research > 0 { parts.append("\(q.research) research") }
             if q.translation > 0 { parts.append("\(q.translation) translations") }
             statusMessage = "Generating \(parts.joined(separator: ", "))…"
-            // Poll a few times so freshly generated outputs appear without a manual refresh.
+            // Poll a few times so freshly generated outputs (and the token counter)
+            // appear without a manual refresh.
             for _ in 0..<6 {
                 try? await Task.sleep(nanoseconds: 3_000_000_000)
                 await loadStoriesForSelectedCategory(suppressUnauthorizedAlert: true)
+                await refreshUsage()
             }
             statusMessage = "Finished generating \(parts.joined(separator: ", "))."
         } catch {

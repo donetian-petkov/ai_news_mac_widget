@@ -1,5 +1,8 @@
 import SwiftUI
 import Combine
+#if canImport(AppKit)
+import AppKit
+#endif
 
 private func hex(_ value: UInt32, _ alpha: Double = 1) -> Color {
     Color(
@@ -186,9 +189,21 @@ public struct AINewsBackground: View {
 
 /// A rounded, square cover thumbnail that loads asynchronously and degrades to a
 /// placeholder while loading or on failure.
+#if canImport(AppKit)
+/// Process-wide cache so a thumbnail loaded once stays put across re-renders and
+/// the widget's periodic refresh (AsyncImage re-fetches and blanks on every re-render).
+private final class ThumbnailCache {
+    static let shared = NSCache<NSURL, NSImage>()
+}
+#endif
+
 public struct StoryThumbnail: View {
     private let url: URL
     private let size: CGFloat
+    #if canImport(AppKit)
+    @State private var image: NSImage?
+    @State private var failed = false
+    #endif
 
     public init(url: URL, size: CGFloat = 72) {
         self.url = url
@@ -196,23 +211,46 @@ public struct StoryThumbnail: View {
     }
 
     public var body: some View {
-        AsyncImage(url: url) { phase in
-            switch phase {
-            case .success(let image):
-                image.resizable().aspectRatio(contentMode: .fill)
-            case .failure:
-                AINewsTheme.panel.overlay(
-                    Image(systemName: "photo").foregroundStyle(AINewsTheme.textMuted)
-                )
-            case .empty:
-                AINewsTheme.panel.overlay(ProgressView().controlSize(.small))
-            @unknown default:
-                AINewsTheme.panel
-            }
-        }
-        .frame(width: size, height: size)
-        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+        content
+            .frame(width: size, height: size)
+            .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
     }
+
+    @ViewBuilder
+    private var content: some View {
+        #if canImport(AppKit)
+        if let image {
+            Image(nsImage: image).resizable().aspectRatio(contentMode: .fill)
+        } else if failed {
+            AINewsTheme.panel.overlay(Image(systemName: "photo").foregroundStyle(AINewsTheme.textMuted))
+        } else {
+            AINewsTheme.panel.overlay(ProgressView().controlSize(.small))
+                // .task(id:) does not restart on re-render (same url), so the loaded
+                // image state survives refreshes instead of flashing back to blank.
+                .task(id: url) { await load() }
+        }
+        #else
+        AINewsTheme.panel
+        #endif
+    }
+
+    #if canImport(AppKit)
+    @MainActor
+    private func load() async {
+        if let cached = ThumbnailCache.shared.object(forKey: url as NSURL) {
+            image = cached
+            return
+        }
+        do {
+            let (data, _) = try await URLSession.shared.data(from: url)
+            guard let nsImage = NSImage(data: data) else { failed = true; return }
+            ThumbnailCache.shared.setObject(nsImage, forKey: url as NSURL)
+            image = nsImage
+        } catch {
+            failed = true
+        }
+    }
+    #endif
 }
 
 public extension View {
