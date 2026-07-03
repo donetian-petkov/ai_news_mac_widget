@@ -3,17 +3,51 @@ import SwiftUI
 import AINewsWidgetShared
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
+    private var statusItem: NSStatusItem?
+
     func applicationDidFinishLaunching(_ notification: Notification) {
         BackendSupervisor.shared.ensureBackendStarted()
         NSApp.setActivationPolicy(.regular)
-        NSApp.applicationIconImage = NSImage(
+        let icon = NSImage(
             systemSymbolName: "newspaper.fill",
             accessibilityDescription: "AI News"
         )
+        NSApp.applicationIconImage = icon
+        configureStatusItem(icon: icon)
+        NSApp.activate(ignoringOtherApps: true)
+        showMainWindow()
+    }
+
+    private func configureStatusItem(icon: NSImage?) {
+        let statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
+        if let button = statusItem.button {
+            button.image = icon
+            button.image?.isTemplate = true
+            button.toolTip = "AI News Widget"
+        }
+
+        let menu = NSMenu()
+        menu.addItem(NSMenuItem(title: "Open AI News", action: #selector(openMainWindow), keyEquivalent: "o"))
+        menu.addItem(NSMenuItem.separator())
+        menu.addItem(NSMenuItem(title: "Quit", action: #selector(quitApp), keyEquivalent: "q"))
+        menu.items.forEach { $0.target = self }
+        statusItem.menu = menu
+        self.statusItem = statusItem
+    }
+
+    func showMainWindow() {
         NSApp.activate(ignoringOtherApps: true)
         for window in NSApp.windows {
             window.makeKeyAndOrderFront(nil)
         }
+    }
+
+    @objc private func openMainWindow() {
+        showMainWindow()
+    }
+
+    @objc private func quitApp() {
+        NSApp.terminate(nil)
     }
 }
 
