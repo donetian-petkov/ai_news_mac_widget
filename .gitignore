@@ -5,6 +5,7 @@ node_modules
 .next
 dist
 coverage
+.dist
 apps/api/prisma/dev.db
 apps/api/prisma/dev.db-journal
 backend/apps/api/prisma/dev.db
