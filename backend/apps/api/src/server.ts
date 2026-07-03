@@ -773,6 +773,10 @@ app.post('/api/auth/provider-key', async (req, res) => {
         encryptedKey
       }
     });
+    // Load the key into the running backend so the AI pipeline can use it
+    // immediately (the Mac app talks over REST and never hits the WebSocket
+    // provider-switch path that would otherwise load it).
+    setAiProviderKey(provider, apiKey);
     res.json({ saved: true });
   } catch (error) {
     res.status(500).json({ error: (error as Error).message || 'Failed to save provider key.' });
@@ -7940,9 +7944,32 @@ socketServer.on('connection', (ws: WebSocket) => {
 });
 }
 
+// Load provider keys saved by any local user into the running backend, so the
+// AI pipeline works after a restart without the user re-entering the key. Most
+// recently updated key wins per provider (this is a single-user local backend).
+async function loadSavedProviderKeysFromDb() {
+  try {
+    const rows = await prisma.userProviderKey.findMany({ orderBy: { updatedAt: 'desc' } });
+    const seen = new Set<string>();
+    for (const row of rows) {
+      const provider = row.provider as AIProvider;
+      if (seen.has(provider)) continue;
+      const key = String(decryptSecret(row.encryptedKey) || '').trim();
+      if (!key) continue;
+      providerApiKeys[provider] = key;
+      seen.add(provider);
+    }
+    refreshAiClients();
+    if (seen.size) console.log(`Loaded saved provider key(s): ${Array.from(seen).join(', ')}. AI available: ${aiAvailable}`);
+  } catch (e) {
+    console.error('Failed to load saved provider keys:', (e as Error).message);
+  }
+}
+
 // ---------------- Startup ----------------
 (async () => {
   await loadState();
+  await loadSavedProviderKeysFromDb();
 
   // ensure settings for each feed
   for (const fi of feedsList) ensureFeedSettings(fi);
