@@ -31,6 +31,9 @@ struct RootView: View {
         .onReceive(NotificationCenter.default.publisher(for: .aiNewsOpenWidgetHelp)) { _ in
             state.showingWidgetHelp = true
         }
+        .onReceive(NotificationCenter.default.publisher(for: .aiNewsOpenWorkspace)) { _ in
+            state.showingWorkspace = true
+        }
         .onChange(of: state.exportedUsageURL) { _, newValue in
             guard let newValue else { return }
             NSWorkspace.shared.activateFileViewerSelecting([newValue])
@@ -163,6 +166,11 @@ private struct DashboardView: View {
                 .environmentObject(state)
                 .frame(minWidth: 640, minHeight: 460)
         }
+        .sheet(isPresented: $state.showingWorkspace) {
+            WorkspaceView()
+                .environmentObject(state)
+                .frame(minWidth: 980, minHeight: 700)
+        }
     }
 
     private var sidebar: some View {
@@ -241,6 +249,11 @@ private struct DashboardView: View {
             }
             .buttonStyle(.borderedProminent)
             .tint(AINewsTheme.accentCyan)
+
+            Button("Workspace") {
+                state.showingWorkspace = true
+            }
+            .buttonStyle(.bordered)
 
             Button("Widget Help") {
                 state.showingWidgetHelp = true
@@ -506,6 +519,9 @@ private struct StoryCardView: View {
                 actionButton("Translate", systemImage: "globe", tint: AINewsTheme.accentGold) {
                     Task { await state.triggerStoryAction(.translation, story: story) }
                 }
+                actionButton("Save", systemImage: "bookmark", tint: AINewsTheme.accentCyan) {
+                    Task { await state.saveStory(story) }
+                }
                 actionButton("Pin", systemImage: "pin", tint: AINewsTheme.accentRose) {
                     Task { await state.togglePin(for: story) }
                 }
@@ -565,6 +581,386 @@ private struct StoryCardView: View {
         }
         .buttonStyle(.borderedProminent)
         .tint(tint)
+    }
+}
+
+private struct WorkspaceView: View {
+    @EnvironmentObject private var state: WidgetAppState
+    @State private var tab = 0
+
+    var body: some View {
+        VStack(spacing: 0) {
+            HStack {
+                Text("Workspace")
+                    .font(.system(size: 28, weight: .bold))
+                    .foregroundStyle(AINewsTheme.textPrimary)
+                Spacer()
+                Picker("Workspace", selection: $tab) {
+                    Text("Library").tag(0)
+                    Text("History").tag(1)
+                    Text("Sources").tag(2)
+                    Text("OPML").tag(3)
+                }
+                .pickerStyle(.segmented)
+                .frame(width: 420)
+                Button("Done") { state.showingWorkspace = false }
+            }
+            .padding(24)
+
+            Group {
+                switch tab {
+                case 0:
+                    LibraryWorkspaceTab()
+                case 1:
+                    HistoryWorkspaceTab()
+                case 2:
+                    SourcesWorkspaceTab()
+                default:
+                    OpmlWorkspaceTab()
+                }
+            }
+            .padding(.horizontal, 24)
+            .padding(.bottom, 24)
+        }
+        .background(AINewsTheme.background.ignoresSafeArea())
+    }
+}
+
+private struct LibraryWorkspaceTab: View {
+    @EnvironmentObject private var state: WidgetAppState
+    @State private var items: [FeatureRecord<SavedStoryPayload>] = []
+    @State private var loading = false
+    @State private var noteDrafts: [Int: String] = [:]
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            header(title: "Saved stories", subtitle: "Stories you pinned for later reading, notes, and follow-up.")
+
+            ScrollView {
+                LazyVStack(spacing: 12) {
+                    ForEach(items) { item in
+                        VStack(alignment: .leading, spacing: 12) {
+                            HStack(alignment: .top) {
+                                VStack(alignment: .leading, spacing: 4) {
+                                    Text(item.payload.title)
+                                        .font(.headline)
+                                        .foregroundStyle(AINewsTheme.textPrimary)
+                                    Text(item.payload.source ?? item.payload.feedUrl)
+                                        .font(.caption)
+                                        .foregroundStyle(AINewsTheme.textMuted)
+                                }
+                                Spacer()
+                                Toggle("Read", isOn: Binding(
+                                    get: { item.payload.read },
+                                    set: { value in
+                                        Task { await update(item, mutate: { $0.read = value }) }
+                                    }
+                                ))
+                                .toggleStyle(.switch)
+                                .labelsHidden()
+                            }
+
+                            TextField("Add a note", text: Binding(
+                                get: { noteDrafts[item.id] ?? item.payload.note },
+                                set: { noteDrafts[item.id] = $0 }
+                            ))
+                            .textFieldStyle(.roundedBorder)
+
+                            HStack {
+                                Button("Save note") {
+                                    Task {
+                                        await update(item, mutate: { $0.note = noteDrafts[item.id] ?? item.payload.note })
+                                    }
+                                }
+                                .buttonStyle(.bordered)
+                                if let link = item.payload.link, let url = URL(string: link) {
+                                    Button("Open source") { NSWorkspace.shared.open(url) }
+                                        .buttonStyle(.bordered)
+                                }
+                                Spacer()
+                                Button("Remove", role: .destructive) {
+                                    Task { await remove(item) }
+                                }
+                                .buttonStyle(.bordered)
+                            }
+                        }
+                        .padding(16)
+                        .aiNewsPanelStyle()
+                    }
+                }
+            }
+        }
+        .task { await reload() }
+    }
+
+    private func reload() async {
+        loading = true
+        defer { loading = false }
+        do {
+            let api = try state.authorizedAPIClient()
+            items = try await api.fetchLibrary()
+            noteDrafts = Dictionary(uniqueKeysWithValues: items.map { ($0.id, $0.payload.note) })
+        } catch {
+            state.errorMessage = error.localizedDescription
+        }
+    }
+
+    private func update(_ item: FeatureRecord<SavedStoryPayload>, mutate: (inout SavedStoryPayload) -> Void) async {
+        do {
+            let api = try state.authorizedAPIClient()
+            var payload = item.payload
+            mutate(&payload)
+            let updated = try await api.updateSavedStory(id: item.id, payload: payload)
+            if let index = items.firstIndex(where: { $0.id == item.id }) {
+                items[index] = updated
+            }
+        } catch {
+            state.errorMessage = error.localizedDescription
+        }
+    }
+
+    private func remove(_ item: FeatureRecord<SavedStoryPayload>) async {
+        do {
+            let api = try state.authorizedAPIClient()
+            try await api.deleteSavedStory(id: item.id)
+            items.removeAll { $0.id == item.id }
+        } catch {
+            state.errorMessage = error.localizedDescription
+        }
+    }
+}
+
+private struct HistoryWorkspaceTab: View {
+    @EnvironmentObject private var state: WidgetAppState
+    @State private var history: HistoryResponse?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            header(title: "Feed and delivery history", subtitle: "See fetched items, queued AI actions, and why something was or was not sent.")
+
+            ScrollView {
+                LazyVStack(spacing: 12) {
+                    ForEach(history?.items ?? []) { item in
+                        VStack(alignment: .leading, spacing: 8) {
+                            HStack {
+                                Text(item.stage.replacingOccurrences(of: "_", with: " ").capitalized)
+                                    .font(.headline)
+                                    .foregroundStyle(AINewsTheme.textPrimary)
+                                Spacer()
+                                Text(item.status.capitalized)
+                                    .font(.caption.weight(.semibold))
+                                    .foregroundStyle(item.status == "failed" ? AINewsTheme.accentRose : AINewsTheme.accentCyan)
+                            }
+                            if let title = item.title, !title.isEmpty {
+                                Text(title)
+                                    .foregroundStyle(AINewsTheme.textPrimary)
+                            }
+                            if let reason = item.reason, !reason.isEmpty {
+                                Text(reason)
+                                    .foregroundStyle(AINewsTheme.textSecondary)
+                            }
+                            if let details = item.details, !details.isEmpty {
+                                Text(details.map { "\($0.key): \($0.value.stringValue)" }.sorted().joined(separator: " • "))
+                                    .font(.caption)
+                                    .foregroundStyle(AINewsTheme.textMuted)
+                            }
+                        }
+                        .padding(16)
+                        .aiNewsPanelStyle()
+                    }
+
+                    if let fetched = history?.fetched, !fetched.isEmpty {
+                        VStack(alignment: .leading, spacing: 12) {
+                            Text("Recently fetched")
+                                .font(.headline)
+                                .foregroundStyle(AINewsTheme.textSecondary)
+                            ForEach(fetched) { item in
+                                VStack(alignment: .leading, spacing: 4) {
+                                    Text(item.title ?? item.itemId)
+                                        .foregroundStyle(AINewsTheme.textPrimary)
+                                    Text(item.source ?? item.feedUrl)
+                                        .font(.caption)
+                                        .foregroundStyle(AINewsTheme.textMuted)
+                                }
+                                .padding(.vertical, 6)
+                            }
+                        }
+                        .padding(16)
+                        .aiNewsPanelStyle()
+                    }
+                }
+            }
+        }
+        .task { await reload() }
+    }
+
+    private func reload() async {
+        do {
+            let api = try state.authorizedAPIClient()
+            history = try await api.fetchHistory()
+        } catch {
+            state.errorMessage = error.localizedDescription
+        }
+    }
+}
+
+private struct SourcesWorkspaceTab: View {
+    @EnvironmentObject private var state: WidgetAppState
+    @State private var sources: [SourceProfile] = []
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            header(title: "Source profiles", subtitle: "Watch source activity, latest story, Discord state, and the mood/type mix.")
+
+            ScrollView {
+                LazyVStack(spacing: 12) {
+                    ForEach(sources) { source in
+                        VStack(alignment: .leading, spacing: 10) {
+                            HStack {
+                                VStack(alignment: .leading, spacing: 4) {
+                                    Text(source.label)
+                                        .font(.headline)
+                                        .foregroundStyle(AINewsTheme.textPrimary)
+                                    Text(source.url)
+                                        .font(.caption)
+                                        .foregroundStyle(AINewsTheme.textMuted)
+                                        .lineLimit(1)
+                                }
+                                Spacer()
+                                Text(source.discordEnabled ? "Discord on" : "Discord off")
+                                    .font(.caption.weight(.semibold))
+                                    .foregroundStyle(source.discordEnabled ? AINewsTheme.accentCyan : AINewsTheme.textMuted)
+                            }
+                            Text("Recent stories: \(source.recentCount)")
+                                .foregroundStyle(AINewsTheme.textSecondary)
+                            if let latest = source.latest {
+                                Text(latest.title)
+                                    .foregroundStyle(AINewsTheme.textPrimary)
+                            }
+                            if !source.moods.isEmpty {
+                                Text("Moods: \(source.moods.map { "\($0.key) \($0.value)" }.sorted().joined(separator: " • "))")
+                                    .font(.caption)
+                                    .foregroundStyle(AINewsTheme.textMuted)
+                            }
+                            if !source.newsTypes.isEmpty {
+                                Text("Types: \(source.newsTypes.map { "\($0.key) \($0.value)" }.sorted().joined(separator: " • "))")
+                                    .font(.caption)
+                                    .foregroundStyle(AINewsTheme.textMuted)
+                            }
+                        }
+                        .padding(16)
+                        .aiNewsPanelStyle()
+                    }
+                }
+            }
+        }
+        .task { await reload() }
+    }
+
+    private func reload() async {
+        do {
+            let api = try state.authorizedAPIClient()
+            sources = try await api.fetchSources()
+        } catch {
+            state.errorMessage = error.localizedDescription
+        }
+    }
+}
+
+private struct OpmlWorkspaceTab: View {
+    @EnvironmentObject private var state: WidgetAppState
+    @State private var opml = ""
+    @State private var preview: [OpmlFeed] = []
+    @State private var exportedFileURL: URL?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            header(title: "Import and export feeds", subtitle: "Paste OPML to preview and import, or export the current feed set.")
+
+            TextEditor(text: $opml)
+                .font(.system(.body, design: .monospaced))
+                .frame(minHeight: 180)
+                .padding(12)
+                .background(AINewsTheme.panel.opacity(0.7))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 14, style: .continuous)
+                        .stroke(AINewsTheme.panelBorder.opacity(0.45), lineWidth: 1)
+                )
+                .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+
+            HStack {
+                Button("Preview OPML") { Task { await doPreview() } }
+                    .buttonStyle(.bordered)
+                Button("Import feeds") { Task { await doImport() } }
+                    .buttonStyle(.borderedProminent)
+                    .tint(AINewsTheme.accentBlue)
+                Button("Export current feeds") { Task { await doExport() } }
+                    .buttonStyle(.bordered)
+            }
+
+            if !preview.isEmpty {
+                ScrollView {
+                    LazyVStack(spacing: 12) {
+                        ForEach(preview) { feed in
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text(feed.title)
+                                    .foregroundStyle(AINewsTheme.textPrimary)
+                                Text(feed.xmlUrl)
+                                    .font(.caption)
+                                    .foregroundStyle(AINewsTheme.textMuted)
+                            }
+                            .padding(14)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .aiNewsPanelStyle()
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private func doPreview() async {
+        do {
+            let api = try state.authorizedAPIClient()
+            preview = try await api.previewOpml(opml)
+        } catch {
+            state.errorMessage = error.localizedDescription
+        }
+    }
+
+    private func doImport() async {
+        do {
+            let api = try state.authorizedAPIClient()
+            let result = try await api.importOpml(opml)
+            preview = result.feeds
+            state.statusMessage = "Imported \(result.added) feeds."
+            await state.reloadEverything(selectFirstCategory: state.selectedCategoryID == nil)
+        } catch {
+            state.errorMessage = error.localizedDescription
+        }
+    }
+
+    private func doExport() async {
+        do {
+            let api = try state.authorizedAPIClient()
+            let xml = try await api.exportOpml()
+            let url = FileManager.default.temporaryDirectory.appendingPathComponent("ai-news-feeds.opml")
+            try xml.write(to: url, atomically: true, encoding: .utf8)
+            exportedFileURL = url
+            NSWorkspace.shared.activateFileViewerSelecting([url])
+        } catch {
+            state.errorMessage = error.localizedDescription
+        }
+    }
+}
+
+private func header(title: String, subtitle: String) -> some View {
+    VStack(alignment: .leading, spacing: 6) {
+        Text(title)
+            .font(.system(size: 24, weight: .bold))
+            .foregroundStyle(AINewsTheme.textPrimary)
+        Text(subtitle)
+            .foregroundStyle(AINewsTheme.textSecondary)
     }
 }
 

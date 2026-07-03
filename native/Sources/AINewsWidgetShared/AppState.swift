@@ -18,6 +18,7 @@ public final class WidgetAppState: ObservableObject {
     @Published public var scrollToStoryID: String?
     @Published public var showingSettings = false
     @Published public var showingWidgetHelp = false
+    @Published public var showingWorkspace = false
     @Published public var exportedUsageURL: URL?
 
     private let sessionStore: SessionStore
@@ -297,6 +298,29 @@ public final class WidgetAppState: ObservableObject {
 
     public func triggerStoryAction(_ action: WidgetStoryAction, story: WidgetStory) async {
         await triggerStoryAction(action, story: story, recordCommand: true)
+    }
+
+    public func saveStory(_ story: WidgetStory) async {
+        await runBusy("Saving story...") {
+            let api = try self.makeAPIClient()
+            _ = try await api.saveStory(SavedStoryPayload(
+                itemId: story.id,
+                feedUrl: story.feedUrl,
+                title: story.title,
+                link: story.link,
+                source: story.source,
+                coverUrl: nil,
+                tags: [],
+                note: "",
+                read: false,
+                archived: false
+            ))
+            self.statusMessage = "Saved \(story.title)."
+        }
+    }
+
+    public func authorizedAPIClient() throws -> APIClient {
+        try makeAPIClient()
     }
 
     public func triggerStoryAction(_ action: WidgetStoryAction, story: WidgetStory, recordCommand: Bool) async {

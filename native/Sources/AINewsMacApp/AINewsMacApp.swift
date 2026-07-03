@@ -6,6 +6,7 @@ extension Notification.Name {
     static let aiNewsOpenSettings = Notification.Name("AINewsOpenSettings")
     static let aiNewsRefreshRequested = Notification.Name("AINewsRefreshRequested")
     static let aiNewsOpenWidgetHelp = Notification.Name("AINewsOpenWidgetHelp")
+    static let aiNewsOpenWorkspace = Notification.Name("AINewsOpenWorkspace")
 }
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
@@ -34,6 +35,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         let menu = NSMenu()
         menu.addItem(NSMenuItem(title: "Open AI News", action: #selector(openMainWindow), keyEquivalent: "o"))
+        menu.addItem(NSMenuItem(title: "Workspace", action: #selector(openWorkspace), keyEquivalent: "l"))
         menu.addItem(NSMenuItem(title: "Refresh Categories", action: #selector(requestRefresh), keyEquivalent: "r"))
         menu.addItem(NSMenuItem(title: "Settings & AI", action: #selector(openSettings), keyEquivalent: ","))
         menu.addItem(NSMenuItem(title: "Widget Help", action: #selector(openWidgetHelp), keyEquivalent: "w"))
@@ -58,6 +60,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     @objc private func requestRefresh() {
         showMainWindow()
         NotificationCenter.default.post(name: .aiNewsRefreshRequested, object: nil)
+    }
+
+    @objc private func openWorkspace() {
+        showMainWindow()
+        NotificationCenter.default.post(name: .aiNewsOpenWorkspace, object: nil)
     }
 
     @objc private func openSettings() {

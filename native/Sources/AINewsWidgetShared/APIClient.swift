@@ -129,6 +129,55 @@ public struct APIClient: Sendable {
         return response.usage
     }
 
+    public func fetchLibrary() async throws -> [FeatureRecord<SavedStoryPayload>] {
+        let response: FeatureListResponse<SavedStoryPayload> = try await send(path: "/api/library")
+        return response.items
+    }
+
+    public func saveStory(_ payload: SavedStoryPayload) async throws -> FeatureRecord<SavedStoryPayload> {
+        let response: FeatureMutationResponse<SavedStoryPayload> = try await send(path: "/api/library", method: "POST", body: payload)
+        guard let item = response.item else { throw APIClientError.invalidResponse }
+        return item
+    }
+
+    public func updateSavedStory(id: Int, payload: SavedStoryPayload) async throws -> FeatureRecord<SavedStoryPayload> {
+        let response: FeatureMutationResponse<SavedStoryPayload> = try await send(path: "/api/library/\(id)", method: "PUT", body: payload)
+        guard let item = response.item else { throw APIClientError.invalidResponse }
+        return item
+    }
+
+    public func deleteSavedStory(id: Int) async throws {
+        let _: BasicSuccessResponse = try await send(path: "/api/library/\(id)", method: "DELETE")
+    }
+
+    public func fetchHistory(feedURL: String? = nil) async throws -> HistoryResponse {
+        var path = "/api/history"
+        if let feedURL, !feedURL.isEmpty {
+            path += "?feedUrl=\(feedURL.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? feedURL)"
+        }
+        return try await send(path: path)
+    }
+
+    public func fetchSources() async throws -> [SourceProfile] {
+        let response: SourcesResponse = try await send(path: "/api/sources")
+        return response.items
+    }
+
+    public func previewOpml(_ opml: String) async throws -> [OpmlFeed] {
+        struct Body: Codable { var opml: String }
+        let response: OpmlPreviewResponse = try await send(path: "/api/opml/import-preview", method: "POST", body: Body(opml: opml))
+        return response.feeds
+    }
+
+    public func importOpml(_ opml: String) async throws -> OpmlImportResponse {
+        struct Body: Codable { var opml: String }
+        return try await send(path: "/api/opml/import", method: "POST", body: Body(opml: opml))
+    }
+
+    public func exportOpml() async throws -> String {
+        try await sendText(path: "/api/opml/export")
+    }
+
     public func resetUsage() async throws -> AIUsageExport {
         let response: AIUsageExportResponse = try await send(path: "/api/ai-usage/reset", method: "POST")
         return response.usage
@@ -272,6 +321,32 @@ public struct APIClient: Sendable {
         } catch {
             throw APIClientError.server(message: "Failed to decode backend response: \(error.localizedDescription)")
         }
+    }
+
+    private func sendText(
+        path: String,
+        method: String = "GET"
+    ) async throws -> String {
+        var request = URLRequest(url: makeURL(path: path))
+        request.httpMethod = method
+        if let token, !token.isEmpty {
+            request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        }
+        let (data, response) = try await URLSession.shared.data(for: request)
+        guard let http = response as? HTTPURLResponse else {
+            throw APIClientError.invalidResponse
+        }
+        if http.statusCode == 401 {
+            throw APIClientError.unauthorized
+        }
+        if !(200...299).contains(http.statusCode) {
+            let errorEnvelope = try? JSONDecoder().decode(ErrorEnvelope.self, from: data)
+            throw APIClientError.server(message: errorEnvelope?.error ?? "Request failed with status \(http.statusCode).")
+        }
+        guard let text = String(data: data, encoding: .utf8) else {
+            throw APIClientError.invalidResponse
+        }
+        return text
     }
 
     private func makeURL(path: String) -> URL {

@@ -1,5 +1,71 @@
 import Foundation
 
+public enum JSONValue: Codable, Hashable, Sendable {
+    case string(String)
+    case number(Double)
+    case bool(Bool)
+    case object([String: JSONValue])
+    case array([JSONValue])
+    case null
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.singleValueContainer()
+        if container.decodeNil() {
+            self = .null
+        } else if let value = try? container.decode(Bool.self) {
+            self = .bool(value)
+        } else if let value = try? container.decode(Double.self) {
+            self = .number(value)
+        } else if let value = try? container.decode(String.self) {
+            self = .string(value)
+        } else if let value = try? container.decode([String: JSONValue].self) {
+            self = .object(value)
+        } else if let value = try? container.decode([JSONValue].self) {
+            self = .array(value)
+        } else {
+            throw DecodingError.dataCorruptedError(in: container, debugDescription: "Unsupported JSON value.")
+        }
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.singleValueContainer()
+        switch self {
+        case .string(let value):
+            try container.encode(value)
+        case .number(let value):
+            try container.encode(value)
+        case .bool(let value):
+            try container.encode(value)
+        case .object(let value):
+            try container.encode(value)
+        case .array(let value):
+            try container.encode(value)
+        case .null:
+            try container.encodeNil()
+        }
+    }
+
+    public var stringValue: String {
+        switch self {
+        case .string(let value):
+            return value
+        case .number(let value):
+            if value.rounded() == value {
+                return String(Int(value))
+            }
+            return String(value)
+        case .bool(let value):
+            return value ? "true" : "false"
+        case .object(let value):
+            return value.map { "\($0.key): \($0.value.stringValue)" }.joined(separator: ", ")
+        case .array(let value):
+            return value.map(\.stringValue).joined(separator: ", ")
+        case .null:
+            return ""
+        }
+    }
+}
+
 public struct UserSession: Codable, Equatable, Sendable {
     public var token: String
     public var user: UserAccount
@@ -285,6 +351,113 @@ public struct WidgetCategoryPayload: Codable, Equatable, Hashable, Sendable {
     public var activeCount: Int
     public var pinnedStoryId: String
     public var pinnedFeedUrl: String
+}
+
+public struct FeatureRecord<Payload: Codable & Sendable>: Codable, Sendable, Identifiable {
+    public var id: Int
+    public var userId: Int
+    public var kind: String
+    public var title: String
+    public var payload: Payload
+    public var archived: Bool
+    public var createdAt: String
+    public var updatedAt: String
+}
+
+public struct FeatureListResponse<Payload: Codable & Sendable>: Codable, Sendable {
+    public var ok: Bool
+    public var items: [FeatureRecord<Payload>]
+}
+
+public struct FeatureMutationResponse<Payload: Codable & Sendable>: Codable, Sendable {
+    public var ok: Bool
+    public var item: FeatureRecord<Payload>?
+}
+
+public struct SavedStoryPayload: Codable, Equatable, Hashable, Sendable {
+    public var itemId: String
+    public var feedUrl: String
+    public var title: String
+    public var link: String?
+    public var source: String?
+    public var coverUrl: String?
+    public var tags: [String]
+    public var note: String
+    public var read: Bool
+    public var archived: Bool
+}
+
+public struct HistoryEntry: Codable, Equatable, Hashable, Sendable, Identifiable {
+    public var id: Int
+    public var userId: Int?
+    public var feedUrl: String?
+    public var itemId: String?
+    public var title: String?
+    public var source: String?
+    public var stage: String
+    public var status: String
+    public var reason: String?
+    public var detailsJson: String?
+    public var createdAt: String
+    public var details: [String: JSONValue]?
+}
+
+public struct HistoryFetchedEntry: Codable, Equatable, Hashable, Sendable, Identifiable {
+    public var id: String {
+        "\(feedUrl)-\(itemId)-\(publishedMs)"
+    }
+
+    public var feedUrl: String
+    public var itemId: String
+    public var title: String?
+    public var source: String?
+    public var publishedMs: Int64?
+    public var createdAt: String?
+    public var stage: String
+    public var status: String
+}
+
+public struct HistoryResponse: Codable, Sendable {
+    public var ok: Bool
+    public var items: [HistoryEntry]
+    public var fetched: [HistoryFetchedEntry]
+}
+
+public struct SourceProfile: Codable, Equatable, Hashable, Sendable, Identifiable {
+    public var id: String { url }
+    public var url: String
+    public var label: String
+    public var kind: String
+    public var intervalSec: Int?
+    public var discordWebhookUrl: String?
+    public var recentCount: Int
+    public var latest: WidgetStory?
+    public var moods: [String: Int]
+    public var newsTypes: [String: Int]
+    public var discordEnabled: Bool
+}
+
+public struct SourcesResponse: Codable, Sendable {
+    public var ok: Bool
+    public var items: [SourceProfile]
+}
+
+public struct OpmlFeed: Codable, Equatable, Hashable, Sendable, Identifiable {
+    public var id: String { xmlUrl }
+    public var title: String
+    public var xmlUrl: String
+    public var htmlUrl: String?
+}
+
+public struct OpmlPreviewResponse: Codable, Sendable {
+    public var ok: Bool
+    public var feeds: [OpmlFeed]
+}
+
+public struct OpmlImportResponse: Codable, Sendable {
+    public var ok: Bool
+    public var feeds: [OpmlFeed]
+    public var added: Int
 }
 
 public struct StoryActionResponse: Codable, Sendable {
