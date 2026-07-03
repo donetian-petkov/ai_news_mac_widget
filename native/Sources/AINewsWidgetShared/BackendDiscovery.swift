@@ -70,7 +70,6 @@ public enum BackendDiscovery {
             let data = try? Data(contentsOf: configURL),
             let config = try? JSONDecoder().decode(BackendLaunchConfig.self, from: data),
             let runtimeInfoPath = config.runtimeInfoPath?.trimmingCharacters(in: .whitespacesAndNewlines),
-            let runtimeInfoPath,
             !runtimeInfoPath.isEmpty {
             urls.append(URL(fileURLWithPath: runtimeInfoPath))
         }

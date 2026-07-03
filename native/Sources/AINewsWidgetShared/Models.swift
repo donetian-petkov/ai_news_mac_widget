@@ -428,7 +428,7 @@ public struct HistoryEntry: Codable, Equatable, Sendable, Identifiable {
 
 public struct HistoryFetchedEntry: Codable, Equatable, Hashable, Sendable, Identifiable {
     public var id: String {
-        "\(feedUrl)-\(itemId)-\(publishedMs)"
+        "\(feedUrl)-\(itemId)-\(publishedMs ?? 0)"
     }
 
     public var feedUrl: String
