@@ -292,22 +292,40 @@ struct MasterWidgetView: View {
 
             ForEach(Array(visibleCategories.prefix(4)), id: \.id) { category in
                 let topStory = entry.snapshot.storiesByCategory[String(category.id)]?.first
-                Link(
-                    destination: topStory.flatMap {
-                        WidgetDeepLink.storyURL(categoryID: category.id, storyID: $0.id, feedURL: $0.feedUrl)
-                    } ?? URL(string: "ainewswidget://story")!
-                ) {
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text(category.name)
-                            .font(.caption.weight(.semibold))
-                            .foregroundStyle(AINewsTheme.accentCyan)
-                        Text(topStory?.title ?? "No stories cached yet")
-                            .font(.caption)
-                            .foregroundStyle(AINewsTheme.textSecondary)
-                            .lineLimit(2)
+                HStack(alignment: .top, spacing: 10) {
+                    Link(
+                        destination: topStory.flatMap {
+                            WidgetDeepLink.storyURL(categoryID: category.id, storyID: $0.id, feedURL: $0.feedUrl)
+                        } ?? URL(string: "ainewswidget://story")!
+                    ) {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(category.name)
+                                .font(.caption.weight(.semibold))
+                                .foregroundStyle(AINewsTheme.accentCyan)
+                            Text(topStory?.title ?? "No stories cached yet")
+                                .font(.caption)
+                                .foregroundStyle(AINewsTheme.textSecondary)
+                                .lineLimit(2)
+                        }
+                    }
+                    .buttonStyle(.plain)
+
+                    if family != .systemMedium {
+                        VStack(spacing: 8) {
+                            Button(intent: ToggleCategoryVisibilityIntent(categoryID: category.id)) {
+                                Image(systemName: category.hidden ? "eye.slash" : "eye")
+                            }
+                            .buttonStyle(.plain)
+
+                            Button(intent: RefreshCategoryIntent(categoryID: category.id)) {
+                                Image(systemName: "arrow.clockwise")
+                            }
+                            .buttonStyle(.plain)
+                        }
+                        .font(.caption2.weight(.semibold))
+                        .foregroundStyle(AINewsTheme.textMuted)
                     }
                 }
-                .buttonStyle(.plain)
                 if category.id != visibleCategories.prefix(4).last?.id {
                     Divider()
                         .overlay(AINewsTheme.panelBorder.opacity(0.35))
