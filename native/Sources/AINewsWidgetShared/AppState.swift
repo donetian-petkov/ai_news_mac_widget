@@ -56,12 +56,11 @@ public final class WidgetAppState: ObservableObject {
         refreshDiscoveredBackendURL()
         await waitForBackendReady()
         guard session != nil else { return }
-        if categories.isEmpty {
-            await reloadEverything(selectFirstCategory: true, suppressUnauthorizedAlert: true)
-        } else {
-            await loadRuntimeContext(suppressUnauthorizedAlert: true)
-            await loadStoriesForSelectedCategory(suppressUnauthorizedAlert: true)
-        }
+        // Always refresh categories from the backend on launch. The cached snapshot gives
+        // an instant first paint, but its category IDs can be stale relative to the backend
+        // DB (which is re-seeded on install), which would make every stories request 404.
+        // reloadEverything fetches fresh categories and re-validates the selected one.
+        await reloadEverything(selectFirstCategory: selectedCategoryID == nil, suppressUnauthorizedAlert: true)
         await processPendingCommands()
     }
 
