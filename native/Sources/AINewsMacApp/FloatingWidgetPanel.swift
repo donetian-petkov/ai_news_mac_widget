@@ -51,6 +51,7 @@ final class FloatingWidgetManager: NSObject, NSWindowDelegate {
         let hosting = NSHostingView(
             rootView: FloatingWidgetView(categoryID: categoryID, categoryName: categoryName)
                 .environmentObject(state)
+                .environmentObject(ThemeSettings.shared)
         )
 
         let panel = NSPanel(
@@ -92,6 +93,7 @@ final class FloatingWidgetManager: NSObject, NSWindowDelegate {
 /// category's stories so multiple widgets can show different categories at once.
 private struct FloatingWidgetView: View {
     @EnvironmentObject private var state: WidgetAppState
+    @EnvironmentObject private var theme: ThemeSettings
     let categoryID: Int
     let categoryName: String
 
@@ -106,6 +108,7 @@ private struct FloatingWidgetView: View {
         }
         .frame(minWidth: 220, minHeight: 180)
         .background(AINewsTheme.background)
+        .dynamicTypeSize(theme.fontSize.dynamicTypeSize)
         .task {
             // Load now, then auto-refresh so the widget picks up new stories and
             // freshly generated summaries/translations without clicking reload.

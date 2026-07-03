@@ -124,13 +124,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 struct AINewsMacApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
     @StateObject private var state = WidgetAppState()
+    @StateObject private var theme = ThemeSettings.shared
 
     var body: some Scene {
         WindowGroup("AI News Widget") {
             RootView()
                 .environmentObject(state)
+                .environmentObject(theme)
+                .dynamicTypeSize(theme.fontSize.dynamicTypeSize)
+                .preferredColorScheme(theme.vibe == .light ? .light : .dark)
                 .frame(minWidth: 1180, minHeight: 760)
-                .preferredColorScheme(.dark)
                 .task {
                     appDelegate.attach(state: state)
                 }

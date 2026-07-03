@@ -10,6 +10,9 @@ private func copyTextToPasteboard(_ text: String) {
 
 struct RootView: View {
     @EnvironmentObject private var state: WidgetAppState
+    // Observed so the whole view tree re-renders (re-reading AINewsTheme colors)
+    // when the theme or font size changes.
+    @EnvironmentObject private var theme: ThemeSettings
 
     var body: some View {
         Group {
@@ -65,7 +68,7 @@ private struct LoginView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 24) {
             Text("AI News for Mac")
-                .font(.system(size: 40, weight: .bold))
+                .font(AINewsTheme.font(40, weight: .bold))
                 .foregroundStyle(AINewsTheme.textPrimary)
 
             Text("Local backend, native dashboard, widget-ready snapshots.")
@@ -126,6 +129,7 @@ private struct LoginView: View {
 
 private struct DashboardView: View {
     @EnvironmentObject private var state: WidgetAppState
+    @EnvironmentObject private var theme: ThemeSettings
     @AppStorage("ai_news_show_hidden_categories") private var showHiddenCategories = true
     @State private var storySearch = ""
 
@@ -164,16 +168,19 @@ private struct DashboardView: View {
         .sheet(isPresented: $state.showingSettings) {
             SettingsView()
                 .environmentObject(state)
+                .environmentObject(theme)
                 .frame(minWidth: 760, minHeight: 520)
         }
         .sheet(isPresented: $state.showingWidgetHelp) {
             WidgetHelpView()
                 .environmentObject(state)
+                .environmentObject(theme)
                 .frame(minWidth: 640, minHeight: 460)
         }
         .sheet(isPresented: $state.showingWorkspace) {
             WorkspaceView()
                 .environmentObject(state)
+                .environmentObject(theme)
                 .frame(minWidth: 980, minHeight: 700)
         }
     }
@@ -185,7 +192,7 @@ private struct DashboardView: View {
                     Image(systemName: "newspaper.fill")
                         .foregroundStyle(AINewsTheme.accentBlue)
                     Text("AI News")
-                        .font(.system(size: 18, weight: .bold))
+                        .font(AINewsTheme.font(18, weight: .bold))
                         .foregroundStyle(AINewsTheme.textPrimary)
                     Spacer()
                     Button {
@@ -197,7 +204,7 @@ private struct DashboardView: View {
                     .help("Refresh categories")
                 }
                 Text("Categories")
-                    .font(.system(size: 12, weight: .semibold))
+                    .font(AINewsTheme.font(12, weight: .semibold))
                     .foregroundStyle(AINewsTheme.textMuted)
                     .textCase(.uppercase)
                 HStack(spacing: 8) {
@@ -220,7 +227,7 @@ private struct DashboardView: View {
                     HStack(spacing: 10) {
                         VStack(alignment: .leading, spacing: 4) {
                             Text(category.name)
-                                .font(.system(size: 15, weight: .semibold))
+                                .font(AINewsTheme.font(15, weight: .semibold))
                                 .foregroundStyle(AINewsTheme.textPrimary)
                                 .lineLimit(2)
                                 .fixedSize(horizontal: false, vertical: true)
@@ -286,7 +293,7 @@ private struct DashboardView: View {
             HStack(alignment: .center) {
                 VStack(alignment: .leading, spacing: 6) {
                     Text(state.selectedCategory?.name ?? "Pick a category")
-                        .font(.system(size: 30, weight: .bold))
+                        .font(AINewsTheme.font(30, weight: .bold))
                         .foregroundStyle(AINewsTheme.textPrimary)
                     Text(state.selectedCategory?.description.isEmpty == false ? state.selectedCategory?.description ?? "" : "Stories are image-free here on purpose, so the text and AI actions stay fast and widget-safe.")
                         .foregroundStyle(AINewsTheme.textSecondary)
@@ -418,7 +425,7 @@ private struct WidgetHelpView: View {
         VStack(alignment: .leading, spacing: 20) {
             HStack {
                 Text("Add the widgets")
-                    .font(.system(size: 28, weight: .bold))
+                    .font(AINewsTheme.font(28, weight: .bold))
                     .foregroundStyle(AINewsTheme.textPrimary)
                 Spacer()
                 Button("Done") {
@@ -500,7 +507,7 @@ private struct StoryCardView: View {
             }
 
             Text(story.title)
-                .font(.system(size: 28, weight: .bold))
+                .font(AINewsTheme.font(28, weight: .bold))
                 .foregroundStyle(AINewsTheme.accentBlue)
 
             if let translated = story.translatedTitle, !translated.isEmpty, translated != story.title {
@@ -632,7 +639,7 @@ private struct WorkspaceView: View {
         VStack(spacing: 0) {
             HStack {
                 Text("Workspace")
-                    .font(.system(size: 28, weight: .bold))
+                    .font(AINewsTheme.font(28, weight: .bold))
                     .foregroundStyle(AINewsTheme.textPrimary)
                 Spacer()
                 Picker("Workspace", selection: $tab) {
@@ -1380,7 +1387,7 @@ private struct OpmlWorkspaceTab: View {
 private func header(title: String, subtitle: String) -> some View {
     VStack(alignment: .leading, spacing: 6) {
         Text(title)
-            .font(.system(size: 24, weight: .bold))
+            .font(AINewsTheme.font(24, weight: .bold))
             .foregroundStyle(AINewsTheme.textPrimary)
         Text(subtitle)
             .foregroundStyle(AINewsTheme.textSecondary)
@@ -1389,23 +1396,54 @@ private func header(title: String, subtitle: String) -> some View {
 
 private struct SettingsView: View {
     @EnvironmentObject private var state: WidgetAppState
+    @EnvironmentObject private var theme: ThemeSettings
     @State private var newCategoryName = ""
     @State private var newCategoryDescription = ""
     @State private var newCategoryFeedURLs = Set<String>()
     @State private var editingCategoryID: Int?
+
+    private var appearancePanel: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Appearance")
+                .font(.headline)
+                .foregroundStyle(AINewsTheme.textSecondary)
+            Picker("Theme", selection: Binding(
+                get: { theme.vibe },
+                set: { theme.vibe = $0 }
+            )) {
+                ForEach(AINewsVibe.allCases, id: \.self) { vibe in
+                    Text(vibe.displayName).tag(vibe)
+                }
+            }
+            .pickerStyle(.menu)
+            Picker("Text size", selection: Binding(
+                get: { theme.fontSize },
+                set: { theme.fontSize = $0 }
+            )) {
+                ForEach(AINewsFontSize.allCases, id: \.self) { size in
+                    Text(size.displayName).tag(size)
+                }
+            }
+            .pickerStyle(.segmented)
+        }
+        .padding(16)
+        .aiNewsPanelStyle()
+    }
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
             HStack {
                 Text("AI & Widget Settings")
-                    .font(.system(size: 28, weight: .bold))
+                    .font(AINewsTheme.font(28, weight: .bold))
                     .foregroundStyle(AINewsTheme.textPrimary)
                 Spacer()
                 Button("Done") {
                     state.showingSettings = false
                 }
             }
+
+            appearancePanel
 
             if let runtimeConfig = state.runtimeConfig {
                 VStack(alignment: .leading, spacing: 10) {

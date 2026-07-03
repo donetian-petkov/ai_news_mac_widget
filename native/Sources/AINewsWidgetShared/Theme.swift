@@ -1,23 +1,166 @@
 import SwiftUI
+import Combine
+
+private func hex(_ value: UInt32, _ alpha: Double = 1) -> Color {
+    Color(
+        red: Double((value >> 16) & 0xFF) / 255,
+        green: Double((value >> 8) & 0xFF) / 255,
+        blue: Double(value & 0xFF) / 255,
+        opacity: alpha
+    )
+}
+
+/// A full color palette for one theme ("vibe").
+public struct ThemePalette: Sendable {
+    public var background: Color
+    public var backgroundAlt: Color
+    public var panel: Color
+    public var panelBorder: Color
+    public var textPrimary: Color
+    public var textSecondary: Color
+    public var textMuted: Color
+    public var accentBlue: Color
+    public var accentCyan: Color
+    public var accentGold: Color
+    public var accentRose: Color
+}
+
+/// The selectable themes, ported from the original web app's "vibe" palettes.
+public enum AINewsVibe: String, CaseIterable, Sendable {
+    case dark, light, newspaper, cinema, scifi, cyberwitch, fantasy, anime, arcade
+
+    public var displayName: String {
+        switch self {
+        case .dark: return "Dark"
+        case .light: return "Light"
+        case .newspaper: return "Newspaper"
+        case .cinema: return "Cinema"
+        case .scifi: return "Sci-Fi"
+        case .cyberwitch: return "Cyber Witch"
+        case .fantasy: return "Fantasy"
+        case .anime: return "Anime"
+        case .arcade: return "Arcade"
+        }
+    }
+
+    public var palette: ThemePalette {
+        switch self {
+        case .dark:
+            return ThemePalette(background: hex(0x070C1A), backgroundAlt: hex(0x0C152C), panel: hex(0x10182A), panelBorder: hex(0x3B61B9), textPrimary: hex(0xE7EFFF), textSecondary: hex(0x9AABCD), textMuted: hex(0x7787AB), accentBlue: hex(0x72B0FF), accentCyan: hex(0x22DCB7), accentGold: hex(0xFFBA45), accentRose: hex(0xFF6E96))
+        case .light:
+            return ThemePalette(background: hex(0xF3F6FB), backgroundAlt: hex(0xE7EDF6), panel: hex(0xFFFFFF), panelBorder: hex(0xC2D0E4), textPrimary: hex(0x14203A), textSecondary: hex(0x415472), textMuted: hex(0x6B7D96), accentBlue: hex(0x0E63D4), accentCyan: hex(0x0C946E), accentGold: hex(0xB8791F), accentRose: hex(0xC23B6A))
+        case .newspaper:
+            return ThemePalette(background: hex(0x0B1117), backgroundAlt: hex(0x141C25), panel: hex(0x161D25), panelBorder: hex(0x96A6B6), textPrimary: hex(0xEDF2F7), textSecondary: hex(0xC5D2DF), textMuted: hex(0x9BABBA), accentBlue: hex(0xA7B2BE), accentCyan: hex(0x8E9DB0), accentGold: hex(0xAA8E54), accentRose: hex(0xC08A6A))
+        case .cinema:
+            return ThemePalette(background: hex(0x0B0910), backgroundAlt: hex(0x1C1321), panel: hex(0x241716), panelBorder: hex(0xDAA75F), textPrimary: hex(0xF6EFE6), textSecondary: hex(0xE7D4BD), textMuted: hex(0xB39B84), accentBlue: hex(0xC27078), accentCyan: hex(0xDAA75F), accentGold: hex(0xEEC36E), accentRose: hex(0xBA425F))
+        case .scifi:
+            return ThemePalette(background: hex(0x050D1A), backgroundAlt: hex(0x0D192D), panel: hex(0x0D192D), panelBorder: hex(0x7ED2FF), textPrimary: hex(0xE9F5FF), textSecondary: hex(0xCBDEEE), textMuted: hex(0x8AA3BE), accentBlue: hex(0x2CD4FF), accentCyan: hex(0x7884FF), accentGold: hex(0x6ED6FF), accentRose: hex(0x9C7BFF))
+        case .cyberwitch:
+            return ThemePalette(background: hex(0x070916), backgroundAlt: hex(0x141230), panel: hex(0x141230), panelBorder: hex(0xC26EFF), textPrimary: hex(0xEDF2FF), textSecondary: hex(0xCEDAF6), textMuted: hex(0x9AA3D6), accentBlue: hex(0x72DBFF), accentCyan: hex(0x4AD6FF), accentGold: hex(0xE0B0FF), accentRose: hex(0xAE64FF))
+        case .fantasy:
+            return ThemePalette(background: hex(0x08110F), backgroundAlt: hex(0x112320), panel: hex(0x112320), panelBorder: hex(0x93D18A), textPrimary: hex(0xE9F4EA), textSecondary: hex(0xCEE0D3), textMuted: hex(0x9BB3A2), accentBlue: hex(0x5CC78F), accentCyan: hex(0x93D18A), accentGold: hex(0xEEB554), accentRose: hex(0xE0B058))
+        case .anime:
+            return ThemePalette(background: hex(0x08081A), backgroundAlt: hex(0x22123A), panel: hex(0x22123A), panelBorder: hex(0xF26CD1), textPrimary: hex(0xF1F5FF), textSecondary: hex(0xE3D7F6), textMuted: hex(0xB0A5D6), accentBlue: hex(0x6ABBFF), accentCyan: hex(0x58D8FF), accentGold: hex(0xFF5CBD), accentRose: hex(0xFF5CB0))
+        case .arcade:
+            return ThemePalette(background: hex(0x050912), backgroundAlt: hex(0x0A181E), panel: hex(0x0A181E), panelBorder: hex(0x5BFFCB), textPrimary: hex(0xE6FAFF), textSecondary: hex(0xBDE1EE), textMuted: hex(0x8AB0BE), accentBlue: hex(0x54E9FF), accentCyan: hex(0x4CFFB0), accentGold: hex(0xFF4CE6), accentRose: hex(0xFF4CE6))
+        }
+    }
+}
+
+/// Live theme + font-size settings, persisted and shared across the app.
+@MainActor
+public final class ThemeSettings: ObservableObject {
+    public static let shared = ThemeSettings()
+
+    @AppStorage("ai_news_vibe") public var vibeRaw: String = AINewsVibe.dark.rawValue {
+        didSet { apply() }
+    }
+    @AppStorage("ai_news_font_size") public var fontSizeRaw: String = AINewsFontSize.medium.rawValue {
+        didSet { apply() }
+    }
+
+    /// Bumped on every change so views can key on it and fully re-render.
+    @Published public private(set) var revision = 0
+
+    public var vibe: AINewsVibe {
+        get { AINewsVibe(rawValue: vibeRaw) ?? .dark }
+        set { vibeRaw = newValue.rawValue }
+    }
+    public var fontSize: AINewsFontSize {
+        get { AINewsFontSize(rawValue: fontSizeRaw) ?? .medium }
+        set { fontSizeRaw = newValue.rawValue }
+    }
+
+    public init() {
+        AINewsTheme.palette = (AINewsVibe(rawValue: vibeRaw) ?? .dark).palette
+        AINewsTheme.fontScale = (AINewsFontSize(rawValue: fontSizeRaw) ?? .medium).scale
+    }
+
+    private func apply() {
+        AINewsTheme.palette = vibe.palette
+        AINewsTheme.fontScale = fontSize.scale
+        revision += 1
+        objectWillChange.send()
+    }
+}
+
+public enum AINewsFontSize: String, CaseIterable, Sendable {
+    case small, medium, large, xlarge
+
+    public var displayName: String {
+        switch self {
+        case .small: return "Small"
+        case .medium: return "Medium"
+        case .large: return "Large"
+        case .xlarge: return "Extra Large"
+        }
+    }
+    /// Multiplier applied to explicit font sizes.
+    public var scale: CGFloat {
+        switch self {
+        case .small: return 0.9
+        case .medium: return 1.0
+        case .large: return 1.12
+        case .xlarge: return 1.24
+        }
+    }
+    /// Matching Dynamic Type size so semantic fonts (.headline/.body/.caption) scale too.
+    public var dynamicTypeSize: DynamicTypeSize {
+        switch self {
+        case .small: return .small
+        case .medium: return .large
+        case .large: return .xLarge
+        case .xlarge: return .xxxLarge
+        }
+    }
+}
 
 public enum AINewsTheme {
-    public static let background = Color(red: 7 / 255, green: 12 / 255, blue: 26 / 255)
-    public static let backgroundAlt = Color(red: 12 / 255, green: 21 / 255, blue: 44 / 255)
-    public static let panel = Color(red: 16 / 255, green: 24 / 255, blue: 42 / 255)
-    public static let panelBorder = Color(red: 59 / 255, green: 97 / 255, blue: 185 / 255)
-    public static let textPrimary = Color(red: 231 / 255, green: 239 / 255, blue: 255 / 255)
-    public static let textSecondary = Color(red: 154 / 255, green: 171 / 255, blue: 205 / 255)
-    public static let textMuted = Color(red: 119 / 255, green: 135 / 255, blue: 171 / 255)
-    public static let accentBlue = Color(red: 114 / 255, green: 176 / 255, blue: 255 / 255)
-    public static let accentCyan = Color(red: 34 / 255, green: 220 / 255, blue: 183 / 255)
-    public static let accentGold = Color(red: 255 / 255, green: 186 / 255, blue: 69 / 255)
-    public static let accentRose = Color(red: 255 / 255, green: 110 / 255, blue: 150 / 255)
+    /// The active palette. Swapped by ThemeSettings; views re-read it on re-render.
+    public static var palette: ThemePalette = AINewsVibe.dark.palette
+    /// Multiplier for explicit `.system(size:)` fonts.
+    public static var fontScale: CGFloat = 1.0
 
-    public static let cardGradient = LinearGradient(
-        colors: [backgroundAlt, panel],
-        startPoint: .topLeading,
-        endPoint: .bottomTrailing
-    )
+    public static var background: Color { palette.background }
+    public static var backgroundAlt: Color { palette.backgroundAlt }
+    public static var panel: Color { palette.panel }
+    public static var panelBorder: Color { palette.panelBorder }
+    public static var textPrimary: Color { palette.textPrimary }
+    public static var textSecondary: Color { palette.textSecondary }
+    public static var textMuted: Color { palette.textMuted }
+    public static var accentBlue: Color { palette.accentBlue }
+    public static var accentCyan: Color { palette.accentCyan }
+    public static var accentGold: Color { palette.accentGold }
+    public static var accentRose: Color { palette.accentRose }
+
+    public static var cardGradient: LinearGradient {
+        LinearGradient(colors: [backgroundAlt, panel], startPoint: .topLeading, endPoint: .bottomTrailing)
+    }
+
+    /// A size-scaled system font, so explicit sizes honor the font-size setting.
+    public static func font(_ size: CGFloat, weight: Font.Weight = .regular) -> Font {
+        .system(size: size * fontScale, weight: weight)
+    }
 }
 
 public extension View {
