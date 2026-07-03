@@ -184,6 +184,53 @@ public struct WidgetCategoriesResponse: Codable, Sendable {
     public var items: [WidgetCategory]
 }
 
+public struct WidgetMasterCategory: Codable, Sendable {
+    public var id: Int
+    public var name: String
+    public var description: String
+    public var feedUrls: [String]
+    public var storyIds: [String]
+    public var tags: [String]
+    public var hidden: Bool
+    public var sortOrder: Int
+    public var preferredCount: Int
+    public var expandedCount: Int
+    public var activeCount: Int
+    public var pinnedStoryId: String
+    public var pinnedFeedUrl: String
+    public var createdAt: String?
+    public var updatedAt: String?
+    public var stories: [WidgetStory]
+
+    public var category: WidgetCategory {
+        WidgetCategory(
+            id: id,
+            name: name,
+            description: description,
+            feedUrls: feedUrls,
+            storyIds: storyIds,
+            tags: tags,
+            hidden: hidden,
+            sortOrder: sortOrder,
+            preferredCount: preferredCount,
+            expandedCount: expandedCount,
+            activeCount: activeCount,
+            pinnedStoryId: pinnedStoryId,
+            pinnedFeedUrl: pinnedFeedUrl,
+            createdAt: createdAt ?? "",
+            updatedAt: updatedAt ?? ""
+        )
+    }
+}
+
+public struct WidgetMasterResponse: Codable, Sendable {
+    public var ok: Bool
+    public var categories: [WidgetMasterCategory]
+    public var visibleCategories: Int
+    public var lastRefreshMs: Int64
+    public var imagesEnabled: Bool
+}
+
 public struct WidgetCategoryMutationResponse: Codable, Sendable {
     public var ok: Bool
     public var item: WidgetCategory?

@@ -70,6 +70,10 @@ public struct APIClient: Sendable {
         try await send(path: "/api/widget/bootstrap")
     }
 
+    public func fetchMaster() async throws -> WidgetMasterResponse {
+        try await send(path: "/api/widget/master")
+    }
+
     public func fetchRuntimeConfig() async throws -> RuntimeConfigResponse {
         try await send(path: "/api/runtime/config")
     }

@@ -98,6 +98,7 @@ public final class WidgetAppState: ObservableObject {
             if selectFirstCategory || self.selectedCategoryID == nil || !self.categories.contains(where: { $0.id == self.selectedCategoryID }) {
                 self.selectedCategoryID = self.categories.first(where: { !$0.hidden })?.id ?? self.categories.first?.id
             }
+            try await self.refreshAllCategorySnapshots(using: api)
             await self.loadRuntimeContext(suppressUnauthorizedAlert: suppressUnauthorizedAlert)
             await self.loadStoriesForSelectedCategory(suppressUnauthorizedAlert: suppressUnauthorizedAlert)
             self.statusMessage = "Updated \(self.categories.count) categories."
@@ -337,6 +338,23 @@ public final class WidgetAppState: ObservableObject {
             snapshot.storiesByCategory[String(selectedCategoryID)] = stories
         }
         try? snapshotStore.saveSnapshot(snapshot)
+    }
+
+    private func refreshAllCategorySnapshots(using api: APIClient) async throws {
+        let master = try await api.fetchMaster()
+        var snapshot = snapshotStore.loadSnapshot()
+        snapshot.lastUpdated = Date()
+        snapshot.categories = master.categories.map(\.category)
+        for category in master.categories {
+            snapshot.storiesByCategory[String(category.id)] = category.stories
+        }
+        if let selectedCategoryID {
+            snapshot.activeCategoryID = selectedCategoryID
+            if let selectedStories = snapshot.storiesByCategory[String(selectedCategoryID)] {
+                stories = selectedStories
+            }
+        }
+        try snapshotStore.saveSnapshot(snapshot)
     }
 
     private func processPendingCommands() async {
