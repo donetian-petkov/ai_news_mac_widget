@@ -38,6 +38,11 @@ public struct PinStoryIntent: AppIntent {
     @Parameter(title: "Feed URL") public var feedURL: String
 
     public init() {}
+    public init(categoryID: Int, storyID: String, feedURL: String) {
+        self.categoryID = categoryID
+        self.storyID = storyID
+        self.feedURL = feedURL
+    }
 
     public func perform() async throws -> some IntentResult {
         try await persist(WidgetCommand(kind: .pinStory, categoryID: categoryID, storyID: storyID, feedURL: feedURL))

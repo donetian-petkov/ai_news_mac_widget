@@ -14,6 +14,11 @@ struct RootView: View {
             }
         }
         .background(AINewsTheme.background.ignoresSafeArea())
+        .onOpenURL { url in
+            Task {
+                await state.handleIncomingURL(url)
+            }
+        }
         .alert("Something needs attention", isPresented: Binding(
             get: { state.errorMessage != nil },
             set: { if !$0 { state.errorMessage = nil } }

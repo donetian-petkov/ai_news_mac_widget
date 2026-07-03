@@ -117,6 +117,16 @@ struct MasterWidgetProvider: TimelineProvider {
 struct CategoryWidgetView: View {
     let entry: CategoryWidgetEntry
 
+    private func storyURL(_ story: WidgetStory, action: WidgetDeepLinkAction = .open) -> URL? {
+        guard let category = entry.category else { return nil }
+        return WidgetDeepLink.storyURL(
+            categoryID: category.id,
+            storyID: story.id,
+            feedURL: story.feedUrl,
+            action: action
+        )
+    }
+
     var body: some View {
         if let category = entry.category {
             VStack(alignment: .leading, spacing: 10) {
@@ -131,16 +141,41 @@ struct CategoryWidgetView: View {
                     .buttonStyle(.plain)
                 }
 
-                ForEach(entry.stories.prefix(category.activeCount), id: \.storyKey) { story in
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text(story.title)
-                            .font(.subheadline.weight(.semibold))
-                            .foregroundStyle(AINewsTheme.accentBlue)
-                            .lineLimit(2)
-                        Text(story.summary ?? story.source ?? story.feedUrl)
-                            .font(.caption)
-                            .foregroundStyle(AINewsTheme.textSecondary)
-                            .lineLimit(2)
+                ForEach(Array(entry.stories.prefix(category.activeCount).enumerated()), id: \.element.storyKey) { index, story in
+                    VStack(alignment: .leading, spacing: 6) {
+                        Link(destination: storyURL(story) ?? URL(string: "ainewswidget://story")!) {
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text(story.title)
+                                    .font(.subheadline.weight(.semibold))
+                                    .foregroundStyle(AINewsTheme.accentBlue)
+                                    .lineLimit(2)
+                                Text(story.summary ?? story.source ?? story.feedUrl)
+                                    .font(.caption)
+                                    .foregroundStyle(AINewsTheme.textSecondary)
+                                    .lineLimit(2)
+                            }
+                        }
+                        .buttonStyle(.plain)
+
+                        if index == 0 {
+                            HStack(spacing: 12) {
+                                Link(destination: storyURL(story, action: .summary) ?? URL(string: "ainewswidget://story")!) {
+                                    Image(systemName: "text.bubble")
+                                }
+                                Link(destination: storyURL(story, action: .research) ?? URL(string: "ainewswidget://story")!) {
+                                    Image(systemName: "sparkles.magnifyingglass")
+                                }
+                                Link(destination: storyURL(story, action: .translation) ?? URL(string: "ainewswidget://story")!) {
+                                    Image(systemName: "globe")
+                                }
+                                Button(intent: PinStoryIntent(categoryID: category.id, storyID: story.id, feedURL: story.feedUrl)) {
+                                    Image(systemName: category.isPinned(story) ? "pin.fill" : "pin")
+                                }
+                                .buttonStyle(.plain)
+                            }
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(AINewsTheme.accentCyan)
+                        }
                     }
                     if story.storyKey != entry.stories.prefix(category.activeCount).last?.storyKey {
                         Divider()
@@ -194,15 +229,22 @@ struct MasterWidgetView: View {
 
             ForEach(Array(visibleCategories.prefix(4)), id: \.id) { category in
                 let topStory = entry.snapshot.storiesByCategory[String(category.id)]?.first
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(category.name)
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(AINewsTheme.accentCyan)
-                    Text(topStory?.title ?? "No stories cached yet")
-                        .font(.caption)
-                        .foregroundStyle(AINewsTheme.textSecondary)
-                        .lineLimit(2)
+                Link(
+                    destination: topStory.flatMap {
+                        WidgetDeepLink.storyURL(categoryID: category.id, storyID: $0.id, feedURL: $0.feedUrl)
+                    } ?? URL(string: "ainewswidget://story")!
+                ) {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(category.name)
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(AINewsTheme.accentCyan)
+                        Text(topStory?.title ?? "No stories cached yet")
+                            .font(.caption)
+                            .foregroundStyle(AINewsTheme.textSecondary)
+                            .lineLimit(2)
+                    }
                 }
+                .buttonStyle(.plain)
                 if category.id != visibleCategories.prefix(4).last?.id {
                     Divider()
                         .overlay(AINewsTheme.panelBorder.opacity(0.35))

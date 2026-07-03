@@ -23,13 +23,13 @@ public final class WidgetAppState: ObservableObject {
     private var isProcessingCommands = false
 
     public init(
-        sessionStore: SessionStore = .shared,
-        snapshotStore: SnapshotStore = .shared
+        sessionStore: SessionStore? = nil,
+        snapshotStore: SnapshotStore? = nil
     ) {
-        self.sessionStore = sessionStore
-        self.snapshotStore = snapshotStore
-        self.session = sessionStore.session
-        let snapshot = snapshotStore.loadSnapshot()
+        self.sessionStore = sessionStore ?? .shared
+        self.snapshotStore = snapshotStore ?? .shared
+        self.session = self.sessionStore.session
+        let snapshot = self.snapshotStore.loadSnapshot()
         self.categories = snapshot.categories
         self.selectedCategoryID = snapshot.activeCategoryID ?? snapshot.categories.first?.id
         self.stories = snapshot.activeCategoryID.flatMap { snapshot.storiesByCategory[String($0)] } ?? []
@@ -274,6 +274,45 @@ public final class WidgetAppState: ObservableObject {
                 await processPendingCommands()
             }
             try? await Task.sleep(nanoseconds: 2_000_000_000)
+        }
+    }
+
+    public func handleIncomingURL(_ url: URL) async {
+        guard url.scheme == "ainewswidget", url.host == "story" else { return }
+        guard session != nil else { return }
+        guard let components = URLComponents(url: url, resolvingAgainstBaseURL: false) else { return }
+
+        let categoryID = components.queryItems?.first(where: { $0.name == "category" })?.value.flatMap(Int.init)
+        let storyID = components.queryItems?.first(where: { $0.name == "id" })?.value
+        let feedURL = components.queryItems?.first(where: { $0.name == "feed" })?.value
+        let action = components.queryItems?.first(where: { $0.name == "action" })?.value
+            .flatMap(WidgetDeepLinkAction.init(rawValue:))
+            ?? .open
+
+        if let categoryID, let category = categories.first(where: { $0.id == categoryID }) {
+            selectedCategoryID = category.id
+            await loadStoriesForSelectedCategory(limit: category.activeCount, suppressUnauthorizedAlert: true)
+        }
+
+        guard
+            let storyID,
+            let feedURL,
+            let story = stories.first(where: { $0.id == storyID && $0.feedUrl == feedURL })
+        else {
+            return
+        }
+
+        scrollToStoryID = story.id
+
+        switch action {
+        case .open:
+            break
+        case .summary:
+            await triggerStoryAction(.summary, story: story, recordCommand: false)
+        case .research:
+            await triggerStoryAction(.research, story: story, recordCommand: false)
+        case .translation:
+            await triggerStoryAction(.translation, story: story, recordCommand: false)
         }
     }
 

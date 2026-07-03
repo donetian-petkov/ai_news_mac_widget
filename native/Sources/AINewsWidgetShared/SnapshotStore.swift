@@ -1,4 +1,7 @@
 import Foundation
+#if canImport(WidgetKit)
+import WidgetKit
+#endif
 
 @MainActor
 public final class SnapshotStore {
@@ -35,6 +38,7 @@ public final class SnapshotStore {
         try fm.createDirectory(at: rootDirectory, withIntermediateDirectories: true)
         let data = try encoder.encode(snapshot)
         try data.write(to: snapshotURL, options: .atomic)
+        reloadWidgetTimelines()
     }
 
     public func appendCommand(_ command: WidgetCommand) throws {
@@ -43,6 +47,7 @@ public final class SnapshotStore {
         commands.append(command)
         let data = try encoder.encode(commands)
         try data.write(to: commandsURL, options: .atomic)
+        reloadWidgetTimelines()
     }
 
     public func loadCommands() -> [WidgetCommand] {
@@ -56,11 +61,20 @@ public final class SnapshotStore {
         try fm.createDirectory(at: rootDirectory, withIntermediateDirectories: true)
         let data = try encoder.encode([WidgetCommand]())
         try data.write(to: commandsURL, options: .atomic)
+        reloadWidgetTimelines()
     }
 
     private static func sharedContainerURL(fileManager: FileManager) -> URL? {
         fileManager
             .containerURL(forSecurityApplicationGroupIdentifier: appGroupIdentifier)?
             .appendingPathComponent("AINewsMacWidget", isDirectory: true)
+    }
+
+    private func reloadWidgetTimelines() {
+        #if canImport(WidgetKit)
+        if #available(macOS 14.0, *) {
+            WidgetCenter.shared.reloadAllTimelines()
+        }
+        #endif
     }
 }

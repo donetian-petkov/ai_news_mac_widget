@@ -326,6 +326,13 @@ public enum WidgetStoryAction: String, CaseIterable, Codable, Sendable {
     case refresh
 }
 
+public enum WidgetDeepLinkAction: String, Codable, Sendable {
+    case open
+    case summary
+    case research
+    case translation
+}
+
 public struct WidgetCommand: Codable, Equatable, Hashable, Identifiable, Sendable {
     public enum Kind: String, Codable, Sendable {
         case refreshCategory
@@ -359,5 +366,25 @@ public struct WidgetCommand: Codable, Equatable, Hashable, Identifiable, Sendabl
         self.storyID = storyID
         self.feedURL = feedURL
         self.createdAt = createdAt
+    }
+}
+
+public enum WidgetDeepLink {
+    public static func storyURL(
+        categoryID: Int,
+        storyID: String,
+        feedURL: String,
+        action: WidgetDeepLinkAction = .open
+    ) -> URL? {
+        var components = URLComponents()
+        components.scheme = "ainewswidget"
+        components.host = "story"
+        components.queryItems = [
+            URLQueryItem(name: "category", value: String(categoryID)),
+            URLQueryItem(name: "id", value: storyID),
+            URLQueryItem(name: "feed", value: feedURL),
+            URLQueryItem(name: "action", value: action.rawValue)
+        ]
+        return components.url
     }
 }
