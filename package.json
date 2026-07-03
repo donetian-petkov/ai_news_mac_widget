@@ -16,9 +16,9 @@
     "secrets:init": "node scripts/ensure-local-secrets.mjs",
     "prisma:init": "node scripts/ensure-local-db.mjs",
     "build:native": "cd native && swift build",
-    "test:native": "cd native && swift test"
-    ,
+    "test:native": "cd native && swift test",
     "install:app": "bash scripts/install-mac-app.sh",
-    "open:app": "open \"$HOME/Applications/AI News Widget.app\""
+    "open:app": "bash scripts/open-mac-app.sh",
+    "widget:doctor": "bash scripts/widget-doctor.sh"
   }
 }
