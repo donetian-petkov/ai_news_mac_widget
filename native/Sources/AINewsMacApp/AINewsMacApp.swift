@@ -7,6 +7,7 @@ extension Notification.Name {
     static let aiNewsRefreshRequested = Notification.Name("AINewsRefreshRequested")
     static let aiNewsOpenWidgetHelp = Notification.Name("AINewsOpenWidgetHelp")
     static let aiNewsOpenWorkspace = Notification.Name("AINewsOpenWorkspace")
+    static let aiNewsToggleFloatingWidget = Notification.Name("AINewsToggleFloatingWidget")
 }
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
@@ -29,6 +30,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         )
         NSApp.applicationIconImage = icon
         configureStatusItem(icon: icon)
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(toggleFloatingWidget),
+            name: .aiNewsToggleFloatingWidget,
+            object: nil
+        )
         NSApp.activate(ignoringOtherApps: true)
         showMainWindow()
     }

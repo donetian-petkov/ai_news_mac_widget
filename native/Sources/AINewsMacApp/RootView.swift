@@ -265,6 +265,13 @@ private struct DashboardView: View {
             }
             .buttonStyle(.bordered)
 
+            Button("Floating Widget") {
+                NotificationCenter.default.post(name: .aiNewsToggleFloatingWidget, object: nil)
+            }
+            .buttonStyle(.borderedProminent)
+            .tint(AINewsTheme.accentGold)
+            .help("Open an always-on-top, scrollable panel for the selected category")
+
             Button("Sign out") {
                 state.signOut()
             }
