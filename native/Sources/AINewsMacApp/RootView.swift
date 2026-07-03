@@ -494,6 +494,10 @@ private struct StoryCardView: View {
 
 private struct SettingsView: View {
     @EnvironmentObject private var state: WidgetAppState
+    @State private var newCategoryName = ""
+    @State private var newCategoryDescription = ""
+    @State private var newCategoryFeedURLs = Set<String>()
+    @State private var editingCategoryID: Int?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 20) {
@@ -536,9 +540,34 @@ private struct SettingsView: View {
             }
 
             VStack(alignment: .leading, spacing: 12) {
-                Text("Widget categories")
-                    .font(.headline)
-                    .foregroundStyle(AINewsTheme.textSecondary)
+                HStack {
+                    Text("Widget categories")
+                        .font(.headline)
+                        .foregroundStyle(AINewsTheme.textSecondary)
+                    Spacer()
+                    Button("Show all") {
+                        Task { await state.setAllCategoryVisibility(hidden: false) }
+                    }
+                    .buttonStyle(.bordered)
+                    Button("Hide all") {
+                        Task { await state.setAllCategoryVisibility(hidden: true) }
+                    }
+                    .buttonStyle(.bordered)
+                    Button("Reset all") {
+                        Task { await state.setAllCategoryCounts(expanded: false) }
+                    }
+                    .buttonStyle(.bordered)
+                    Button("Expand all") {
+                        Task { await state.setAllCategoryCounts(expanded: true) }
+                    }
+                    .buttonStyle(.bordered)
+                    Button("Refresh visible") {
+                        Task { await state.refreshVisibleCategories() }
+                    }
+                    .buttonStyle(.bordered)
+                }
+
+                createCategoryPanel
 
                 ScrollView {
                     LazyVStack(spacing: 12) {
@@ -696,22 +725,114 @@ private struct SettingsView: View {
         .aiNewsPanelStyle()
     }
 
+    private var availableFeedURLs: [String] {
+        state.runtimeConfig?.feeds.map(\.url) ?? []
+    }
+
+    private func feedLabel(for url: String) -> String {
+        state.runtimeConfig?.feeds.first(where: { $0.url == url })?.label ?? url
+    }
+
+    private var createCategoryPanel: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Create category")
+                .font(.headline)
+                .foregroundStyle(AINewsTheme.textPrimary)
+
+            TextField("Category name", text: $newCategoryName)
+                .textFieldStyle(.roundedBorder)
+
+            TextField("Description", text: $newCategoryDescription)
+                .textFieldStyle(.roundedBorder)
+
+            feedMembershipEditor(selection: $newCategoryFeedURLs)
+
+            HStack {
+                Button("Create category") {
+                    let selectedFeeds = availableFeedURLs.filter { newCategoryFeedURLs.contains($0) }
+                    Task {
+                        await state.createCategory(
+                            name: newCategoryName.trimmingCharacters(in: .whitespacesAndNewlines),
+                            description: newCategoryDescription.trimmingCharacters(in: .whitespacesAndNewlines),
+                            feedUrls: selectedFeeds
+                        )
+                        newCategoryName = ""
+                        newCategoryDescription = ""
+                        newCategoryFeedURLs = []
+                    }
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(AINewsTheme.accentBlue)
+                .disabled(newCategoryName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || newCategoryFeedURLs.isEmpty)
+
+                Text("\(newCategoryFeedURLs.count) feeds selected")
+                    .font(.caption)
+                    .foregroundStyle(AINewsTheme.textMuted)
+            }
+        }
+        .padding(16)
+        .aiNewsPanelStyle()
+    }
+
     private func categoryManagementRow(_ category: WidgetCategory) -> some View {
         VStack(alignment: .leading, spacing: 10) {
+            let feedSelection = Binding<Set<String>>(
+                get: { Set(category.feedUrls) },
+                set: { updated in
+                    var next = category
+                    next.feedUrls = availableFeedURLs.filter { updated.contains($0) }
+                    Task { await state.saveCategory(next) }
+                }
+            )
+
             HStack(alignment: .center) {
                 VStack(alignment: .leading, spacing: 4) {
-                    Text(category.name)
-                        .font(.headline)
-                        .foregroundStyle(AINewsTheme.textPrimary)
-                    Text(category.hidden ? "Hidden from widgets" : "\(category.activeCount)-story widget view")
-                        .font(.caption)
-                        .foregroundStyle(AINewsTheme.textMuted)
+                    if editingCategoryID == category.id {
+                        TextField("Category name", text: Binding(
+                            get: { category.name },
+                            set: { value in
+                                var next = category
+                                next.name = value
+                                Task { await state.saveCategory(next) }
+                            }
+                        ))
+                        .textFieldStyle(.roundedBorder)
+
+                        TextField("Description", text: Binding(
+                            get: { category.description },
+                            set: { value in
+                                var next = category
+                                next.description = value
+                                Task { await state.saveCategory(next) }
+                            }
+                        ))
+                        .textFieldStyle(.roundedBorder)
+                    } else {
+                        Text(category.name)
+                            .font(.headline)
+                            .foregroundStyle(AINewsTheme.textPrimary)
+                        Text(category.hidden ? "Hidden from widgets" : "\(category.activeCount)-story widget view")
+                            .font(.caption)
+                            .foregroundStyle(AINewsTheme.textMuted)
+                    }
                 }
                 Spacer()
+                Button(editingCategoryID == category.id ? "Done" : "Edit") {
+                    editingCategoryID = editingCategoryID == category.id ? nil : category.id
+                }
+                .buttonStyle(.bordered)
                 Button(category.hidden ? "Show" : "Hide") {
                     Task { await state.toggleVisibility(for: category) }
                 }
                 .buttonStyle(.bordered)
+                Button("Remove", role: .destructive) {
+                    Task { await state.archiveCategory(category) }
+                }
+                .buttonStyle(.bordered)
+            }
+
+            if editingCategoryID == category.id {
+                feedMembershipEditor(selection: feedSelection)
             }
 
             HStack(spacing: 10) {
@@ -742,6 +863,36 @@ private struct SettingsView: View {
         }
         .padding(16)
         .aiNewsPanelStyle()
+    }
+
+    private func feedMembershipEditor(selection: Binding<Set<String>>) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Feeds")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(AINewsTheme.textMuted)
+
+            LazyVGrid(columns: [GridItem(.adaptive(minimum: 180), spacing: 10)], spacing: 10) {
+                ForEach(availableFeedURLs, id: \.self) { feedURL in
+                    Toggle(isOn: Binding(
+                        get: { selection.wrappedValue.contains(feedURL) },
+                        set: { enabled in
+                            var next = selection.wrappedValue
+                            if enabled {
+                                next.insert(feedURL)
+                            } else {
+                                next.remove(feedURL)
+                            }
+                            selection.wrappedValue = next
+                        }
+                    )) {
+                        Text(feedLabel(for: feedURL))
+                            .font(.caption)
+                            .foregroundStyle(AINewsTheme.textPrimary)
+                    }
+                    .toggleStyle(.checkbox)
+                }
+            }
+        }
     }
 }
 

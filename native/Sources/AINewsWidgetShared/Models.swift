@@ -236,6 +236,57 @@ public struct WidgetCategoryMutationResponse: Codable, Sendable {
     public var item: WidgetCategory?
 }
 
+public struct FeatureItemResponse: Codable, Sendable {
+    public var ok: Bool
+    public var item: FeatureItem?
+}
+
+public struct FeatureItem: Codable, Sendable {
+    public var id: Int
+    public var userId: Int
+    public var kind: String
+    public var title: String
+    public var payload: WidgetCategoryPayload
+    public var archived: Bool
+    public var createdAt: String
+    public var updatedAt: String
+
+    public var category: WidgetCategory {
+        WidgetCategory(
+            id: id,
+            name: title,
+            description: payload.description,
+            feedUrls: payload.feedUrls,
+            storyIds: payload.storyIds,
+            tags: payload.tags,
+            hidden: payload.hidden,
+            sortOrder: payload.sortOrder,
+            preferredCount: payload.preferredCount,
+            expandedCount: payload.expandedCount,
+            activeCount: payload.activeCount,
+            pinnedStoryId: payload.pinnedStoryId,
+            pinnedFeedUrl: payload.pinnedFeedUrl,
+            createdAt: createdAt,
+            updatedAt: updatedAt
+        )
+    }
+}
+
+public struct WidgetCategoryPayload: Codable, Equatable, Hashable, Sendable {
+    public var name: String
+    public var description: String
+    public var feedUrls: [String]
+    public var storyIds: [String]
+    public var tags: [String]
+    public var hidden: Bool
+    public var sortOrder: Int
+    public var preferredCount: Int
+    public var expandedCount: Int
+    public var activeCount: Int
+    public var pinnedStoryId: String
+    public var pinnedFeedUrl: String
+}
+
 public struct StoryActionResponse: Codable, Sendable {
     public var ok: Bool
     public var action: String

@@ -184,6 +184,116 @@ public final class WidgetAppState: ObservableObject {
         }
     }
 
+    public func createCategory(
+        name: String,
+        description: String,
+        feedUrls: [String]
+    ) async {
+        await runBusy("Creating category...") {
+            let api = try self.makeAPIClient()
+            let nextSortOrder = (self.categories.map(\.sortOrder).max() ?? -1) + 1
+            let category = WidgetCategory(
+                id: 0,
+                name: name,
+                description: description,
+                feedUrls: feedUrls,
+                sortOrder: nextSortOrder
+            )
+            let created = try await api.createCategory(category)
+            self.updateCategory(created)
+            self.selectedCategoryID = created.id
+            await self.loadStoriesForSelectedCategory(limit: created.activeCount)
+            self.statusMessage = "Created \(created.name)."
+        }
+    }
+
+    public func saveCategory(_ category: WidgetCategory) async {
+        await runBusy("Saving category...") {
+            let api = try self.makeAPIClient()
+            let updated = try await api.updateCategory(category)
+            self.updateCategory(updated)
+            if self.selectedCategoryID == updated.id {
+                await self.loadStoriesForSelectedCategory(limit: updated.activeCount)
+            }
+            self.statusMessage = "Saved \(updated.name)."
+        }
+    }
+
+    public func archiveCategory(_ category: WidgetCategory) async {
+        await runBusy("Removing category...") {
+            let api = try self.makeAPIClient()
+            try await api.archiveCategory(categoryID: category.id)
+            self.categories.removeAll { $0.id == category.id }
+            if self.selectedCategoryID == category.id {
+                self.selectedCategoryID = self.categories.first(where: { !$0.hidden })?.id ?? self.categories.first?.id
+                await self.loadStoriesForSelectedCategory(suppressUnauthorizedAlert: true)
+            }
+            self.saveSnapshot()
+            self.statusMessage = "Removed \(category.name)."
+        }
+    }
+
+    public func setAllCategoryVisibility(hidden: Bool) async {
+        let targets = categories.filter { $0.hidden != hidden }
+        guard !targets.isEmpty else { return }
+        await runBusy(hidden ? "Hiding categories..." : "Showing categories...") {
+            let api = try self.makeAPIClient()
+            var updatedCategories = self.categories
+            for category in targets {
+                let updated = try await api.setCategoryVisibility(categoryID: category.id, hidden: hidden)
+                if let index = updatedCategories.firstIndex(where: { $0.id == updated.id }) {
+                    updatedCategories[index] = updated
+                }
+            }
+            self.categories = updatedCategories.sorted {
+                $0.sortOrder == $1.sortOrder ? $0.name < $1.name : $0.sortOrder < $1.sortOrder
+            }
+            if hidden, let selected = self.selectedCategory, selected.hidden {
+                self.selectedCategoryID = self.categories.first(where: { !$0.hidden })?.id ?? self.categories.first?.id
+                await self.loadStoriesForSelectedCategory(suppressUnauthorizedAlert: true)
+            }
+            self.saveSnapshot()
+            self.statusMessage = hidden ? "All categories hidden from widgets." : "All categories visible in widgets."
+        }
+    }
+
+    public func setAllCategoryCounts(expanded: Bool) async {
+        let targets = categories.filter { expanded ? $0.activeCount != $0.expandedCount : $0.activeCount != $0.preferredCount }
+        guard !targets.isEmpty else { return }
+        await runBusy(expanded ? "Expanding categories..." : "Resetting categories...") {
+            let api = try self.makeAPIClient()
+            var updatedCategories = self.categories
+            for category in targets {
+                let updated = try await (expanded
+                    ? api.expandCategory(categoryID: category.id)
+                    : api.resetCategory(categoryID: category.id))
+                if let index = updatedCategories.firstIndex(where: { $0.id == updated.id }) {
+                    updatedCategories[index] = updated
+                }
+            }
+            self.categories = updatedCategories.sorted {
+                $0.sortOrder == $1.sortOrder ? $0.name < $1.name : $0.sortOrder < $1.sortOrder
+            }
+            if let selected = self.selectedCategory {
+                await self.loadStoriesForSelectedCategory(limit: selected.activeCount)
+            }
+            self.saveSnapshot()
+            self.statusMessage = expanded ? "Expanded all widget categories to 10 stories." : "Reset all widget categories to 5 stories."
+        }
+    }
+
+    public func refreshVisibleCategories() async {
+        let targets = categories.filter { !$0.hidden }
+        guard !targets.isEmpty else { return }
+        await runBusy("Refreshing visible categories...") {
+            let api = try self.makeAPIClient()
+            for category in targets {
+                try await api.refreshCategory(category)
+            }
+            self.statusMessage = "Refresh requested for \(targets.count) visible categories."
+        }
+    }
+
     public func triggerStoryAction(_ action: WidgetStoryAction, story: WidgetStory) async {
         await triggerStoryAction(action, story: story, recordCommand: true)
     }

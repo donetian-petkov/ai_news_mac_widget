@@ -142,6 +142,30 @@ public struct APIClient: Sendable {
         return try await send(path: path)
     }
 
+    public func createCategory(_ category: WidgetCategory) async throws -> WidgetCategory {
+        let response: FeatureItemResponse = try await send(
+            path: "/api/collections",
+            method: "POST",
+            body: categoryPayload(category)
+        )
+        guard let item = response.item else { throw APIClientError.invalidResponse }
+        return item.category
+    }
+
+    public func updateCategory(_ category: WidgetCategory) async throws -> WidgetCategory {
+        let response: FeatureItemResponse = try await send(
+            path: "/api/collections/\(category.id)",
+            method: "PUT",
+            body: categoryPayload(category)
+        )
+        guard let item = response.item else { throw APIClientError.invalidResponse }
+        return item.category
+    }
+
+    public func archiveCategory(categoryID: Int) async throws {
+        let _: BasicSuccessResponse = try await send(path: "/api/collections/\(categoryID)", method: "DELETE")
+    }
+
     public func setCategoryVisibility(categoryID: Int, hidden: Bool) async throws -> WidgetCategory {
         struct Body: Codable { var hidden: Bool }
         let response: WidgetCategoryMutationResponse = try await send(path: "/api/widget/categories/\(categoryID)/visibility", method: "POST", body: Body(hidden: hidden))
@@ -269,5 +293,22 @@ public struct APIClient: Sendable {
             }
         }
         return url
+    }
+
+    private func categoryPayload(_ category: WidgetCategory) -> WidgetCategoryPayload {
+        WidgetCategoryPayload(
+            name: category.name,
+            description: category.description,
+            feedUrls: category.feedUrls,
+            storyIds: category.storyIds,
+            tags: category.tags,
+            hidden: category.hidden,
+            sortOrder: category.sortOrder,
+            preferredCount: category.preferredCount,
+            expandedCount: category.expandedCount,
+            activeCount: category.activeCount,
+            pinnedStoryId: category.pinnedStoryId,
+            pinnedFeedUrl: category.pinnedFeedUrl
+        )
     }
 }
