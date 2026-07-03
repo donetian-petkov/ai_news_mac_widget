@@ -232,6 +232,8 @@ private struct FloatingWidgetView: View {
         guard let api = try? state.authorizedAPIClient() else { return }
         if let response = try? await api.fetchStories(categoryID: categoryID, limit: 10) {
             stories = response.stories
+            let covers = response.stories.filter { !($0.coverUrl ?? "").isEmpty }.count
+            AINewsDebugLog.log("widget reload cat=\(categoryID) n=\(response.stories.count) covers=\(covers) coversEnabled=\(coversEnabled)")
         }
     }
 }

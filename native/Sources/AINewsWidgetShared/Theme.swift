@@ -224,10 +224,13 @@ public struct StoryThumbnail: View {
         // it never flashes back to blank.
         if let resolved = image ?? ThumbnailCache.shared.object(forKey: url as NSURL) {
             Image(nsImage: resolved).resizable().aspectRatio(contentMode: .fill)
+                .onAppear { AINewsDebugLog.log("thumb SHOW image \(url.lastPathComponent)") }
         } else if failed {
             AINewsTheme.panel.overlay(Image(systemName: "photo").foregroundStyle(AINewsTheme.textMuted))
+                .onAppear { AINewsDebugLog.log("thumb SHOW failed-placeholder \(url.lastPathComponent)") }
         } else {
             AINewsTheme.panel.overlay(ProgressView().controlSize(.small))
+                .onAppear { AINewsDebugLog.log("thumb SHOW loading-placeholder \(url.lastPathComponent)") }
                 .task(id: url) { await load() }
         }
         #else

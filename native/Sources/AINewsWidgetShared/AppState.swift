@@ -128,6 +128,7 @@ public final class WidgetAppState: ObservableObject {
             let api = try makeAPIClient()
             let result = try await api.regenerateMissingAI()
             let q = result.queued
+            AINewsDebugLog.log("backfill queued summary=\(q.summary) research=\(q.research) translation=\(q.translation) skipped summary=\(result.skipped.summary)")
             let total = q.summary + q.research + q.translation
             guard total > 0 else {
                 statusMessage = "Summaries and translations are up to date."
@@ -180,6 +181,9 @@ public final class WidgetAppState: ObservableObject {
             let api = try makeAPIClient()
             let response = try await api.fetchStories(categoryID: category.id, limit: limit ?? category.activeCount)
             stories = response.stories
+            let covers = response.stories.filter { !($0.coverUrl ?? "").isEmpty }.count
+            let sums = response.stories.filter { !($0.summary ?? "").isEmpty }.count
+            AINewsDebugLog.log("loadStories cat=\(category.id) '\(category.name)' n=\(response.stories.count) covers=\(covers) summaries=\(sums)")
             updateCategory(response.category)
             saveSnapshot()
         } catch {
