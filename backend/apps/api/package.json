@@ -1,0 +1,32 @@
+{
+  "name": "@ai-news/api",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "tsx watch src/server.ts",
+    "build": "tsc -p tsconfig.json",
+    "test": "vitest run src/server.integration.test.ts",
+    "start": "node dist/server.js",
+    "prisma:generate": "prisma generate",
+    "prisma:migrate": "mkdir -p prisma && touch prisma/dev.db && DATABASE_URL=${DATABASE_URL:-file:./prisma/dev.db} prisma migrate deploy"
+  },
+  "dependencies": {
+    "@ai-news/shared": "1.0.0",
+    "@prisma/client": "^6.4.1",
+    "dotenv": "^17.2.3",
+    "express": "^4.19.2",
+    "openai": "^4.0.0",
+    "rss-parser": "^3.13.0",
+    "ws": "^8.18.0",
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "@types/express": "^4.17.21",
+    "@types/node": "^20.11.30",
+    "@types/ws": "^8.18.1",
+    "prisma": "^6.4.1",
+    "tsx": "^4.19.1",
+    "typescript": "^5.4.5",
+    "vitest": "^4.0.18"
+  }
+}
