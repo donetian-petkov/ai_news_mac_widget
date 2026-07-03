@@ -99,7 +99,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if floatingWidgetManager == nil {
             floatingWidgetManager = FloatingWidgetManager(state: appState)
         }
-        floatingWidgetManager?.toggle()
+        floatingWidgetManager?.openForSelectedCategory()
     }
 
     @objc private func quitApp() {

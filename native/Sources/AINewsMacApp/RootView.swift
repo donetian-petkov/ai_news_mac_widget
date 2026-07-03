@@ -270,7 +270,7 @@ private struct DashboardView: View {
             }
             .buttonStyle(.borderedProminent)
             .tint(AINewsTheme.accentGold)
-            .help("Open an always-on-top, scrollable panel for the selected category")
+            .help("Open an always-on-top, scrollable panel for the selected category. Select another category and click again to open more at once.")
 
             Button("Sign out") {
                 state.signOut()
