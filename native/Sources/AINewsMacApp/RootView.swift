@@ -326,6 +326,18 @@ private struct DashboardView: View {
             ScrollViewReader { proxy in
                 ScrollView {
                     LazyVStack(spacing: 18) {
+                        if filteredStories.isEmpty && !storySearch.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                            VStack(alignment: .leading, spacing: 10) {
+                                Text("No stories match")
+                                    .font(.title3.weight(.semibold))
+                                    .foregroundStyle(AINewsTheme.textPrimary)
+                                Text("Try a broader term or clear the search field.")
+                                    .foregroundStyle(AINewsTheme.textSecondary)
+                            }
+                            .padding(22)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .aiNewsPanelStyle()
+                        }
                         ForEach(filteredStories) { story in
                             StoryCardView(story: story)
                                 .id(story.id)
