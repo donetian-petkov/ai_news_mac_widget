@@ -107,6 +107,49 @@ public struct APIClient: Sendable {
         return response.feed
     }
 
+    public func saveGlobalAiDefaults(_ defaults: GlobalAiDefaults) async throws {
+        struct Body: Codable {
+            var summaryEnabled: Bool
+            var researchEnabled: Bool
+            var translationEnabled: Bool
+        }
+        let _: RuntimeAiDefaultsResponse = try await send(
+            path: "/api/runtime/ai-defaults",
+            method: "PUT",
+            body: Body(
+                summaryEnabled: defaults.summaryEnabled,
+                researchEnabled: defaults.researchEnabled,
+                translationEnabled: defaults.translationEnabled
+            )
+        )
+    }
+
+    /// Set only the AI toggles for one feed, preserving its other settings (budget, interval).
+    /// Used to apply category-level AI settings across every feed in a category.
+    public func setFeedAiSettings(
+        feedUrl: String,
+        summaryEnabled: Bool,
+        researchEnabled: Bool,
+        translationEnabled: Bool
+    ) async throws {
+        struct Body: Codable {
+            var feedUrl: String
+            var summaryEnabled: Bool
+            var researchEnabled: Bool
+            var translationEnabled: Bool
+        }
+        let _: RuntimeFeedMutationResponse = try await send(
+            path: "/api/runtime/feed-settings",
+            method: "PUT",
+            body: Body(
+                feedUrl: feedUrl,
+                summaryEnabled: summaryEnabled,
+                researchEnabled: researchEnabled,
+                translationEnabled: translationEnabled
+            )
+        )
+    }
+
     public func fetchAccountSettings() async throws -> AccountSettings {
         let response: AccountSettingsResponse = try await send(path: "/api/account/settings")
         return response.settings

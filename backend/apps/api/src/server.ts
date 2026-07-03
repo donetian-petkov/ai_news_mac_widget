@@ -865,6 +865,7 @@ app.get('/api/runtime/config', async (req, res) => {
       summaryLang,
       researchLang,
       titleDisplayLanguage,
+      aiDefaults: globalAiDefaults,
       feeds: currentFeeds().map(feed => ({
         ...feed,
         settings: feedSettings.get(feed.url) || defaultSettingsForFeed(feed)
@@ -886,11 +887,14 @@ app.put('/api/runtime/feed-settings', async (req, res) => {
       return;
     }
 
-    const feed = currentFeeds().find(item => item.url === feedUrl);
-    if (!feed) {
-      res.status(404).json({ error: 'Feed not found.' });
-      return;
-    }
+    // A feed referenced by a category may not be in this process's live feed list.
+    // Upsert its settings anyway rather than 404, so per-feed AI overrides always save.
+    const feed = currentFeeds().find(item => item.url === feedUrl) || {
+      url: feedUrl,
+      label: feedUrl,
+      kind: 'rss' as const,
+      intervalSec: 120
+    };
 
     const current = feedSettings.get(feedUrl) || defaultSettingsForFeed(feed);
     const next = normalizeFeedSettings({
@@ -908,6 +912,7 @@ app.put('/api/runtime/feed-settings', async (req, res) => {
     }, feed);
 
     feedSettings.set(feedUrl, next);
+    customizedFeedUrls.add(feedUrl);
     broadcastConfig();
     markDirty();
 
@@ -920,6 +925,26 @@ app.put('/api/runtime/feed-settings', async (req, res) => {
     });
   } catch (error) {
     res.status(500).json({ error: (error as Error).message || 'Failed to update feed settings.' });
+  }
+});
+
+app.put('/api/runtime/ai-defaults', async (req, res) => {
+  try {
+    const user = await requireAuthUser(req, res);
+    if (!user) return;
+    const body = (req.body as Record<string, unknown> | undefined) || {};
+    globalAiDefaults = {
+      summaryEnabled: typeof body.summaryEnabled === 'boolean' ? body.summaryEnabled : globalAiDefaults.summaryEnabled,
+      researchEnabled: typeof body.researchEnabled === 'boolean' ? body.researchEnabled : globalAiDefaults.researchEnabled,
+      translationEnabled: typeof body.translationEnabled === 'boolean' ? body.translationEnabled : globalAiDefaults.translationEnabled
+    };
+    // Push the new baseline onto every feed the user hasn't individually customized.
+    applyGlobalAiDefaultsToFeeds();
+    broadcastConfig();
+    markDirty();
+    res.json({ ok: true, aiDefaults: globalAiDefaults });
+  } catch (error) {
+    res.status(500).json({ error: (error as Error).message || 'Failed to update AI defaults.' });
   }
 });
 
@@ -1986,6 +2011,8 @@ type PersistedState = {
   titleDisplayLanguage?: TitleDisplayLanguage;
   feeds: FeedInfo[];
   feedSettings: Record<string, FeedSettings>;
+  globalAiDefaults?: GlobalAiDefaults;
+  customizedFeedUrls?: string[];
   hiddenIds: string[];
   feedRuntime: Record<string, FeedRuntime>;
   recent?: NewsInternal[];
@@ -2416,6 +2443,8 @@ function saveStateNow() {
     titleDisplayLanguage,
     feeds: feedsList,
     feedSettings: feedSettingsObj(),
+    globalAiDefaults,
+    customizedFeedUrls: Array.from(customizedFeedUrls),
     hiddenIds: Array.from(hiddenIds),
     feedRuntime: feedRuntimeObj()
   };
@@ -2454,6 +2483,34 @@ let feedsList: FeedInfo[] = [...defaultFeeds];
 
 // per-feed settings store (persisted)
 const feedSettings = new Map<string, FeedSettings>();
+
+// Global AI defaults: the baseline summary/research/translation behavior applied
+// to every feed the user has not explicitly customized. Persisted.
+type GlobalAiDefaults = {
+  summaryEnabled: boolean;
+  researchEnabled: boolean;
+  translationEnabled: boolean;
+};
+let globalAiDefaults: GlobalAiDefaults = {
+  summaryEnabled: SUMMARY_DEFAULT_ALL,
+  researchEnabled: RESEARCH_DEFAULT_ALL,
+  translationEnabled: true
+};
+// Feed URLs whose AI settings the user set explicitly. Global changes leave these alone.
+const customizedFeedUrls = new Set<string>();
+
+// Re-apply the global AI defaults to every non-customized feed.
+function applyGlobalAiDefaultsToFeeds() {
+  for (const fi of feedsList) {
+    if (fi.url === FILTERED_FEED_URL) continue;
+    if (customizedFeedUrls.has(fi.url)) continue;
+    const current = feedSettings.get(fi.url) || defaultSettingsForFeed(fi);
+    current.summaryEnabled = globalAiDefaults.summaryEnabled;
+    current.researchEnabled = globalAiDefaults.researchEnabled;
+    current.translationEnabled = globalAiDefaults.translationEnabled;
+    feedSettings.set(fi.url, current);
+  }
+}
 
 // runtime-only fetch cache + breaker
 const feedRuntime = new Map<string, FeedRuntime>();
@@ -2803,13 +2860,15 @@ function feedRuntimeObj(): Record<string, FeedRuntime> {
 
 function defaultSettingsForFeed(fi: FeedInfo): FeedSettings {
   const summaryEnabled =
-    fi.url === FILTERED_FEED_URL ? SUMMARY_DEFAULT_FILTERED : SUMMARY_DEFAULT_ALL;
+    fi.url === FILTERED_FEED_URL ? SUMMARY_DEFAULT_FILTERED : globalAiDefaults.summaryEnabled;
   const researchEnabled =
-    fi.url === FILTERED_FEED_URL ? RESEARCH_DEFAULT_FILTERED : RESEARCH_DEFAULT_ALL;
+    fi.url === FILTERED_FEED_URL ? RESEARCH_DEFAULT_FILTERED : globalAiDefaults.researchEnabled;
+  const translationEnabled =
+    fi.url === FILTERED_FEED_URL ? true : globalAiDefaults.translationEnabled;
 
   return {
     summaryEnabled,
-    translationEnabled: true,
+    translationEnabled,
     researchEnabled,
     discordWebhookUrl: undefined,
     budget: 'standard',
@@ -6861,6 +6920,19 @@ async function applyLoadedState(st: PersistedState | null) {
   }
   if (st.titleDisplayLanguage === 'original' || st.titleDisplayLanguage === 'bg' || st.titleDisplayLanguage === 'en') {
     titleDisplayLanguage = st.titleDisplayLanguage;
+  }
+
+  if (st.globalAiDefaults && typeof st.globalAiDefaults === 'object') {
+    globalAiDefaults = {
+      summaryEnabled: st.globalAiDefaults.summaryEnabled === true,
+      researchEnabled: st.globalAiDefaults.researchEnabled === true,
+      translationEnabled: st.globalAiDefaults.translationEnabled !== false
+    };
+  }
+  if (Array.isArray(st.customizedFeedUrls)) {
+    for (const url of st.customizedFeedUrls) {
+      if (typeof url === 'string' && url.trim()) customizedFeedUrls.add(url.trim());
+    }
   }
 
   if (Array.isArray(st.feeds) && st.feeds.length) {

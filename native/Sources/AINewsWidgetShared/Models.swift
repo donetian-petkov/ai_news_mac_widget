@@ -595,12 +595,34 @@ public struct RuntimeConfigResponse: Codable, Sendable {
     public var summaryLang: String
     public var researchLang: String
     public var titleDisplayLanguage: String
+    public var aiDefaults: GlobalAiDefaults?
     public var feeds: [RuntimeFeed]
+}
+
+public struct GlobalAiDefaults: Codable, Equatable, Sendable {
+    public var summaryEnabled: Bool
+    public var researchEnabled: Bool
+    public var translationEnabled: Bool
+
+    public init(
+        summaryEnabled: Bool = false,
+        researchEnabled: Bool = false,
+        translationEnabled: Bool = true
+    ) {
+        self.summaryEnabled = summaryEnabled
+        self.researchEnabled = researchEnabled
+        self.translationEnabled = translationEnabled
+    }
 }
 
 public struct RuntimeFeedMutationResponse: Codable, Sendable {
     public var ok: Bool
     public var feed: RuntimeFeed
+}
+
+public struct RuntimeAiDefaultsResponse: Codable, Sendable {
+    public var ok: Bool
+    public var aiDefaults: GlobalAiDefaults
 }
 
 public struct RuntimeFeed: Codable, Equatable, Hashable, Sendable {

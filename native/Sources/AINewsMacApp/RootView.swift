@@ -1415,6 +1415,25 @@ private struct SettingsView: View {
                 .foregroundStyle(AINewsTheme.textPrimary)
 
                 VStack(alignment: .leading, spacing: 12) {
+                    Text("Global AI settings")
+                        .font(.headline)
+                        .foregroundStyle(AINewsTheme.textSecondary)
+                    Text("Baseline for every feed. Per-feed and per-category settings below override this.")
+                        .font(.caption)
+                        .foregroundStyle(AINewsTheme.textMuted)
+                    Toggle("Summaries for every feed", isOn: $state.globalAiDefaults.summaryEnabled)
+                    Toggle("Research for every feed", isOn: $state.globalAiDefaults.researchEnabled)
+                    Toggle("Translations for every feed", isOn: $state.globalAiDefaults.translationEnabled)
+                    Button("Apply to all feeds") {
+                        Task { await state.saveGlobalAiDefaults() }
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .tint(AINewsTheme.accentBlue)
+                }
+                .padding(16)
+                .aiNewsPanelStyle()
+
+                VStack(alignment: .leading, spacing: 12) {
                     Text("Feed AI controls")
                         .font(.headline)
                         .foregroundStyle(AINewsTheme.textSecondary)
@@ -1768,6 +1787,8 @@ private struct SettingsView: View {
                 }
                 .buttonStyle(.bordered)
             }
+
+            CategoryAiControls(category: category)
         }
         .padding(16)
         .aiNewsPanelStyle()
@@ -1819,6 +1840,44 @@ private struct SettingsView: View {
         } catch {
             state.errorMessage = error.localizedDescription
         }
+    }
+}
+
+private struct CategoryAiControls: View {
+    @EnvironmentObject private var state: WidgetAppState
+    let category: WidgetCategory
+    @State private var settings = GlobalAiDefaults()
+    @State private var expanded = false
+
+    private var feedCount: Int { category.feedUrls.count }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Button {
+                expanded.toggle()
+            } label: {
+                Label("Category AI settings", systemImage: expanded ? "chevron.down" : "chevron.right")
+                    .font(.caption.weight(.semibold))
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(AINewsTheme.textMuted)
+
+            if expanded {
+                Text("Applies these toggles to all \(feedCount) feed\(feedCount == 1 ? "" : "s") in this category (overrides the global defaults).")
+                    .font(.caption)
+                    .foregroundStyle(AINewsTheme.textMuted)
+                Toggle("Summaries", isOn: $settings.summaryEnabled)
+                Toggle("Research", isOn: $settings.researchEnabled)
+                Toggle("Translations", isOn: $settings.translationEnabled)
+                Button("Apply to \(feedCount) feed\(feedCount == 1 ? "" : "s")") {
+                    Task { await state.applyAiSettings(to: category, settings: settings) }
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(AINewsTheme.accentCyan)
+                .disabled(feedCount == 0)
+            }
+        }
+        .onAppear { settings = state.globalAiDefaults }
     }
 }
 

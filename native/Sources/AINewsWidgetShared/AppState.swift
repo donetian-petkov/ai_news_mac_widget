@@ -9,6 +9,7 @@ public final class WidgetAppState: ObservableObject {
     @Published public var stories: [WidgetStory] = []
     @Published public var usage: AIUsageExport?
     @Published public var runtimeConfig: RuntimeConfigResponse?
+    @Published public var globalAiDefaults = GlobalAiDefaults()
     @Published public var accountSettings = AccountSettings()
     @Published public var isBusy = false
     @Published public var errorMessage: String?
@@ -124,6 +125,9 @@ public final class WidgetAppState: ObservableObject {
             refreshDiscoveredBackendURL()
             let api = try makeAPIClient()
             runtimeConfig = try await api.fetchRuntimeConfig()
+            if let defaults = runtimeConfig?.aiDefaults {
+                globalAiDefaults = defaults
+            }
             accountSettings = try await api.fetchAccountSettings()
             if let provider = runtimeConfig?.aiProvider {
                 providerKeyStatus[provider] = try await api.fetchProviderKeyStatus(provider: provider)
@@ -478,6 +482,38 @@ public final class WidgetAppState: ObservableObject {
             let updatedFeed = try await api.saveFeedSettings(feed)
             self.updateRuntimeFeed(updatedFeed)
             self.statusMessage = "Saved settings for \(updatedFeed.label)."
+        }
+    }
+
+    public func saveGlobalAiDefaults() async {
+        await runBusy("Saving global AI settings...") {
+            let api = try self.makeAPIClient()
+            try await api.saveGlobalAiDefaults(self.globalAiDefaults)
+            await self.loadRuntimeContext()
+            self.statusMessage = "Applied global AI settings to every feed."
+        }
+    }
+
+    /// Apply one set of AI toggles to every feed in a category (a per-category override
+    /// implemented as feed-level overrides, since the AI pipeline is per-feed).
+    public func applyAiSettings(to category: WidgetCategory, settings: GlobalAiDefaults) async {
+        let feedUrls = category.feedUrls.filter { !$0.trimmingCharacters(in: .whitespaces).isEmpty }
+        guard !feedUrls.isEmpty else {
+            errorMessage = "This category has no feeds to update."
+            return
+        }
+        await runBusy("Applying AI settings to \(category.name)...") {
+            let api = try self.makeAPIClient()
+            for feedUrl in feedUrls {
+                try await api.setFeedAiSettings(
+                    feedUrl: feedUrl,
+                    summaryEnabled: settings.summaryEnabled,
+                    researchEnabled: settings.researchEnabled,
+                    translationEnabled: settings.translationEnabled
+                )
+            }
+            await self.loadRuntimeContext()
+            self.statusMessage = "Applied AI settings to \(feedUrls.count) feed\(feedUrls.count == 1 ? "" : "s") in \(category.name)."
         }
     }
 
