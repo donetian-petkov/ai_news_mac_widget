@@ -107,7 +107,7 @@ private struct FloatingWidgetView: View {
             content
         }
         .frame(minWidth: 220, minHeight: 180)
-        .background(AINewsTheme.background)
+        .background(AINewsBackground())
         .dynamicTypeSize(theme.fontSize.dynamicTypeSize)
         .task {
             // Load now, then auto-refresh so the widget picks up new stories and

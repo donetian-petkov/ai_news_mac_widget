@@ -118,10 +118,10 @@ public enum AINewsFontSize: String, CaseIterable, Sendable {
     /// Multiplier applied to explicit font sizes.
     public var scale: CGFloat {
         switch self {
-        case .small: return 0.9
+        case .small: return 0.85
         case .medium: return 1.0
-        case .large: return 1.12
-        case .xlarge: return 1.24
+        case .large: return 1.3
+        case .xlarge: return 1.6
         }
     }
     /// Matching Dynamic Type size so semantic fonts (.headline/.body/.caption) scale too.
@@ -129,8 +129,8 @@ public enum AINewsFontSize: String, CaseIterable, Sendable {
         switch self {
         case .small: return .small
         case .medium: return .large
-        case .large: return .xLarge
-        case .xlarge: return .xxxLarge
+        case .large: return .xxLarge
+        case .xlarge: return .accessibility2
         }
     }
 }
@@ -160,6 +160,27 @@ public enum AINewsTheme {
     /// A size-scaled system font, so explicit sizes honor the font-size setting.
     public static func font(_ size: CGFloat, weight: Font.Weight = .regular) -> Font {
         .system(size: size * fontScale, weight: weight)
+    }
+}
+
+/// The themed app background: the base color plus two per-vibe colored glows, so
+/// each theme reads as visually distinct (purple for Cyber Witch, blue for Sci-Fi…)
+/// instead of every dark theme looking near-black.
+public struct AINewsBackground: View {
+    public init() {}
+    public var body: some View {
+        ZStack {
+            AINewsTheme.background
+            RadialGradient(
+                gradient: Gradient(colors: [AINewsTheme.panelBorder.opacity(0.30), .clear]),
+                center: UnitPoint(x: 0.0, y: -0.05), startRadius: 0, endRadius: 760
+            )
+            RadialGradient(
+                gradient: Gradient(colors: [AINewsTheme.accentCyan.opacity(0.20), .clear]),
+                center: UnitPoint(x: 1.0, y: 0.05), startRadius: 0, endRadius: 760
+            )
+        }
+        .ignoresSafeArea()
     }
 }
 

@@ -22,7 +22,7 @@ struct RootView: View {
                 DashboardView()
             }
         }
-        .background(AINewsTheme.background.ignoresSafeArea())
+        .background(AINewsBackground())
         .onOpenURL { url in
             Task {
                 await state.handleIncomingURL(url)
@@ -414,7 +414,7 @@ private struct DashboardView: View {
             }
         }
         .padding(24)
-        .background(AINewsTheme.background)
+        .background(AINewsBackground())
     }
 }
 
@@ -458,7 +458,7 @@ private struct WidgetHelpView: View {
             Spacer()
         }
         .padding(28)
-        .background(AINewsTheme.background.ignoresSafeArea())
+        .background(AINewsBackground())
     }
 
     private func helpStep(number: Int, title: String, body: String) -> some View {
@@ -680,7 +680,7 @@ private struct WorkspaceView: View {
             .padding(.horizontal, 24)
             .padding(.bottom, 24)
         }
-        .background(AINewsTheme.background.ignoresSafeArea())
+        .background(AINewsBackground())
     }
 }
 
@@ -1667,7 +1667,7 @@ private struct SettingsView: View {
             .frame(maxWidth: .infinity, alignment: .topLeading)
         }
         .padding(28)
-        .background(AINewsTheme.background.ignoresSafeArea())
+        .background(AINewsBackground())
     }
 
     private func usageBadge(_ title: String, value: Int) -> some View {
