@@ -30,6 +30,8 @@ ruby "$ROOT_DIR/scripts/generate-xcodeproj.rb"
 rm -rf "$DERIVED_DATA_DIR"
 
 /usr/bin/osascript -e 'tell application "AI News Widget" to quit' >/dev/null 2>&1 || true
+/usr/bin/killall AINewsMacApp >/dev/null 2>&1 || true
+/usr/bin/killall AINewsWidgets >/dev/null 2>&1 || true
 sleep 1
 
 "$NODE_PATH" "$ROOT_DIR/scripts/ensure-local-secrets.mjs"
@@ -72,6 +74,13 @@ fi
 /usr/bin/codesign --force --deep --sign - --entitlements "$NATIVE_DIR/Support/AINewsMacApp.entitlements" "$INSTALL_DIR"
 
 touch "$INSTALL_DIR"
+
+GROUP_SNAPSHOT_DIR="${HOME}/Library/Group Containers/group.com.donetianpetkov.ainewswidget/AINewsMacWidget"
+WIDGET_SNAPSHOT_DIR="${HOME}/Library/Containers/com.donetianpetkov.ainewsmacwidget.widgets/Data/Library/Application Support/AINewsMacWidget"
+if [[ -f "$GROUP_SNAPSHOT_DIR/widget-snapshot.json" ]]; then
+  mkdir -p "$WIDGET_SNAPSHOT_DIR"
+  cp "$GROUP_SNAPSHOT_DIR/widget-snapshot.json" "$WIDGET_SNAPSHOT_DIR/widget-snapshot.json"
+fi
 
 echo "Installed $APP_NAME to $INSTALL_DIR"
 if [[ "$HAD_STALE_COPY" -eq 1 ]]; then

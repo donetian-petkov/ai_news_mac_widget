@@ -13,6 +13,8 @@ if [[ ! -d "$APP_PATH" ]]; then
 fi
 
 /usr/bin/osascript -e 'tell application "AI News Widget" to quit' >/dev/null 2>&1 || true
+/usr/bin/killall AINewsMacApp >/dev/null 2>&1 || true
+/usr/bin/killall AINewsWidgets >/dev/null 2>&1 || true
 sleep 1
 echo "Opening: $APP_PATH"
 open -n "$APP_PATH"
