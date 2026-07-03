@@ -17,11 +17,14 @@ final class BackendSupervisor {
 
         let process = Process()
         let environment = backendEnvironment(nodePath: config.nodePath, npmPath: config.npmPath)
-        if fileManager.isExecutableFile(atPath: config.npmPath) {
+        if fileManager.isExecutableFile(atPath: config.nodePath), fileManager.fileExists(atPath: config.apiEntryPath) {
             process.currentDirectoryURL = URL(fileURLWithPath: config.repoRoot, isDirectory: true)
-            process.executableURL = URL(fileURLWithPath: config.npmPath)
-            process.arguments = ["run", "start:backend"]
-            process.environment = environment
+            process.executableURL = URL(fileURLWithPath: config.nodePath)
+            process.arguments = [config.apiEntryPath]
+            var directEnvironment = environment
+            directEnvironment["AI_NEWS_MAC_WIDGET_RUNTIME_FILE"] = config.runtimeInfoPath
+            directEnvironment["DATABASE_URL"] = config.databaseUrl
+            process.environment = directEnvironment
         } else {
             process.executableURL = URL(fileURLWithPath: "/bin/bash")
             process.arguments = ["-lc", "cd '\(config.repoRoot)' && npm run start:backend"]
@@ -113,14 +116,18 @@ final class BackendSupervisor {
         let logFile = decoded.logFile.trimmingCharacters(in: .whitespacesAndNewlines)
         let nodePath = decoded.nodePath.trimmingCharacters(in: .whitespacesAndNewlines)
         let npmPath = decoded.npmPath.trimmingCharacters(in: .whitespacesAndNewlines)
+        let apiEntryPath = decoded.apiEntryPath.trimmingCharacters(in: .whitespacesAndNewlines)
+        let databaseUrl = decoded.databaseUrl.trimmingCharacters(in: .whitespacesAndNewlines)
 
-        if !repoRoot.isEmpty, !runtimeInfoPath.isEmpty, !logFile.isEmpty, !nodePath.isEmpty, !npmPath.isEmpty {
+        if !repoRoot.isEmpty, !runtimeInfoPath.isEmpty, !logFile.isEmpty, !nodePath.isEmpty, !npmPath.isEmpty, !apiEntryPath.isEmpty, !databaseUrl.isEmpty {
             return BackendLaunchConfig(
                 repoRoot: repoRoot,
                 runtimeInfoPath: runtimeInfoPath,
                 logFile: logFile,
                 nodePath: nodePath,
-                npmPath: npmPath
+                npmPath: npmPath,
+                apiEntryPath: apiEntryPath,
+                databaseUrl: databaseUrl
             )
         }
 
@@ -130,7 +137,9 @@ final class BackendSupervisor {
             runtimeInfoPath: runtimeInfoPath.isEmpty ? inferred.runtimeInfoPath : runtimeInfoPath,
             logFile: logFile.isEmpty ? inferred.logFile : logFile,
             nodePath: nodePath.isEmpty ? inferred.nodePath : nodePath,
-            npmPath: npmPath.isEmpty ? inferred.npmPath : npmPath
+            npmPath: npmPath.isEmpty ? inferred.npmPath : npmPath,
+            apiEntryPath: apiEntryPath.isEmpty ? inferred.apiEntryPath : apiEntryPath,
+            databaseUrl: databaseUrl.isEmpty ? inferred.databaseUrl : databaseUrl
         )
     }
 
@@ -151,7 +160,9 @@ final class BackendSupervisor {
                     runtimeInfoPath: runtimeInfoPath,
                     logFile: logDir.appendingPathComponent("backend.log").path,
                     nodePath: ProcessInfo.processInfo.environment["NODE_BINARY_PATH"] ?? "/opt/homebrew/bin/node",
-                    npmPath: ProcessInfo.processInfo.environment["NPM_BINARY_PATH"] ?? "/opt/homebrew/bin/npm"
+                    npmPath: ProcessInfo.processInfo.environment["NPM_BINARY_PATH"] ?? "/opt/homebrew/bin/npm",
+                    apiEntryPath: cursor.appendingPathComponent("backend/apps/api/dist/server.js").path,
+                    databaseUrl: "file:\(cursor.appendingPathComponent("backend/apps/api/prisma/dev.db").path)"
                 )
             }
             cursor.deleteLastPathComponent()
@@ -167,4 +178,6 @@ private struct BackendLaunchConfig: Decodable {
     let logFile: String
     let nodePath: String
     let npmPath: String
+    let apiEntryPath: String
+    let databaseUrl: String
 }

@@ -22,6 +22,8 @@ LOG_DIR="${HOME}/Library/Logs/AINewsMacWidget"
 RUNTIME_INFO_PATH="/tmp/ai-news-mac-widget-runtime.json"
 NODE_PATH="$(command -v node || true)"
 NPM_PATH="$(command -v npm || true)"
+API_ENTRY_PATH="$ROOT_DIR/backend/apps/api/dist/server.js"
+DATABASE_URL="file:$ROOT_DIR/backend/apps/api/prisma/dev.db"
 
 mkdir -p "$LOG_DIR"
 ruby "$ROOT_DIR/scripts/generate-xcodeproj.rb"
@@ -29,6 +31,10 @@ rm -rf "$DERIVED_DATA_DIR"
 
 /usr/bin/osascript -e 'tell application "AI News Widget" to quit' >/dev/null 2>&1 || true
 sleep 1
+
+"$NODE_PATH" "$ROOT_DIR/scripts/ensure-local-secrets.mjs"
+DATABASE_URL="$DATABASE_URL" "$NODE_PATH" "$ROOT_DIR/scripts/ensure-local-db.mjs"
+"$NPM_PATH" run build:backend
 
 /usr/bin/xcodebuild \
   -project "$PROJECT_PATH" \
@@ -54,7 +60,9 @@ cat > "$RESOURCES_DIR/backend-launch.json" <<JSON
   "runtimeInfoPath": "$RUNTIME_INFO_PATH",
   "logFile": "$LOG_DIR/backend.log",
   "nodePath": "$NODE_PATH",
-  "npmPath": "$NPM_PATH"
+  "npmPath": "$NPM_PATH",
+  "apiEntryPath": "$API_ENTRY_PATH",
+  "databaseUrl": "$DATABASE_URL"
 }
 JSON
 
