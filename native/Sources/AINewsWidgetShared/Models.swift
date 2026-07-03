@@ -257,6 +257,11 @@ public struct RuntimeConfigResponse: Codable, Sendable {
     public var feeds: [RuntimeFeed]
 }
 
+public struct RuntimeFeedMutationResponse: Codable, Sendable {
+    public var ok: Bool
+    public var feed: RuntimeFeed
+}
+
 public struct RuntimeFeed: Codable, Equatable, Hashable, Sendable {
     public var url: String
     public var label: String

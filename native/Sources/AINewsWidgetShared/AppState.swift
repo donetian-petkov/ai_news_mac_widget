@@ -303,6 +303,15 @@ public final class WidgetAppState: ObservableObject {
         }
     }
 
+    public func saveFeedSettings(_ feed: RuntimeFeed) async {
+        await runBusy("Saving feed settings...") {
+            let api = try self.makeAPIClient()
+            let updatedFeed = try await api.saveFeedSettings(feed)
+            self.updateRuntimeFeed(updatedFeed)
+            self.statusMessage = "Saved settings for \(updatedFeed.label)."
+        }
+    }
+
     public func scrollToTop() {
         scrollToStoryID = stories.first?.id
     }
@@ -486,6 +495,16 @@ public final class WidgetAppState: ObservableObject {
                 try? await Task.sleep(nanoseconds: 1_000_000_000)
             }
         }
+    }
+
+    private func updateRuntimeFeed(_ feed: RuntimeFeed) {
+        guard var runtimeConfig else { return }
+        if let index = runtimeConfig.feeds.firstIndex(where: { $0.url == feed.url }) {
+            runtimeConfig.feeds[index] = feed
+        } else {
+            runtimeConfig.feeds.append(feed)
+        }
+        self.runtimeConfig = runtimeConfig
     }
 
     private func writeUsageExport(data: Data, fileExtension: String) throws -> URL {

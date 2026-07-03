@@ -78,6 +78,32 @@ public struct APIClient: Sendable {
         try await send(path: "/api/runtime/config")
     }
 
+    public func saveFeedSettings(_ feed: RuntimeFeed) async throws -> RuntimeFeed {
+        struct Body: Codable {
+            var feedUrl: String
+            var summaryEnabled: Bool
+            var translationEnabled: Bool
+            var researchEnabled: Bool
+            var discordWebhookUrl: String?
+            var budget: String
+            var intervalSec: Int
+        }
+        let response: RuntimeFeedMutationResponse = try await send(
+            path: "/api/runtime/feed-settings",
+            method: "PUT",
+            body: Body(
+                feedUrl: feed.url,
+                summaryEnabled: feed.settings.summaryEnabled,
+                translationEnabled: feed.settings.translationEnabled,
+                researchEnabled: feed.settings.researchEnabled,
+                discordWebhookUrl: feed.settings.discordWebhookUrl,
+                budget: feed.settings.budget,
+                intervalSec: feed.settings.intervalSec
+            )
+        )
+        return response.feed
+    }
+
     public func fetchAccountSettings() async throws -> AccountSettings {
         let response: AccountSettingsResponse = try await send(path: "/api/account/settings")
         return response.settings

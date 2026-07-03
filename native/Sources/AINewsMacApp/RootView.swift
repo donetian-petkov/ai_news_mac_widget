@@ -424,6 +424,21 @@ private struct SettingsView: View {
                     Text("Ask model: \(runtimeConfig.askModel)")
                 }
                 .foregroundStyle(AINewsTheme.textPrimary)
+
+                VStack(alignment: .leading, spacing: 12) {
+                    Text("Feed AI controls")
+                        .font(.headline)
+                        .foregroundStyle(AINewsTheme.textSecondary)
+
+                    ScrollView {
+                        LazyVStack(spacing: 12) {
+                            ForEach(runtimeConfig.feeds, id: \.url) { feed in
+                                feedControlRow(feed)
+                            }
+                        }
+                    }
+                    .frame(minHeight: 180, maxHeight: 260)
+                }
             }
 
             VStack(alignment: .leading, spacing: 12) {
@@ -535,5 +550,67 @@ private struct SettingsView: View {
         .padding(16)
         .frame(maxWidth: .infinity, alignment: .leading)
         .aiNewsPanelStyle()
+    }
+
+    private func feedControlRow(_ feed: RuntimeFeed) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(feed.label)
+                        .font(.headline)
+                        .foregroundStyle(AINewsTheme.textPrimary)
+                    Text(feed.url)
+                        .font(.caption)
+                        .foregroundStyle(AINewsTheme.textMuted)
+                        .lineLimit(1)
+                }
+                Spacer()
+                Text(feed.settings.budget.capitalized)
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(AINewsTheme.accentGold)
+            }
+
+            HStack(spacing: 14) {
+                Toggle("Summary", isOn: Binding(
+                    get: { currentFeed(for: feed.url)?.settings.summaryEnabled ?? feed.settings.summaryEnabled },
+                    set: { enabled in
+                        updateFeed(feed.url) { draft in
+                            draft.settings.summaryEnabled = enabled
+                        }
+                    }
+                ))
+                Toggle("Translation", isOn: Binding(
+                    get: { currentFeed(for: feed.url)?.settings.translationEnabled ?? feed.settings.translationEnabled },
+                    set: { enabled in
+                        updateFeed(feed.url) { draft in
+                            draft.settings.translationEnabled = enabled
+                        }
+                    }
+                ))
+                Toggle("Research", isOn: Binding(
+                    get: { currentFeed(for: feed.url)?.settings.researchEnabled ?? feed.settings.researchEnabled },
+                    set: { enabled in
+                        updateFeed(feed.url) { draft in
+                            draft.settings.researchEnabled = enabled
+                        }
+                    }
+                ))
+            }
+            .toggleStyle(.switch)
+        }
+        .padding(16)
+        .aiNewsPanelStyle()
+    }
+
+    private func currentFeed(for url: String) -> RuntimeFeed? {
+        state.runtimeConfig?.feeds.first(where: { $0.url == url })
+    }
+
+    private func updateFeed(_ url: String, mutate: @escaping (inout RuntimeFeed) -> Void) {
+        guard var feed = currentFeed(for: url) else { return }
+        mutate(&feed)
+        Task {
+            await state.saveFeedSettings(feed)
+        }
     }
 }

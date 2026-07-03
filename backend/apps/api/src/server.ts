@@ -863,6 +863,54 @@ app.get('/api/runtime/config', async (req, res) => {
   }
 });
 
+app.put('/api/runtime/feed-settings', async (req, res) => {
+  try {
+    const user = await requireAuthUser(req, res);
+    if (!user) return;
+    const body = (req.body as Record<string, unknown> | undefined) || {};
+    const feedUrl = String(body.feedUrl || '').trim();
+    if (!feedUrl) {
+      res.status(400).json({ error: 'feedUrl is required.' });
+      return;
+    }
+
+    const feed = currentFeeds().find(item => item.url === feedUrl);
+    if (!feed) {
+      res.status(404).json({ error: 'Feed not found.' });
+      return;
+    }
+
+    const current = feedSettings.get(feedUrl) || defaultSettingsForFeed(feed);
+    const next = normalizeFeedSettings({
+      ...current,
+      summaryEnabled: typeof body.summaryEnabled === 'boolean' ? body.summaryEnabled : current.summaryEnabled,
+      translationEnabled: typeof body.translationEnabled === 'boolean' ? body.translationEnabled : current.translationEnabled,
+      researchEnabled: typeof body.researchEnabled === 'boolean' ? body.researchEnabled : current.researchEnabled,
+      discordWebhookUrl: body.discordWebhookUrl === null ? '' : String(body.discordWebhookUrl ?? current.discordWebhookUrl ?? ''),
+      budget: body.budget === 'low' || body.budget === 'standard' || body.budget === 'high'
+        ? body.budget
+        : current.budget,
+      intervalSec: Number.isFinite(Number(body.intervalSec))
+        ? Number(body.intervalSec)
+        : current.intervalSec
+    }, feed);
+
+    feedSettings.set(feedUrl, next);
+    broadcastConfig();
+    markDirty();
+
+    res.json({
+      ok: true,
+      feed: {
+        ...feed,
+        settings: next
+      }
+    });
+  } catch (error) {
+    res.status(500).json({ error: (error as Error).message || 'Failed to update feed settings.' });
+  }
+});
+
 app.get('/api/health', (_req, res) => {
   res.json({
     ok: true,
