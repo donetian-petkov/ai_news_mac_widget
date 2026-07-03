@@ -38,4 +38,16 @@ public enum BackendDiscovery {
         }
         return fallback
     }
+
+    public static func runtimeBackendURLString() -> String? {
+        guard
+            let data = try? Data(contentsOf: runtimeInfoURL),
+            let info = try? JSONDecoder().decode(BackendRuntimeInfo.self, from: data),
+            info.app == runtimeAppID,
+            info.capabilities?.widgetAPI == true
+        else {
+            return nil
+        }
+        return info.url
+    }
 }

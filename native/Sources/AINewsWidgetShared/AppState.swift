@@ -92,8 +92,19 @@ public final class WidgetAppState: ObservableObject {
     public func reloadEverything(selectFirstCategory: Bool = false, suppressUnauthorizedAlert: Bool = false) async {
         await runBusy("Refreshing categories...", suppressUnauthorizedAlert: suppressUnauthorizedAlert) {
             self.refreshDiscoveredBackendURL()
-            let api = try self.makeAPIClient()
-            let bootstrap = try await api.fetchBootstrap()
+            var api = try self.makeAPIClient()
+            let bootstrap: WidgetBootstrapResponse
+            do {
+                bootstrap = try await api.fetchBootstrap()
+            } catch APIClientError.notFound {
+                if let runtimeURL = BackendDiscovery.runtimeBackendURLString() {
+                    self.backendURLString = runtimeURL
+                    api = try self.makeAPIClient()
+                    bootstrap = try await api.fetchBootstrap()
+                } else {
+                    throw APIClientError.server(message: "Widget backend not found at \(self.backendURLString). Start the local backend or reopen the app so it can relaunch it.")
+                }
+            }
             self.categories = bootstrap.categories.sorted(by: { lhs, rhs in
                 lhs.sortOrder == rhs.sortOrder ? lhs.name < rhs.name : lhs.sortOrder < rhs.sortOrder
             })

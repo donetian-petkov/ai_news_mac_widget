@@ -3,6 +3,7 @@ import Foundation
 @MainActor
 final class BackendSupervisor {
     static let shared = BackendSupervisor()
+    private static let runtimeAppID = "ai-news-mac-widget"
 
     private var process: Process?
     private let fileManager = FileManager.default
@@ -44,7 +45,7 @@ final class BackendSupervisor {
             return true
         }
 
-        guard appID == "ai-news-mac-widget" else {
+        guard appID == Self.runtimeAppID else {
             return true
         }
 
@@ -65,14 +66,56 @@ final class BackendSupervisor {
     }
 
     private func loadConfig() -> BackendLaunchConfig? {
-        guard
+        if
             let url = Bundle.main.url(forResource: "backend-launch", withExtension: "json"),
-            let data = try? Data(contentsOf: url)
-        else {
-            return nil
+            let data = try? Data(contentsOf: url),
+            let decoded = try? JSONDecoder().decode(BackendLaunchConfig.self, from: data),
+            let resolved = resolvedConfig(from: decoded) {
+            return resolved
         }
 
-        return try? JSONDecoder().decode(BackendLaunchConfig.self, from: data)
+        return inferredConfigFromBundle()
+    }
+
+    private func resolvedConfig(from decoded: BackendLaunchConfig) -> BackendLaunchConfig? {
+        let repoRoot = decoded.repoRoot.trimmingCharacters(in: .whitespacesAndNewlines)
+        let runtimeInfoPath = decoded.runtimeInfoPath.trimmingCharacters(in: .whitespacesAndNewlines)
+        let logFile = decoded.logFile.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        if !repoRoot.isEmpty, !runtimeInfoPath.isEmpty, !logFile.isEmpty {
+            return decoded
+        }
+
+        guard let inferred = inferredConfigFromBundle() else { return nil }
+        return BackendLaunchConfig(
+            repoRoot: repoRoot.isEmpty ? inferred.repoRoot : repoRoot,
+            runtimeInfoPath: runtimeInfoPath.isEmpty ? inferred.runtimeInfoPath : runtimeInfoPath,
+            logFile: logFile.isEmpty ? inferred.logFile : logFile
+        )
+    }
+
+    private func inferredConfigFromBundle() -> BackendLaunchConfig? {
+        let bundleURL = Bundle.main.bundleURL.standardizedFileURL
+        var cursor = bundleURL
+        let fm = fileManager
+
+        while cursor.path != "/" {
+            let packageJSON = cursor.appendingPathComponent("package.json")
+            let backendAPI = cursor.appendingPathComponent("backend/apps/api")
+            if fm.fileExists(atPath: packageJSON.path), fm.fileExists(atPath: backendAPI.path) {
+                let logDir = fm.homeDirectoryForCurrentUser
+                    .appendingPathComponent("Library/Logs/AINewsMacWidget", isDirectory: true)
+                let runtimeInfoPath = "/tmp/ai-news-mac-widget-runtime.json"
+                return BackendLaunchConfig(
+                    repoRoot: cursor.path,
+                    runtimeInfoPath: runtimeInfoPath,
+                    logFile: logDir.appendingPathComponent("backend.log").path
+                )
+            }
+            cursor.deleteLastPathComponent()
+        }
+
+        return nil
     }
 }
 

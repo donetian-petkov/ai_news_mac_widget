@@ -4,6 +4,7 @@ public enum APIClientError: LocalizedError {
     case invalidBaseURL
     case unauthorized
     case invalidResponse
+    case notFound
     case server(message: String)
 
     public var errorDescription: String? {
@@ -14,6 +15,8 @@ public enum APIClientError: LocalizedError {
             return "You need to sign in again."
         case .invalidResponse:
             return "The backend returned an invalid response."
+        case .notFound:
+            return "The app reached a backend that does not expose the widget API."
         case .server(let message):
             return message
         }
@@ -374,6 +377,9 @@ public struct APIClient: Sendable {
             }
             throw APIClientError.server(message: message)
         }
+        if http.statusCode == 404 {
+            throw APIClientError.notFound
+        }
         if !(200...299).contains(http.statusCode) {
             let errorEnvelope = try? JSONDecoder().decode(ErrorEnvelope.self, from: data)
             throw APIClientError.server(message: errorEnvelope?.error ?? "Request failed with status \(http.statusCode).")
@@ -400,6 +406,9 @@ public struct APIClient: Sendable {
         }
         if http.statusCode == 401 {
             throw APIClientError.unauthorized
+        }
+        if http.statusCode == 404 {
+            throw APIClientError.notFound
         }
         if !(200...299).contains(http.statusCode) {
             let errorEnvelope = try? JSONDecoder().decode(ErrorEnvelope.self, from: data)
