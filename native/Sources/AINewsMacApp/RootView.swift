@@ -513,13 +513,18 @@ private struct StoryCardView: View {
 
             storyBlock(title: "Summary", text: story.summary, pending: story.summaryPending, accent: AINewsTheme.accentBlue)
             storyBlock(title: "Research", text: story.research, pending: story.researchPending, accent: AINewsTheme.accentCyan)
-            storyBlock(
-                title: "Translation",
-                text: translatedStoryText,
-                pending: story.translationPending,
-                accent: AINewsTheme.accentGold,
-                emptyLabel: "Not translated yet."
-            )
+            // Only show Translation when one exists or is in progress. For stories already
+            // in the display language (e.g. Bulgarian feeds), translation isn't needed, so
+            // showing "Not translated yet." would be misleading noise.
+            if translatedStoryText != nil || story.translationPending {
+                storyBlock(
+                    title: "Translation",
+                    text: translatedStoryText,
+                    pending: story.translationPending,
+                    accent: AINewsTheme.accentGold,
+                    emptyLabel: "Not translated yet."
+                )
+            }
 
             HStack(spacing: 12) {
                 actionButton("Summary", systemImage: "text.bubble", tint: AINewsTheme.accentBlue) {

@@ -153,10 +153,10 @@ public struct APIClient: Sendable {
     /// Ask the backend to generate any missing AI outputs (summary/research/translation)
     /// for stories whose feeds have those actions enabled. Used on launch so enabled
     /// outputs get backfilled instead of only generating for newly fetched items.
-    public func regenerateMissingAI(limit: Int = 200) async throws {
+    @discardableResult
+    public func regenerateMissingAI(limit: Int = 200) async throws -> RegenerateResponse {
         struct Body: Codable { var kind: String; var missingOnly: Bool; var limit: Int }
-        struct Ignore: Codable { var ok: Bool? }
-        let _: Ignore = try await send(
+        return try await send(
             path: "/api/maintenance/regenerate",
             method: "POST",
             body: Body(kind: "all", missingOnly: true, limit: limit)

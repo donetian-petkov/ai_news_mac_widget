@@ -126,13 +126,24 @@ public final class WidgetAppState: ObservableObject {
         guard runtimeConfig?.aiEnabled == true else { return }
         do {
             let api = try makeAPIClient()
-            try await api.regenerateMissingAI()
-            statusMessage = "Generating missing summaries and translations…"
+            let result = try await api.regenerateMissingAI()
+            let q = result.queued
+            let total = q.summary + q.research + q.translation
+            guard total > 0 else {
+                statusMessage = "Summaries and translations are up to date."
+                return
+            }
+            var parts: [String] = []
+            if q.summary > 0 { parts.append("\(q.summary) summaries") }
+            if q.research > 0 { parts.append("\(q.research) research") }
+            if q.translation > 0 { parts.append("\(q.translation) translations") }
+            statusMessage = "Generating \(parts.joined(separator: ", "))…"
             // Poll a few times so freshly generated outputs appear without a manual refresh.
             for _ in 0..<6 {
                 try? await Task.sleep(nanoseconds: 3_000_000_000)
                 await loadStoriesForSelectedCategory(suppressUnauthorizedAlert: true)
             }
+            statusMessage = "Finished generating \(parts.joined(separator: ", "))."
         } catch {
             // Backfill is best-effort; never surface an alert for it.
         }

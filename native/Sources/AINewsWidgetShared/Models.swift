@@ -625,6 +625,17 @@ public struct RuntimeAiDefaultsResponse: Codable, Sendable {
     public var aiDefaults: GlobalAiDefaults
 }
 
+public struct RegenerateResponse: Codable, Sendable {
+    public struct Counts: Codable, Sendable {
+        public var summary: Int
+        public var translation: Int
+        public var research: Int
+    }
+    public var ok: Bool
+    public var queued: Counts
+    public var skipped: Counts
+}
+
 public struct RuntimeFeed: Codable, Equatable, Hashable, Sendable {
     public var url: String
     public var label: String
