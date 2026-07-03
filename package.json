@@ -9,10 +9,11 @@
   "scripts": {
     "build:backend": "npm run build -w @ai-news/shared && npm run build -w @ai-news/api",
     "test:backend": "npm run test -w @ai-news/shared && npm run test -w @ai-news/api",
-    "start:backend": "npm run build:backend && npm run start -w @ai-news/api",
+    "start:backend": "npm run prisma:init && npm run build:backend && npm run start -w @ai-news/api",
     "dev:backend": "npm run dev -w @ai-news/api",
     "prisma:generate": "npm run prisma:generate -w @ai-news/api",
     "prisma:migrate": "npm run prisma:migrate -w @ai-news/api",
+    "prisma:init": "node scripts/ensure-local-db.mjs",
     "build:native": "cd native && swift build",
     "test:native": "cd native && swift test"
     ,
