@@ -44,7 +44,7 @@ public final class WidgetAppState: ObservableObject {
     }
 
     public func refreshDiscoveredBackendURL() {
-        sessionStore.baseURLString = BackendDiscovery.discoveredBackendURLString(fallback: sessionStore.baseURLString)
+        sessionStore.synchronizeDiscoveredBaseURL()
     }
 
     public var selectedCategory: WidgetCategory? {

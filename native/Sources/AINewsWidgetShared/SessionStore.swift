@@ -12,16 +12,19 @@ public final class SessionStore {
 
     public init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
-        if defaults.string(forKey: baseURLKey) == nil {
-            defaults.set(BackendDiscovery.discoveredBackendURLString(fallback: "http://127.0.0.1:4000"), forKey: baseURLKey)
-        }
+        synchronizeDiscoveredBaseURL()
     }
 
     public var baseURLString: String {
         get {
-            BackendDiscovery.discoveredBackendURLString(
-                fallback: defaults.string(forKey: baseURLKey) ?? "http://127.0.0.1:4000"
-            )
+            if let runtimeURL = BackendDiscovery.runtimeBackendURLString(), !runtimeURL.isEmpty {
+                let stored = defaults.string(forKey: baseURLKey)
+                if stored != runtimeURL {
+                    defaults.set(runtimeURL, forKey: baseURLKey)
+                }
+                return runtimeURL
+            }
+            return defaults.string(forKey: baseURLKey) ?? "http://127.0.0.1:4000"
         }
         set { defaults.set(newValue, forKey: baseURLKey) }
     }
@@ -47,5 +50,11 @@ public final class SessionStore {
         defaults.removeObject(forKey: tokenKey)
         defaults.removeObject(forKey: usernameKey)
         defaults.removeObject(forKey: userIDKey)
+    }
+
+    public func synchronizeDiscoveredBaseURL() {
+        let runtimeURL = BackendDiscovery.runtimeBackendURLString()
+        let fallback = defaults.string(forKey: baseURLKey) ?? "http://127.0.0.1:4000"
+        defaults.set(runtimeURL ?? fallback, forKey: baseURLKey)
     }
 }
