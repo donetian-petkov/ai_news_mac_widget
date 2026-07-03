@@ -28,6 +28,9 @@ struct RootView: View {
         .onReceive(NotificationCenter.default.publisher(for: .aiNewsOpenSettings)) { _ in
             state.showingSettings = true
         }
+        .onReceive(NotificationCenter.default.publisher(for: .aiNewsOpenWidgetHelp)) { _ in
+            state.showingWidgetHelp = true
+        }
         .onChange(of: state.exportedUsageURL) { _, newValue in
             guard let newValue else { return }
             NSWorkspace.shared.activateFileViewerSelecting([newValue])
@@ -155,6 +158,11 @@ private struct DashboardView: View {
                 .environmentObject(state)
                 .frame(minWidth: 760, minHeight: 520)
         }
+        .sheet(isPresented: $state.showingWidgetHelp) {
+            WidgetHelpView()
+                .environmentObject(state)
+                .frame(minWidth: 640, minHeight: 460)
+        }
     }
 
     private var sidebar: some View {
@@ -233,6 +241,11 @@ private struct DashboardView: View {
             }
             .buttonStyle(.borderedProminent)
             .tint(AINewsTheme.accentCyan)
+
+            Button("Widget Help") {
+                state.showingWidgetHelp = true
+            }
+            .buttonStyle(.bordered)
 
             Button("Sign out") {
                 state.signOut()
@@ -370,6 +383,69 @@ private struct DashboardView: View {
         }
         .padding(24)
         .background(AINewsTheme.background)
+    }
+}
+
+private struct WidgetHelpView: View {
+    @EnvironmentObject private var state: WidgetAppState
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 20) {
+            HStack {
+                Text("Add the widgets")
+                    .font(.system(size: 28, weight: .bold))
+                    .foregroundStyle(AINewsTheme.textPrimary)
+                Spacer()
+                Button("Done") {
+                    state.showingWidgetHelp = false
+                }
+            }
+
+            VStack(alignment: .leading, spacing: 14) {
+                helpStep(number: 1, title: "Install the app", body: "Use the installed AI News Widget app in Applications so macOS can discover the widget extension.")
+                helpStep(number: 2, title: "Open the Widget gallery", body: "On the Mac desktop, Control-click the desktop or Notification Center, then choose Edit Widgets.")
+                helpStep(number: 3, title: "Search for AI News", body: "Add either the master widget for category overview or a category widget for one news group.")
+                helpStep(number: 4, title: "Pick a category widget", body: "After placing a category widget, edit it and choose the category you want that widget to follow.")
+                helpStep(number: 5, title: "Use the app for deeper actions", body: "Summary, research, translation, pinning, feed AI controls, and category management stay in sync with the widgets through the shared local snapshot.")
+            }
+            .padding(20)
+            .aiNewsPanelStyle()
+
+            VStack(alignment: .leading, spacing: 10) {
+                Text("Widget types")
+                    .font(.headline)
+                    .foregroundStyle(AINewsTheme.textSecondary)
+                Text("Master widget: category overview with quick refresh and visibility controls.")
+                    .foregroundStyle(AINewsTheme.textPrimary)
+                Text("Category widget: 5-story default view, 10-story expansion, pinning, and per-story AI actions.")
+                    .foregroundStyle(AINewsTheme.textPrimary)
+            }
+            .padding(20)
+            .aiNewsPanelStyle()
+
+            Spacer()
+        }
+        .padding(28)
+        .background(AINewsTheme.background.ignoresSafeArea())
+    }
+
+    private func helpStep(number: Int, title: String, body: String) -> some View {
+        HStack(alignment: .top, spacing: 14) {
+            Text("\(number)")
+                .font(.headline.weight(.bold))
+                .foregroundStyle(AINewsTheme.accentBlue)
+                .frame(width: 28, height: 28)
+                .background(AINewsTheme.accentBlue.opacity(0.16))
+                .clipShape(Circle())
+
+            VStack(alignment: .leading, spacing: 4) {
+                Text(title)
+                    .font(.headline)
+                    .foregroundStyle(AINewsTheme.textPrimary)
+                Text(body)
+                    .foregroundStyle(AINewsTheme.textSecondary)
+            }
+        }
     }
 }
 

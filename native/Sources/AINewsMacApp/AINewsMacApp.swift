@@ -5,6 +5,7 @@ import AINewsWidgetShared
 extension Notification.Name {
     static let aiNewsOpenSettings = Notification.Name("AINewsOpenSettings")
     static let aiNewsRefreshRequested = Notification.Name("AINewsRefreshRequested")
+    static let aiNewsOpenWidgetHelp = Notification.Name("AINewsOpenWidgetHelp")
 }
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
@@ -35,6 +36,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         menu.addItem(NSMenuItem(title: "Open AI News", action: #selector(openMainWindow), keyEquivalent: "o"))
         menu.addItem(NSMenuItem(title: "Refresh Categories", action: #selector(requestRefresh), keyEquivalent: "r"))
         menu.addItem(NSMenuItem(title: "Settings & AI", action: #selector(openSettings), keyEquivalent: ","))
+        menu.addItem(NSMenuItem(title: "Widget Help", action: #selector(openWidgetHelp), keyEquivalent: "w"))
         menu.addItem(NSMenuItem.separator())
         menu.addItem(NSMenuItem(title: "Quit", action: #selector(quitApp), keyEquivalent: "q"))
         menu.items.forEach { $0.target = self }
@@ -61,6 +63,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     @objc private func openSettings() {
         showMainWindow()
         NotificationCenter.default.post(name: .aiNewsOpenSettings, object: nil)
+    }
+
+    @objc private func openWidgetHelp() {
+        showMainWindow()
+        NotificationCenter.default.post(name: .aiNewsOpenWidgetHelp, object: nil)
     }
 
     @objc private func quitApp() {

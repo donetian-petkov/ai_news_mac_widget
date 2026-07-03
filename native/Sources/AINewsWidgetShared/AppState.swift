@@ -17,6 +17,7 @@ public final class WidgetAppState: ObservableObject {
     @Published public var providerKeyStatus: [String: Bool] = [:]
     @Published public var scrollToStoryID: String?
     @Published public var showingSettings = false
+    @Published public var showingWidgetHelp = false
     @Published public var exportedUsageURL: URL?
 
     private let sessionStore: SessionStore
