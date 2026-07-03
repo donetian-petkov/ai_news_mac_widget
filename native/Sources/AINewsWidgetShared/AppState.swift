@@ -61,6 +61,7 @@ public final class WidgetAppState: ObservableObject {
         // DB (which is re-seeded on install), which would make every stories request 404.
         // reloadEverything fetches fresh categories and re-validates the selected one.
         await reloadEverything(selectFirstCategory: selectedCategoryID == nil, suppressUnauthorizedAlert: true)
+        await backfillMissingAI()
         await processPendingCommands()
     }
 
@@ -116,6 +117,24 @@ public final class WidgetAppState: ObservableObject {
             await self.loadRuntimeContext(suppressUnauthorizedAlert: suppressUnauthorizedAlert)
             await self.loadStoriesForSelectedCategory(suppressUnauthorizedAlert: suppressUnauthorizedAlert)
             self.statusMessage = "Updated \(self.categories.count) categories."
+        }
+    }
+
+    /// On launch, ask the backend to generate any missing AI outputs for enabled feeds,
+    /// then refresh the selected category so the results show up as they land.
+    public func backfillMissingAI() async {
+        guard runtimeConfig?.aiEnabled == true else { return }
+        do {
+            let api = try makeAPIClient()
+            try await api.regenerateMissingAI()
+            statusMessage = "Generating missing summaries and translations…"
+            // Poll a few times so freshly generated outputs appear without a manual refresh.
+            for _ in 0..<6 {
+                try? await Task.sleep(nanoseconds: 3_000_000_000)
+                await loadStoriesForSelectedCategory(suppressUnauthorizedAlert: true)
+            }
+        } catch {
+            // Backfill is best-effort; never surface an alert for it.
         }
     }
 

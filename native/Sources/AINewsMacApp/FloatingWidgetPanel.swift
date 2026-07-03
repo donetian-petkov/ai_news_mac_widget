@@ -48,11 +48,18 @@ final class FloatingWidgetManager {
         // Keep the panel object around when closed so reopening the same category
         // just brings it back instead of leaking a new one.
         panel.isReleasedWhenClosed = false
-        panel.center()
-        // Offset each new panel so multiple widgets don't stack exactly on top.
-        let offset = CGFloat((cascadeIndex % 6) * 32)
+        panel.minSize = NSSize(width: 220, height: 180)
+        // Remember each widget's size/position across launches, per category.
+        let autosaveName = "AINewsFloatingWidget-\(categoryID)"
+        let restored = panel.setFrameUsingName(autosaveName)
+        panel.setFrameAutosaveName(autosaveName)
+        if !restored {
+            panel.center()
+            // Offset each new panel so multiple widgets don't stack exactly on top.
+            let offset = CGFloat((cascadeIndex % 6) * 32)
+            panel.setFrameOrigin(NSPoint(x: panel.frame.origin.x + offset, y: panel.frame.origin.y - offset))
+        }
         cascadeIndex += 1
-        panel.setFrameOrigin(NSPoint(x: panel.frame.origin.x + offset, y: panel.frame.origin.y - offset))
 
         panels[categoryID] = panel
         panel.makeKeyAndOrderFront(nil)
@@ -75,9 +82,16 @@ private struct FloatingWidgetView: View {
             Divider().overlay(AINewsTheme.panelBorder.opacity(0.5))
             content
         }
-        .frame(minWidth: 280, minHeight: 320)
+        .frame(minWidth: 220, minHeight: 180)
         .background(AINewsTheme.background)
-        .task { await reload() }
+        .task {
+            // Load now, then auto-refresh so the widget picks up new stories and
+            // freshly generated summaries/translations without clicking reload.
+            while !Task.isCancelled {
+                await reload()
+                try? await Task.sleep(nanoseconds: 45_000_000_000)
+            }
+        }
     }
 
     private var header: some View {
@@ -135,7 +149,7 @@ private struct FloatingWidgetView: View {
                 NSWorkspace.shared.open(url)
             }
         } label: {
-            VStack(alignment: .leading, spacing: 4) {
+            VStack(alignment: .leading, spacing: 6) {
                 Text(story.source ?? story.feedUrl)
                     .font(.caption2)
                     .foregroundStyle(AINewsTheme.textMuted)
@@ -143,15 +157,15 @@ private struct FloatingWidgetView: View {
                 Text(story.title)
                     .font(.subheadline.weight(.semibold))
                     .foregroundStyle(AINewsTheme.accentBlue)
-                    .lineLimit(3)
                     .fixedSize(horizontal: false, vertical: true)
-                if let summary = story.summary, !summary.isEmpty {
-                    Text(summary)
+                if let translated = story.translatedTitle, !translated.isEmpty, translated != story.title {
+                    Text(translated)
                         .font(.caption)
-                        .foregroundStyle(AINewsTheme.textSecondary)
-                        .lineLimit(3)
+                        .foregroundStyle(AINewsTheme.accentGold)
                         .fixedSize(horizontal: false, vertical: true)
                 }
+                block("Summary", story.summary, pending: story.summaryPending, accent: AINewsTheme.accentBlue)
+                block("Research", story.research, pending: story.researchPending, accent: AINewsTheme.accentCyan)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(12)
@@ -159,6 +173,25 @@ private struct FloatingWidgetView: View {
             .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
         }
         .buttonStyle(.plain)
+    }
+
+    @ViewBuilder
+    private func block(_ label: String, _ text: String?, pending: Bool, accent: Color) -> some View {
+        if let text, !text.isEmpty {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(label.uppercased())
+                    .font(.caption2.weight(.semibold))
+                    .foregroundStyle(accent.opacity(0.9))
+                Text(text)
+                    .font(.caption)
+                    .foregroundStyle(AINewsTheme.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        } else if pending {
+            Text("\(label): generating…")
+                .font(.caption2)
+                .foregroundStyle(AINewsTheme.textMuted)
+        }
     }
 
     private func reload() async {
