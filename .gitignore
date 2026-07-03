@@ -21,3 +21,6 @@ apps/web/playwright-report
 apps/web/test-results
 .run
 native/.build
+
+# Xcode / SwiftPM build output
+.build/

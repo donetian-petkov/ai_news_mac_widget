@@ -11,6 +11,14 @@ extension Notification.Name {
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private var statusItem: NSStatusItem?
+    private var appState: WidgetAppState?
+    private var floatingWidgetManager: FloatingWidgetManager?
+
+    /// Called from the SwiftUI scene once the shared app state exists.
+    @MainActor
+    func attach(state: WidgetAppState) {
+        appState = state
+    }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         BackendSupervisor.shared.ensureBackendStarted()
@@ -39,6 +47,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         menu.addItem(NSMenuItem(title: "Refresh Categories", action: #selector(requestRefresh), keyEquivalent: "r"))
         menu.addItem(NSMenuItem(title: "Settings & AI", action: #selector(openSettings), keyEquivalent: ","))
         menu.addItem(NSMenuItem(title: "Widget Help", action: #selector(openWidgetHelp), keyEquivalent: "w"))
+        menu.addItem(NSMenuItem(title: "Floating Widget", action: #selector(toggleFloatingWidget), keyEquivalent: "f"))
         menu.addItem(NSMenuItem.separator())
         menu.addItem(NSMenuItem(title: "Quit", action: #selector(quitApp), keyEquivalent: "q"))
         menu.items.forEach { $0.target = self }
@@ -77,6 +86,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NotificationCenter.default.post(name: .aiNewsOpenWidgetHelp, object: nil)
     }
 
+    @MainActor
+    @objc private func toggleFloatingWidget() {
+        guard let appState else { return }
+        if floatingWidgetManager == nil {
+            floatingWidgetManager = FloatingWidgetManager(state: appState)
+        }
+        floatingWidgetManager?.toggle()
+    }
+
     @objc private func quitApp() {
         NSApp.terminate(nil)
     }
@@ -93,6 +111,9 @@ struct AINewsMacApp: App {
                 .environmentObject(state)
                 .frame(minWidth: 1180, minHeight: 760)
                 .preferredColorScheme(.dark)
+                .task {
+                    appDelegate.attach(state: state)
+                }
                 .task {
                     await state.bootstrapIfNeeded()
                 }
