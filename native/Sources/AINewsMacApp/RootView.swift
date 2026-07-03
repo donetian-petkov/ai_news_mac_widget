@@ -1383,7 +1383,8 @@ private struct SettingsView: View {
     @State private var editingCategoryID: Int?
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 20) {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 20) {
             HStack {
                 Text("AI & Widget Settings")
                     .font(.system(size: 28, weight: .bold))
@@ -1588,7 +1589,8 @@ private struct SettingsView: View {
                 }
             }
 
-            Spacer()
+            }
+            .frame(maxWidth: .infinity, alignment: .topLeading)
         }
         .padding(28)
         .background(AINewsTheme.background.ignoresSafeArea())

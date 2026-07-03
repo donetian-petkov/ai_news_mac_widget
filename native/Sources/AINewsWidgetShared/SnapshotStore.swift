@@ -7,6 +7,8 @@ import WidgetKit
 public final class SnapshotStore {
     public static let shared = SnapshotStore()
     public static let appGroupIdentifier = "group.com.donetianpetkov.ainewswidget"
+    private static let snapshotDefaultsKey = "widget.snapshot.json"
+    private static let commandsDefaultsKey = "widget.commands.json"
 
     private let fm = FileManager.default
     private let encoder = JSONEncoder()
@@ -14,6 +16,7 @@ public final class SnapshotStore {
     private let rootDirectory: URL
     private let snapshotURL: URL
     private let commandsURL: URL
+    private let sharedDefaults: UserDefaults?
 
     public init(rootDirectory: URL? = nil) {
         let baseDirectory = rootDirectory
@@ -23,20 +26,28 @@ public final class SnapshotStore {
         self.rootDirectory = baseDirectory
         self.snapshotURL = baseDirectory.appendingPathComponent("widget-snapshot.json")
         self.commandsURL = baseDirectory.appendingPathComponent("widget-commands.json")
+        self.sharedDefaults = UserDefaults(suiteName: Self.appGroupIdentifier)
         encoder.dateEncodingStrategy = .iso8601
         decoder.dateDecodingStrategy = .iso8601
     }
 
     public func loadSnapshot() -> WidgetSnapshot {
+        if let data = sharedDefaults?.data(forKey: Self.snapshotDefaultsKey),
+           let snapshot = try? decoder.decode(WidgetSnapshot.self, from: data) {
+            return snapshot
+        }
         guard let data = try? Data(contentsOf: snapshotURL) else {
             return WidgetSnapshot()
         }
-        return (try? decoder.decode(WidgetSnapshot.self, from: data)) ?? WidgetSnapshot()
+        let snapshot = (try? decoder.decode(WidgetSnapshot.self, from: data)) ?? WidgetSnapshot()
+        sharedDefaults?.set(data, forKey: Self.snapshotDefaultsKey)
+        return snapshot
     }
 
     public func saveSnapshot(_ snapshot: WidgetSnapshot) throws {
         try fm.createDirectory(at: rootDirectory, withIntermediateDirectories: true)
         let data = try encoder.encode(snapshot)
+        sharedDefaults?.set(data, forKey: Self.snapshotDefaultsKey)
         try data.write(to: snapshotURL, options: .atomic)
         reloadWidgetTimelines()
     }
@@ -46,20 +57,28 @@ public final class SnapshotStore {
         var commands = loadCommands()
         commands.append(command)
         let data = try encoder.encode(commands)
+        sharedDefaults?.set(data, forKey: Self.commandsDefaultsKey)
         try data.write(to: commandsURL, options: .atomic)
         reloadWidgetTimelines()
     }
 
     public func loadCommands() -> [WidgetCommand] {
+        if let data = sharedDefaults?.data(forKey: Self.commandsDefaultsKey),
+           let commands = try? decoder.decode([WidgetCommand].self, from: data) {
+            return commands
+        }
         guard let data = try? Data(contentsOf: commandsURL) else {
             return []
         }
-        return (try? decoder.decode([WidgetCommand].self, from: data)) ?? []
+        let commands = (try? decoder.decode([WidgetCommand].self, from: data)) ?? []
+        sharedDefaults?.set(data, forKey: Self.commandsDefaultsKey)
+        return commands
     }
 
     public func clearCommands() throws {
         try fm.createDirectory(at: rootDirectory, withIntermediateDirectories: true)
         let data = try encoder.encode([WidgetCommand]())
+        sharedDefaults?.set(data, forKey: Self.commandsDefaultsKey)
         try data.write(to: commandsURL, options: .atomic)
         reloadWidgetTimelines()
     }
