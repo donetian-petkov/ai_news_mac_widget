@@ -1247,7 +1247,10 @@ let wss: WebSocketServer;
 
 function listenOnPort(port: number) {
   return new Promise<HttpServer>((resolve, reject) => {
-    const nextServer = app.listen(port, () => resolve(nextServer));
+    // Bind to loopback only. The Mac app talks to 127.0.0.1, and binding to all
+    // interfaces triggers the macOS firewall "allow incoming connections" prompt
+    // on every launch.
+    const nextServer = app.listen(port, '127.0.0.1', () => resolve(nextServer));
     nextServer.once('error', reject);
   });
 }
