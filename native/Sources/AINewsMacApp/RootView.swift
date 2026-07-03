@@ -433,7 +433,7 @@ private struct SettingsView: View {
                     ScrollView {
                         LazyVStack(spacing: 12) {
                             ForEach(runtimeConfig.feeds, id: \.url) { feed in
-                                feedControlRow(feed)
+                                FeedSettingsCard(feed: feed)
                             }
                         }
                     }
@@ -551,66 +551,115 @@ private struct SettingsView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .aiNewsPanelStyle()
     }
+}
 
-    private func feedControlRow(_ feed: RuntimeFeed) -> some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack {
+private struct FeedSettingsCard: View {
+    @EnvironmentObject private var state: WidgetAppState
+    @State private var draft: RuntimeFeed
+    @State private var webhookDraft: String
+
+    init(feed: RuntimeFeed) {
+        _draft = State(initialValue: feed)
+        _webhookDraft = State(initialValue: feed.settings.discordWebhookUrl ?? "")
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(alignment: .top) {
                 VStack(alignment: .leading, spacing: 4) {
-                    Text(feed.label)
+                    Text(draft.label)
                         .font(.headline)
                         .foregroundStyle(AINewsTheme.textPrimary)
-                    Text(feed.url)
+                    Text(draft.url)
                         .font(.caption)
                         .foregroundStyle(AINewsTheme.textMuted)
                         .lineLimit(1)
                 }
                 Spacer()
-                Text(feed.settings.budget.capitalized)
+                Text(draft.settings.budget.capitalized)
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(AINewsTheme.accentGold)
             }
 
             HStack(spacing: 14) {
                 Toggle("Summary", isOn: Binding(
-                    get: { currentFeed(for: feed.url)?.settings.summaryEnabled ?? feed.settings.summaryEnabled },
+                    get: { draft.settings.summaryEnabled },
                     set: { enabled in
-                        updateFeed(feed.url) { draft in
-                            draft.settings.summaryEnabled = enabled
-                        }
+                        draft.settings.summaryEnabled = enabled
+                        persist()
                     }
                 ))
                 Toggle("Translation", isOn: Binding(
-                    get: { currentFeed(for: feed.url)?.settings.translationEnabled ?? feed.settings.translationEnabled },
+                    get: { draft.settings.translationEnabled },
                     set: { enabled in
-                        updateFeed(feed.url) { draft in
-                            draft.settings.translationEnabled = enabled
-                        }
+                        draft.settings.translationEnabled = enabled
+                        persist()
                     }
                 ))
                 Toggle("Research", isOn: Binding(
-                    get: { currentFeed(for: feed.url)?.settings.researchEnabled ?? feed.settings.researchEnabled },
+                    get: { draft.settings.researchEnabled },
                     set: { enabled in
-                        updateFeed(feed.url) { draft in
-                            draft.settings.researchEnabled = enabled
-                        }
+                        draft.settings.researchEnabled = enabled
+                        persist()
                     }
                 ))
             }
             .toggleStyle(.switch)
+
+            HStack(spacing: 16) {
+                Picker("Budget", selection: Binding(
+                    get: { draft.settings.budget },
+                    set: { value in
+                        draft.settings.budget = value
+                        persist()
+                    }
+                )) {
+                    Text("Low").tag("low")
+                    Text("Standard").tag("standard")
+                    Text("High").tag("high")
+                }
+                .pickerStyle(.segmented)
+
+                Stepper(value: Binding(
+                    get: { draft.settings.intervalSec },
+                    set: { value in
+                        draft.settings.intervalSec = value
+                        persist()
+                    }
+                ), in: 30...3600, step: 15) {
+                    Text("Every \(draft.settings.intervalSec)s")
+                        .foregroundStyle(AINewsTheme.textSecondary)
+                }
+                .frame(maxWidth: 180, alignment: .leading)
+            }
+
+            HStack(spacing: 10) {
+                TextField("Discord webhook (optional)", text: $webhookDraft)
+                    .textFieldStyle(.roundedBorder)
+                    .onSubmit {
+                        draft.settings.discordWebhookUrl = webhookDraft.isEmpty ? nil : webhookDraft
+                        persist()
+                    }
+
+                Button("Save webhook") {
+                    draft.settings.discordWebhookUrl = webhookDraft.isEmpty ? nil : webhookDraft
+                    persist()
+                }
+                .buttonStyle(.bordered)
+            }
         }
         .padding(16)
         .aiNewsPanelStyle()
+        .onChange(of: state.runtimeConfig?.feeds.first(where: { $0.url == draft.url })) { _, newValue in
+            guard let newValue else { return }
+            draft = newValue
+            webhookDraft = newValue.settings.discordWebhookUrl ?? ""
+        }
     }
 
-    private func currentFeed(for url: String) -> RuntimeFeed? {
-        state.runtimeConfig?.feeds.first(where: { $0.url == url })
-    }
-
-    private func updateFeed(_ url: String, mutate: @escaping (inout RuntimeFeed) -> Void) {
-        guard var feed = currentFeed(for: url) else { return }
-        mutate(&feed)
+    private func persist() {
         Task {
-            await state.saveFeedSettings(feed)
+            await state.saveFeedSettings(draft)
         }
     }
 }
