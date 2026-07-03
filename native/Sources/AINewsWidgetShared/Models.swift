@@ -385,6 +385,30 @@ public struct SavedStoryPayload: Codable, Equatable, Hashable, Sendable {
     public var note: String
     public var read: Bool
     public var archived: Bool
+
+    public init(
+        itemId: String,
+        feedUrl: String,
+        title: String,
+        link: String? = nil,
+        source: String? = nil,
+        coverUrl: String? = nil,
+        tags: [String] = [],
+        note: String = "",
+        read: Bool = false,
+        archived: Bool = false
+    ) {
+        self.itemId = itemId
+        self.feedUrl = feedUrl
+        self.title = title
+        self.link = link
+        self.source = source
+        self.coverUrl = coverUrl
+        self.tags = tags
+        self.note = note
+        self.read = read
+        self.archived = archived
+    }
 }
 
 public struct HistoryEntry: Codable, Equatable, Sendable, Identifiable {
@@ -469,6 +493,26 @@ public struct AlertRulePayload: Codable, Equatable, Hashable, Sendable {
     public var newsTypes: [String]
     public var discordWebhookUrl: String
     public var lastCheckedAtMs: Double
+
+    public init(
+        enabled: Bool = true,
+        name: String,
+        keywords: [String] = [],
+        sources: [String] = [],
+        moods: [String] = [],
+        newsTypes: [String] = [],
+        discordWebhookUrl: String = "",
+        lastCheckedAtMs: Double = 0
+    ) {
+        self.enabled = enabled
+        self.name = name
+        self.keywords = keywords
+        self.sources = sources
+        self.moods = moods
+        self.newsTypes = newsTypes
+        self.discordWebhookUrl = discordWebhookUrl
+        self.lastCheckedAtMs = lastCheckedAtMs
+    }
 }
 
 public struct SchedulePayload: Codable, Equatable, Hashable, Sendable {
@@ -481,6 +525,28 @@ public struct SchedulePayload: Codable, Equatable, Hashable, Sendable {
     public var discordWebhookUrl: String
     public var nextRunAtMs: Double
     public var lastRunAtMs: Double
+
+    public init(
+        enabled: Bool = true,
+        name: String,
+        cadence: String = "daily",
+        time: String = "08:00",
+        feedUrls: [String] = [],
+        format: String = "executive",
+        discordWebhookUrl: String = "",
+        nextRunAtMs: Double = 0,
+        lastRunAtMs: Double = 0
+    ) {
+        self.enabled = enabled
+        self.name = name
+        self.cadence = cadence
+        self.time = time
+        self.feedUrls = feedUrls
+        self.format = format
+        self.discordWebhookUrl = discordWebhookUrl
+        self.nextRunAtMs = nextRunAtMs
+        self.lastRunAtMs = lastRunAtMs
+    }
 }
 
 public struct DigestPayload: Codable, Equatable, Hashable, Sendable {
@@ -489,6 +555,20 @@ public struct DigestPayload: Codable, Equatable, Hashable, Sendable {
     public var body: String
     public var format: String
     public var discordWebhookUrl: String
+
+    public init(
+        storyIds: [String] = [],
+        feedUrls: [String] = [],
+        body: String = "",
+        format: String = "executive",
+        discordWebhookUrl: String = ""
+    ) {
+        self.storyIds = storyIds
+        self.feedUrls = feedUrls
+        self.body = body
+        self.format = format
+        self.discordWebhookUrl = discordWebhookUrl
+    }
 }
 
 public struct ShareCreateResponse: Codable, Sendable {
