@@ -460,6 +460,43 @@ public struct OpmlImportResponse: Codable, Sendable {
     public var added: Int
 }
 
+public struct AlertRulePayload: Codable, Equatable, Hashable, Sendable {
+    public var enabled: Bool
+    public var name: String
+    public var keywords: [String]
+    public var sources: [String]
+    public var moods: [String]
+    public var newsTypes: [String]
+    public var discordWebhookUrl: String
+    public var lastCheckedAtMs: Double
+}
+
+public struct SchedulePayload: Codable, Equatable, Hashable, Sendable {
+    public var enabled: Bool
+    public var name: String
+    public var cadence: String
+    public var time: String
+    public var feedUrls: [String]
+    public var format: String
+    public var discordWebhookUrl: String
+    public var nextRunAtMs: Double
+    public var lastRunAtMs: Double
+}
+
+public struct DigestPayload: Codable, Equatable, Hashable, Sendable {
+    public var storyIds: [String]
+    public var feedUrls: [String]
+    public var body: String
+    public var format: String
+    public var discordWebhookUrl: String
+}
+
+public struct ShareCreateResponse: Codable, Sendable {
+    public var ok: Bool
+    public var token: String
+    public var url: String
+}
+
 public struct StoryActionResponse: Codable, Sendable {
     public var ok: Bool
     public var action: String

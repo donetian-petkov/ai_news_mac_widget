@@ -599,7 +599,9 @@ private struct WorkspaceView: View {
                     Text("Library").tag(0)
                     Text("History").tag(1)
                     Text("Sources").tag(2)
-                    Text("OPML").tag(3)
+                    Text("Automations").tag(3)
+                    Text("Digests").tag(4)
+                    Text("OPML").tag(5)
                 }
                 .pickerStyle(.segmented)
                 .frame(width: 420)
@@ -615,6 +617,10 @@ private struct WorkspaceView: View {
                     HistoryWorkspaceTab()
                 case 2:
                     SourcesWorkspaceTab()
+                case 3:
+                    AutomationsWorkspaceTab()
+                case 4:
+                    DigestsWorkspaceTab()
                 default:
                     OpmlWorkspaceTab()
                 }
@@ -624,6 +630,371 @@ private struct WorkspaceView: View {
         }
         .background(AINewsTheme.background.ignoresSafeArea())
     }
+}
+
+private struct AutomationsWorkspaceTab: View {
+    @EnvironmentObject private var state: WidgetAppState
+    @State private var rules: [FeatureRecord<AlertRulePayload>] = []
+    @State private var schedules: [FeatureRecord<SchedulePayload>] = []
+    @State private var ruleName = ""
+    @State private var ruleKeywords = ""
+    @State private var ruleWebhook = ""
+    @State private var scheduleName = ""
+    @State private var scheduleCadence = "daily"
+    @State private var scheduleFormat = "executive"
+    @State private var scheduleWebhook = ""
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 20) {
+                header(title: "Rules and schedules", subtitle: "Create keyword-driven alerts and recurring briefings with local history and Discord delivery.")
+
+                VStack(alignment: .leading, spacing: 12) {
+                    Text("Create alert rule")
+                        .font(.headline)
+                        .foregroundStyle(AINewsTheme.textPrimary)
+                    TextField("Rule name", text: $ruleName)
+                        .textFieldStyle(.roundedBorder)
+                    TextField("Keywords, comma separated", text: $ruleKeywords)
+                        .textFieldStyle(.roundedBorder)
+                    TextField("Discord webhook (optional)", text: $ruleWebhook)
+                        .textFieldStyle(.roundedBorder)
+                    Button("Create rule") { Task { await createRule() } }
+                        .buttonStyle(.borderedProminent)
+                        .tint(AINewsTheme.accentBlue)
+                        .disabled(ruleName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                }
+                .padding(16)
+                .aiNewsPanelStyle()
+
+                VStack(alignment: .leading, spacing: 12) {
+                    Text("Create schedule")
+                        .font(.headline)
+                        .foregroundStyle(AINewsTheme.textPrimary)
+                    TextField("Schedule name", text: $scheduleName)
+                        .textFieldStyle(.roundedBorder)
+                    HStack {
+                        Picker("Cadence", selection: $scheduleCadence) {
+                            Text("Hourly").tag("hourly")
+                            Text("Daily").tag("daily")
+                            Text("Weekly").tag("weekly")
+                        }
+                        Picker("Format", selection: $scheduleFormat) {
+                            Text("Executive").tag("executive")
+                            Text("Bullets").tag("bullets")
+                            Text("Narrative").tag("narrative")
+                        }
+                    }
+                    .pickerStyle(.segmented)
+                    TextField("Discord webhook (optional)", text: $scheduleWebhook)
+                        .textFieldStyle(.roundedBorder)
+                    Button("Create schedule") { Task { await createSchedule() } }
+                        .buttonStyle(.borderedProminent)
+                        .tint(AINewsTheme.accentCyan)
+                        .disabled(scheduleName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                }
+                .padding(16)
+                .aiNewsPanelStyle()
+
+                VStack(alignment: .leading, spacing: 12) {
+                    Text("Alert rules")
+                        .font(.headline)
+                        .foregroundStyle(AINewsTheme.textSecondary)
+                    ForEach(rules) { rule in
+                        automationCard(
+                            title: rule.title,
+                            subtitle: rule.payload.keywords.joined(separator: ", "),
+                            enabled: rule.payload.enabled,
+                            footer: rule.payload.discordWebhookUrl.isEmpty ? "No Discord delivery" : "Discord delivery configured",
+                            toggle: { enabled in await updateRule(rule, enabled: enabled) },
+                            run: { await runRule(rule) }
+                        )
+                    }
+                }
+
+                VStack(alignment: .leading, spacing: 12) {
+                    Text("Schedules")
+                        .font(.headline)
+                        .foregroundStyle(AINewsTheme.textSecondary)
+                    ForEach(schedules) { schedule in
+                        automationCard(
+                            title: schedule.title,
+                            subtitle: "\(schedule.payload.cadence.capitalized) • \(schedule.payload.format.capitalized)",
+                            enabled: schedule.payload.enabled,
+                            footer: schedule.payload.discordWebhookUrl.isEmpty ? "No Discord delivery" : "Discord delivery configured",
+                            toggle: { enabled in await updateSchedule(schedule, enabled: enabled) },
+                            run: { await runSchedule(schedule) }
+                        )
+                    }
+                }
+            }
+        }
+        .task { await reload() }
+    }
+
+    private func reload() async {
+        do {
+            let api = try state.authorizedAPIClient()
+            rules = try await api.fetchRules()
+            schedules = try await api.fetchSchedules()
+        } catch {
+            state.errorMessage = error.localizedDescription
+        }
+    }
+
+    private func createRule() async {
+        do {
+            let api = try state.authorizedAPIClient()
+            let created = try await api.createRule(AlertRulePayload(
+                enabled: true,
+                name: ruleName.trimmingCharacters(in: .whitespacesAndNewlines),
+                keywords: ruleKeywords.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty },
+                sources: [],
+                moods: [],
+                newsTypes: [],
+                discordWebhookUrl: ruleWebhook.trimmingCharacters(in: .whitespacesAndNewlines),
+                lastCheckedAtMs: 0
+            ))
+            rules.insert(created, at: 0)
+            ruleName = ""
+            ruleKeywords = ""
+            ruleWebhook = ""
+        } catch {
+            state.errorMessage = error.localizedDescription
+        }
+    }
+
+    private func createSchedule() async {
+        do {
+            let api = try state.authorizedAPIClient()
+            let created = try await api.createSchedule(SchedulePayload(
+                enabled: true,
+                name: scheduleName.trimmingCharacters(in: .whitespacesAndNewlines),
+                cadence: scheduleCadence,
+                time: "08:00",
+                feedUrls: state.runtimeConfig?.feeds.map(\.url) ?? [],
+                format: scheduleFormat,
+                discordWebhookUrl: scheduleWebhook.trimmingCharacters(in: .whitespacesAndNewlines),
+                nextRunAtMs: 0,
+                lastRunAtMs: 0
+            ))
+            schedules.insert(created, at: 0)
+            scheduleName = ""
+            scheduleCadence = "daily"
+            scheduleFormat = "executive"
+            scheduleWebhook = ""
+        } catch {
+            state.errorMessage = error.localizedDescription
+        }
+    }
+
+    private func updateRule(_ rule: FeatureRecord<AlertRulePayload>, enabled: Bool) async {
+        do {
+            let api = try state.authorizedAPIClient()
+            var payload = rule.payload
+            payload.enabled = enabled
+            let updated = try await api.updateRule(id: rule.id, payload: payload)
+            if let index = rules.firstIndex(where: { $0.id == rule.id }) { rules[index] = updated }
+        } catch {
+            state.errorMessage = error.localizedDescription
+        }
+    }
+
+    private func updateSchedule(_ schedule: FeatureRecord<SchedulePayload>, enabled: Bool) async {
+        do {
+            let api = try state.authorizedAPIClient()
+            var payload = schedule.payload
+            payload.enabled = enabled
+            let updated = try await api.updateSchedule(id: schedule.id, payload: payload)
+            if let index = schedules.firstIndex(where: { $0.id == schedule.id }) { schedules[index] = updated }
+        } catch {
+            state.errorMessage = error.localizedDescription
+        }
+    }
+
+    private func runRule(_ rule: FeatureRecord<AlertRulePayload>) async {
+        do {
+            let api = try state.authorizedAPIClient()
+            try await api.runRule(id: rule.id)
+            state.statusMessage = "Ran \(rule.title)."
+        } catch {
+            state.errorMessage = error.localizedDescription
+        }
+    }
+
+    private func runSchedule(_ schedule: FeatureRecord<SchedulePayload>) async {
+        do {
+            let api = try state.authorizedAPIClient()
+            try await api.runSchedule(id: schedule.id)
+            state.statusMessage = "Ran \(schedule.title)."
+        } catch {
+            state.errorMessage = error.localizedDescription
+        }
+    }
+}
+
+private struct DigestsWorkspaceTab: View {
+    @EnvironmentObject private var state: WidgetAppState
+    @State private var digests: [FeatureRecord<DigestPayload>] = []
+    @State private var bodyDraft = ""
+    @State private var format = "executive"
+    @State private var webhook = ""
+    @State private var sharedURL: String?
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 20) {
+                header(title: "Digest builder", subtitle: "Create manual digests from the current story list, send them to Discord later, or generate share links.")
+
+                VStack(alignment: .leading, spacing: 12) {
+                    Picker("Format", selection: $format) {
+                        Text("Executive").tag("executive")
+                        Text("Bullets").tag("bullets")
+                        Text("Narrative").tag("narrative")
+                    }
+                    .pickerStyle(.segmented)
+
+                    TextEditor(text: $bodyDraft)
+                        .frame(minHeight: 180)
+                        .padding(12)
+                        .background(AINewsTheme.panel.opacity(0.7))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                                .stroke(AINewsTheme.panelBorder.opacity(0.45), lineWidth: 1)
+                        )
+                        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+
+                    TextField("Discord webhook (optional)", text: $webhook)
+                        .textFieldStyle(.roundedBorder)
+
+                    HStack {
+                        Button("Use current stories") {
+                            let lines = state.stories.prefix(10).enumerated().map { "\($0.offset + 1). \($0.element.title)" }
+                            bodyDraft = lines.joined(separator: "\n")
+                        }
+                        .buttonStyle(.bordered)
+                        Button("Create digest") { Task { await createDigest() } }
+                            .buttonStyle(.borderedProminent)
+                            .tint(AINewsTheme.accentBlue)
+                            .disabled(bodyDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                    }
+
+                    if let sharedURL {
+                        Text(sharedURL)
+                            .font(.caption)
+                            .foregroundStyle(AINewsTheme.accentCyan)
+                    }
+                }
+                .padding(16)
+                .aiNewsPanelStyle()
+
+                VStack(alignment: .leading, spacing: 12) {
+                    Text("Saved digests")
+                        .font(.headline)
+                        .foregroundStyle(AINewsTheme.textSecondary)
+                    ForEach(digests) { digest in
+                        VStack(alignment: .leading, spacing: 10) {
+                            HStack {
+                                Text(digest.title)
+                                    .font(.headline)
+                                    .foregroundStyle(AINewsTheme.textPrimary)
+                                Spacer()
+                                Button("Create share link") {
+                                    Task { await share(digest) }
+                                }
+                                .buttonStyle(.bordered)
+                            }
+                            Text(digest.payload.body)
+                                .foregroundStyle(AINewsTheme.textSecondary)
+                                .lineLimit(4)
+                        }
+                        .padding(16)
+                        .aiNewsPanelStyle()
+                    }
+                }
+            }
+        }
+        .task { await reload() }
+    }
+
+    private func reload() async {
+        do {
+            let api = try state.authorizedAPIClient()
+            digests = try await api.fetchDigests()
+        } catch {
+            state.errorMessage = error.localizedDescription
+        }
+    }
+
+    private func createDigest() async {
+        do {
+            let api = try state.authorizedAPIClient()
+            let created = try await api.createDigest(DigestPayload(
+                storyIds: Array(state.stories.prefix(10).map(\.id)),
+                feedUrls: Array(Set(state.stories.prefix(10).map(\.feedUrl))).sorted(),
+                body: bodyDraft.trimmingCharacters(in: .whitespacesAndNewlines),
+                format: format,
+                discordWebhookUrl: webhook.trimmingCharacters(in: .whitespacesAndNewlines)
+            ))
+            digests.insert(created, at: 0)
+            state.statusMessage = "Created digest."
+        } catch {
+            state.errorMessage = error.localizedDescription
+        }
+    }
+
+    private func share(_ digest: FeatureRecord<DigestPayload>) async {
+        do {
+            let api = try state.authorizedAPIClient()
+            let response = try await api.createShare(kind: "digest", title: digest.title, payload: [
+                "storyIds": .array(digest.payload.storyIds.map(JSONValue.string)),
+                "feedUrls": .array(digest.payload.feedUrls.map(JSONValue.string)),
+                "body": .string(digest.payload.body),
+                "format": .string(digest.payload.format),
+                "discordWebhookUrl": .string(digest.payload.discordWebhookUrl)
+            ])
+            sharedURL = response.url.hasPrefix("http")
+                ? response.url
+                : "\(state.backendURLString)\(response.url)"
+        } catch {
+            state.errorMessage = error.localizedDescription
+        }
+    }
+}
+
+private func automationCard(
+    title: String,
+    subtitle: String,
+    enabled: Bool,
+    footer: String,
+    toggle: @escaping (Bool) async -> Void,
+    run: @escaping () async -> Void
+) -> some View {
+    VStack(alignment: .leading, spacing: 10) {
+        HStack {
+            VStack(alignment: .leading, spacing: 4) {
+                Text(title)
+                    .font(.headline)
+                    .foregroundStyle(AINewsTheme.textPrimary)
+                Text(subtitle)
+                    .foregroundStyle(AINewsTheme.textSecondary)
+            }
+            Spacer()
+            Toggle("Enabled", isOn: Binding(
+                get: { enabled },
+                set: { value in Task { await toggle(value) } }
+            ))
+            .toggleStyle(.switch)
+            .labelsHidden()
+        }
+        Text(footer)
+            .font(.caption)
+            .foregroundStyle(AINewsTheme.textMuted)
+        Button("Run now") { Task { await run() } }
+            .buttonStyle(.bordered)
+    }
+    .padding(16)
+    .aiNewsPanelStyle()
 }
 
 private struct LibraryWorkspaceTab: View {

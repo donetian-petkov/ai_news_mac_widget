@@ -178,6 +178,68 @@ public struct APIClient: Sendable {
         try await sendText(path: "/api/opml/export")
     }
 
+    public func fetchRules() async throws -> [FeatureRecord<AlertRulePayload>] {
+        let response: FeatureListResponse<AlertRulePayload> = try await send(path: "/api/rules")
+        return response.items
+    }
+
+    public func createRule(_ payload: AlertRulePayload) async throws -> FeatureRecord<AlertRulePayload> {
+        let response: FeatureMutationResponse<AlertRulePayload> = try await send(path: "/api/rules", method: "POST", body: payload)
+        guard let item = response.item else { throw APIClientError.invalidResponse }
+        return item
+    }
+
+    public func updateRule(id: Int, payload: AlertRulePayload) async throws -> FeatureRecord<AlertRulePayload> {
+        let response: FeatureMutationResponse<AlertRulePayload> = try await send(path: "/api/rules/\(id)", method: "PUT", body: payload)
+        guard let item = response.item else { throw APIClientError.invalidResponse }
+        return item
+    }
+
+    public func runRule(id: Int) async throws {
+        let _: BasicSuccessResponse = try await send(path: "/api/rules/\(id)/run", method: "POST")
+    }
+
+    public func fetchSchedules() async throws -> [FeatureRecord<SchedulePayload>] {
+        let response: FeatureListResponse<SchedulePayload> = try await send(path: "/api/schedules")
+        return response.items
+    }
+
+    public func createSchedule(_ payload: SchedulePayload) async throws -> FeatureRecord<SchedulePayload> {
+        let response: FeatureMutationResponse<SchedulePayload> = try await send(path: "/api/schedules", method: "POST", body: payload)
+        guard let item = response.item else { throw APIClientError.invalidResponse }
+        return item
+    }
+
+    public func updateSchedule(id: Int, payload: SchedulePayload) async throws -> FeatureRecord<SchedulePayload> {
+        let response: FeatureMutationResponse<SchedulePayload> = try await send(path: "/api/schedules/\(id)", method: "PUT", body: payload)
+        guard let item = response.item else { throw APIClientError.invalidResponse }
+        return item
+    }
+
+    public func runSchedule(id: Int) async throws {
+        let _: BasicSuccessResponse = try await send(path: "/api/schedules/\(id)/run", method: "POST")
+    }
+
+    public func fetchDigests() async throws -> [FeatureRecord<DigestPayload>] {
+        let response: FeatureListResponse<DigestPayload> = try await send(path: "/api/digests")
+        return response.items
+    }
+
+    public func createDigest(_ payload: DigestPayload) async throws -> FeatureRecord<DigestPayload> {
+        let response: FeatureMutationResponse<DigestPayload> = try await send(path: "/api/digests", method: "POST", body: payload)
+        guard let item = response.item else { throw APIClientError.invalidResponse }
+        return item
+    }
+
+    public func createShare(kind: String, title: String, payload: [String: JSONValue]) async throws -> ShareCreateResponse {
+        struct Body: Codable {
+            var kind: String
+            var title: String
+            var payload: [String: JSONValue]
+        }
+        return try await send(path: "/api/share", method: "POST", body: Body(kind: kind, title: title, payload: payload))
+    }
+
     public func resetUsage() async throws -> AIUsageExport {
         let response: AIUsageExportResponse = try await send(path: "/api/ai-usage/reset", method: "POST")
         return response.usage
