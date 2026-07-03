@@ -4,7 +4,6 @@ import Parser from 'rss-parser';
 import { WebSocketServer, WebSocket } from 'ws';
 import path from 'path';
 import fs from 'fs';
-import os from 'os';
 import crypto from 'crypto';
 import dotenv from 'dotenv';
 import OpenAI from 'openai';
@@ -57,7 +56,7 @@ const PORT = Number(process.env.PORT || 4000);
 const PORT_SEARCH_LIMIT = Math.max(1, Number.parseInt(process.env.PORT_SEARCH_LIMIT || '20', 10) || 20);
 const RUNTIME_INFO_PATH = process.env.AI_NEWS_MAC_WIDGET_RUNTIME_FILE
   ? path.resolve(process.env.AI_NEWS_MAC_WIDGET_RUNTIME_FILE)
-  : path.join(os.tmpdir(), 'ai-news-mac-widget-runtime.json');
+  : '/tmp/ai-news-mac-widget-runtime.json';
 const prisma = new PrismaClient({
   datasources: {
     db: {

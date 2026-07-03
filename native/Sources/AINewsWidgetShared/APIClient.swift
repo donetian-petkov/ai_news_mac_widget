@@ -202,7 +202,12 @@ public struct APIClient: Sendable {
             throw APIClientError.invalidResponse
         }
         if http.statusCode == 401 {
-            throw APIClientError.unauthorized
+            let errorEnvelope = try? JSONDecoder().decode(ErrorEnvelope.self, from: data)
+            let message = (errorEnvelope?.error ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+            if message.isEmpty || message.caseInsensitiveCompare("Unauthorized") == .orderedSame {
+                throw APIClientError.unauthorized
+            }
+            throw APIClientError.server(message: message)
         }
         if !(200...299).contains(http.statusCode) {
             let errorEnvelope = try? JSONDecoder().decode(ErrorEnvelope.self, from: data)
