@@ -36,6 +36,7 @@ npm run start:backend
 ```
 
 `npm run start:backend` initializes the local SQLite database first, then builds and launches the backend, so you do not need a separate manual build step for a clean clone.
+It also generates local auth/encryption secrets on first run for the standalone app account system.
 It tries Prisma migrations first and falls back to a local `db push` bootstrap if the SQLite state is brand new or messy.
 If port `4000` is already in use, the backend will automatically move to the next available port and print the final URL.
 The backend also writes its active local URL to a runtime file in your macOS temp directory so the Swift app can follow port changes automatically.
