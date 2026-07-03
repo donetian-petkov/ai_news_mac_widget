@@ -442,6 +442,21 @@ private struct SettingsView: View {
             }
 
             VStack(alignment: .leading, spacing: 12) {
+                Text("Widget categories")
+                    .font(.headline)
+                    .foregroundStyle(AINewsTheme.textSecondary)
+
+                ScrollView {
+                    LazyVStack(spacing: 12) {
+                        ForEach(state.categories) { category in
+                            categoryManagementRow(category)
+                        }
+                    }
+                }
+                .frame(minHeight: 160, maxHeight: 240)
+            }
+
+            VStack(alignment: .leading, spacing: 12) {
                 Text("Local account settings")
                     .font(.headline)
                     .foregroundStyle(AINewsTheme.textSecondary)
@@ -549,6 +564,54 @@ private struct SettingsView: View {
         }
         .padding(16)
         .frame(maxWidth: .infinity, alignment: .leading)
+        .aiNewsPanelStyle()
+    }
+
+    private func categoryManagementRow(_ category: WidgetCategory) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(alignment: .center) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(category.name)
+                        .font(.headline)
+                        .foregroundStyle(AINewsTheme.textPrimary)
+                    Text(category.hidden ? "Hidden from widgets" : "\(category.activeCount)-story widget view")
+                        .font(.caption)
+                        .foregroundStyle(AINewsTheme.textMuted)
+                }
+                Spacer()
+                Button(category.hidden ? "Show" : "Hide") {
+                    Task { await state.toggleVisibility(for: category) }
+                }
+                .buttonStyle(.bordered)
+            }
+
+            HStack(spacing: 10) {
+                Button("Reset 5") {
+                    Task {
+                        await state.selectCategory(category)
+                        await state.resetSelectedCategory()
+                    }
+                }
+                .buttonStyle(.bordered)
+
+                Button("Expand 10") {
+                    Task {
+                        await state.selectCategory(category)
+                        await state.expandSelectedCategory()
+                    }
+                }
+                .buttonStyle(.bordered)
+
+                Button("Refresh") {
+                    Task {
+                        await state.selectCategory(category)
+                        await state.refreshSelectedCategory(recordCommand: false)
+                    }
+                }
+                .buttonStyle(.bordered)
+            }
+        }
+        .padding(16)
         .aiNewsPanelStyle()
     }
 }
