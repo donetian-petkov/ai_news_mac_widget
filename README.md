@@ -47,6 +47,14 @@ swift build
 swift run AINewsMacApp
 ```
 
+Install like a normal Mac app:
+
+```bash
+cd /Users/donetianpetkov/ai_news/ai_news_mac_widget
+npm run install:app
+open "$HOME/Applications/AI News Widget.app"
+```
+
 ## Notes
 
 - Images are intentionally disabled in the native app and widget layouts.

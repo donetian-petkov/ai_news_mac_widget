@@ -29,6 +29,10 @@ private struct AuthResponse: Codable {
     var user: UserAccount
 }
 
+private struct HealthResponse: Codable {
+    var ok: Bool
+}
+
 public struct APIClient: Sendable {
     public var baseURL: URL
     public var token: String?
@@ -45,6 +49,15 @@ public struct APIClient: Sendable {
         let body = ["username": username, "password": password]
         let response: AuthResponse = try await send(path: "/api/auth/login", method: "POST", body: body)
         return UserSession(token: response.token, user: response.user)
+    }
+
+    public func isBackendReachable() async -> Bool {
+        do {
+            let response: HealthResponse = try await send(path: "/api/health")
+            return response.ok
+        } catch {
+            return false
+        }
     }
 
     public func register(username: String, password: String) async throws -> UserSession {

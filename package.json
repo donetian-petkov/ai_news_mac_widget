@@ -15,5 +15,8 @@
     "prisma:migrate": "npm run prisma:migrate -w @ai-news/api",
     "build:native": "cd native && swift build",
     "test:native": "cd native && swift test"
+    ,
+    "install:app": "bash scripts/install-mac-app.sh",
+    "open:app": "open \"$HOME/Applications/AI News Widget.app\""
   }
 }

@@ -49,6 +49,7 @@ public final class WidgetAppState: ObservableObject {
 
     public func bootstrapIfNeeded() async {
         refreshDiscoveredBackendURL()
+        await waitForBackendReady()
         guard session != nil else { return }
         if categories.isEmpty {
             await reloadEverything(selectFirstCategory: true)
@@ -61,6 +62,7 @@ public final class WidgetAppState: ObservableObject {
     public func signIn(username: String, password: String, register: Bool) async {
         await runBusy("Signing in...") {
             self.refreshDiscoveredBackendURL()
+            await self.waitForBackendReady()
             let api = try self.makeAPIClient()
             let session = try await (register ? api.register(username: username, password: password) : api.login(username: username, password: password))
             self.sessionStore.save(session: session)
@@ -293,5 +295,17 @@ public final class WidgetAppState: ObservableObject {
 
     private func makeAPIClient() throws -> APIClient {
         try APIClient(baseURLString: backendURLString, token: session?.token)
+    }
+
+    private func waitForBackendReady(maxAttempts: Int = 20) async {
+        for attempt in 0..<maxAttempts {
+            refreshDiscoveredBackendURL()
+            if let api = try? makeAPIClient(), await api.isBackendReachable() {
+                return
+            }
+            if attempt < maxAttempts - 1 {
+                try? await Task.sleep(nanoseconds: 1_000_000_000)
+            }
+        }
     }
 }
