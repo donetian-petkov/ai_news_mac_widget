@@ -43,6 +43,10 @@ private struct LoginView: View {
                 .font(.title3)
                 .foregroundStyle(AINewsTheme.textSecondary)
 
+            Text("This standalone app keeps its own local account and provider keys.")
+                .font(.subheadline)
+                .foregroundStyle(AINewsTheme.textMuted)
+
             VStack(alignment: .leading, spacing: 14) {
                 Text("Backend URL")
                     .foregroundStyle(AINewsTheme.textSecondary)

@@ -52,10 +52,10 @@ public final class WidgetAppState: ObservableObject {
         await waitForBackendReady()
         guard session != nil else { return }
         if categories.isEmpty {
-            await reloadEverything(selectFirstCategory: true)
+            await reloadEverything(selectFirstCategory: true, suppressUnauthorizedAlert: true)
         } else {
-            await loadRuntimeContext()
-            await loadStoriesForSelectedCategory()
+            await loadRuntimeContext(suppressUnauthorizedAlert: true)
+            await loadStoriesForSelectedCategory(suppressUnauthorizedAlert: true)
         }
     }
 
@@ -67,7 +67,7 @@ public final class WidgetAppState: ObservableObject {
             let session = try await (register ? api.register(username: username, password: password) : api.login(username: username, password: password))
             self.sessionStore.save(session: session)
             self.session = session
-            await self.reloadEverything(selectFirstCategory: true)
+            await self.reloadEverything(selectFirstCategory: true, suppressUnauthorizedAlert: true)
         }
     }
 
@@ -84,8 +84,8 @@ public final class WidgetAppState: ObservableObject {
         try? snapshotStore.saveSnapshot(WidgetSnapshot())
     }
 
-    public func reloadEverything(selectFirstCategory: Bool = false) async {
-        await runBusy("Refreshing categories...") {
+    public func reloadEverything(selectFirstCategory: Bool = false, suppressUnauthorizedAlert: Bool = false) async {
+        await runBusy("Refreshing categories...", suppressUnauthorizedAlert: suppressUnauthorizedAlert) {
             self.refreshDiscoveredBackendURL()
             let api = try self.makeAPIClient()
             let bootstrap = try await api.fetchBootstrap()
@@ -96,13 +96,13 @@ public final class WidgetAppState: ObservableObject {
             if selectFirstCategory || self.selectedCategoryID == nil || !self.categories.contains(where: { $0.id == self.selectedCategoryID }) {
                 self.selectedCategoryID = self.categories.first(where: { !$0.hidden })?.id ?? self.categories.first?.id
             }
-            await self.loadRuntimeContext()
-            await self.loadStoriesForSelectedCategory()
+            await self.loadRuntimeContext(suppressUnauthorizedAlert: suppressUnauthorizedAlert)
+            await self.loadStoriesForSelectedCategory(suppressUnauthorizedAlert: suppressUnauthorizedAlert)
             self.statusMessage = "Updated \(self.categories.count) categories."
         }
     }
 
-    public func loadRuntimeContext() async {
+    public func loadRuntimeContext(suppressUnauthorizedAlert: Bool = false) async {
         do {
             refreshDiscoveredBackendURL()
             let api = try makeAPIClient()
@@ -112,7 +112,7 @@ public final class WidgetAppState: ObservableObject {
                 providerKeyStatus[provider] = try await api.fetchProviderKeyStatus(provider: provider)
             }
         } catch {
-            errorMessage = error.localizedDescription
+            handleAsyncError(error, suppressUnauthorizedAlert: suppressUnauthorizedAlert)
         }
     }
 
@@ -121,7 +121,7 @@ public final class WidgetAppState: ObservableObject {
         await loadStoriesForSelectedCategory()
     }
 
-    public func loadStoriesForSelectedCategory(limit: Int? = nil) async {
+    public func loadStoriesForSelectedCategory(limit: Int? = nil, suppressUnauthorizedAlert: Bool = false) async {
         guard let category = selectedCategory else { return }
         do {
             refreshDiscoveredBackendURL()
@@ -131,7 +131,7 @@ public final class WidgetAppState: ObservableObject {
             updateCategory(response.category)
             saveSnapshot()
         } catch {
-            errorMessage = error.localizedDescription
+            handleAsyncError(error, suppressUnauthorizedAlert: suppressUnauthorizedAlert)
         }
     }
 
@@ -219,7 +219,7 @@ public final class WidgetAppState: ObservableObject {
             let api = try makeAPIClient()
             usage = try await api.fetchUsage()
         } catch {
-            errorMessage = error.localizedDescription
+            handleAsyncError(error, suppressUnauthorizedAlert: false)
         }
     }
 
@@ -277,7 +277,7 @@ public final class WidgetAppState: ObservableObject {
         try? snapshotStore.saveSnapshot(snapshot)
     }
 
-    private func runBusy(_ status: String, operation: @escaping () async throws -> Void) async {
+    private func runBusy(_ status: String, suppressUnauthorizedAlert: Bool = false, operation: @escaping () async throws -> Void) async {
         guard !isBusy else { return }
         isBusy = true
         errorMessage = nil
@@ -285,16 +285,25 @@ public final class WidgetAppState: ObservableObject {
         do {
             try await operation()
         } catch {
-            if case APIClientError.unauthorized = error {
-                signOut()
-            }
-            errorMessage = error.localizedDescription
+            handleAsyncError(error, suppressUnauthorizedAlert: suppressUnauthorizedAlert)
         }
         isBusy = false
     }
 
     private func makeAPIClient() throws -> APIClient {
         try APIClient(baseURLString: backendURLString, token: session?.token)
+    }
+
+    private func handleAsyncError(_ error: Error, suppressUnauthorizedAlert: Bool) {
+        if case APIClientError.unauthorized = error {
+            signOut()
+            statusMessage = "Local session expired. Sign in again."
+            if !suppressUnauthorizedAlert {
+                errorMessage = error.localizedDescription
+            }
+            return
+        }
+        errorMessage = error.localizedDescription
     }
 
     private func waitForBackendReady(maxAttempts: Int = 20) async {
