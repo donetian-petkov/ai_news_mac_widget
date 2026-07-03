@@ -37,9 +37,19 @@ final class BackendSupervisor {
         guard
             let data = try? Data(contentsOf: URL(fileURLWithPath: runtimeInfoPath)),
             let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+            let appID = object["app"] as? String,
             let urlString = object["url"] as? String,
             let healthURL = URL(string: "\(urlString)/api/health")
         else {
+            return true
+        }
+
+        guard appID == "ai-news-mac-widget" else {
+            return true
+        }
+
+        let widgetAPIReady = ((object["capabilities"] as? [String: Any])?["widgetAPI"] as? Bool) == true
+        guard widgetAPIReady else {
             return true
         }
 

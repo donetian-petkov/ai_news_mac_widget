@@ -1223,10 +1223,14 @@ void bindServer(PORT)
     registerWebSocketHandlers(wss);
     try {
       fs.writeFileSync(RUNTIME_INFO_PATH, JSON.stringify({
+        app: 'ai-news-mac-widget',
         url: `http://127.0.0.1:${port}`,
         port,
         pid: process.pid,
-        startedAt: new Date().toISOString()
+        startedAt: new Date().toISOString(),
+        capabilities: {
+          widgetAPI: true
+        }
       }, null, 2));
     } catch (error) {
       console.warn(`[startup] Failed to write runtime info: ${String((error as Error).message || error)}`);

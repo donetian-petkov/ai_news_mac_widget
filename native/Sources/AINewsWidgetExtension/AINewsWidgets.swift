@@ -115,6 +115,7 @@ struct MasterWidgetProvider: TimelineProvider {
 
 @available(macOS 14.0, *)
 struct CategoryWidgetView: View {
+    @Environment(\.widgetFamily) private var family
     let entry: CategoryWidgetEntry
 
     private func storyURL(_ story: WidgetStory, action: WidgetDeepLinkAction = .open) -> URL? {
@@ -135,10 +136,38 @@ struct CategoryWidgetView: View {
                         .font(.headline)
                         .foregroundStyle(AINewsTheme.textPrimary)
                     Spacer()
+                    if family != .systemSmall {
+                        if category.activeCount > category.preferredCount {
+                            Button(intent: ResetCategoryIntent(categoryID: category.id)) {
+                                Image(systemName: "arrow.up.to.line")
+                            }
+                            .buttonStyle(.plain)
+                        } else {
+                            Button(intent: ExpandCategoryIntent(categoryID: category.id)) {
+                                Image(systemName: "arrow.down.to.line")
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
                     Button(intent: RefreshCategoryIntent(categoryID: category.id)) {
                         Image(systemName: "arrow.clockwise")
                     }
                     .buttonStyle(.plain)
+                }
+
+                if family != .systemSmall {
+                    HStack(spacing: 12) {
+                        Button(intent: ToggleCategoryVisibilityIntent(categoryID: category.id)) {
+                            Label(category.hidden ? "Show" : "Hide", systemImage: category.hidden ? "eye.slash" : "eye")
+                        }
+                        .buttonStyle(.plain)
+
+                        Text(category.activeCount > category.preferredCount ? "10-story view" : "5-story view")
+                            .font(.caption2.weight(.semibold))
+                            .foregroundStyle(AINewsTheme.textMuted)
+                    }
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(AINewsTheme.accentCyan)
                 }
 
                 ForEach(Array(entry.stories.prefix(category.activeCount).enumerated()), id: \.element.storyKey) { index, story in
@@ -207,6 +236,7 @@ struct CategoryWidgetView: View {
 
 @available(macOS 14.0, *)
 struct MasterWidgetView: View {
+    @Environment(\.widgetFamily) private var family
     let entry: MasterWidgetEntry
 
     private var visibleCategories: [WidgetCategory] {
@@ -225,6 +255,23 @@ struct MasterWidgetView: View {
                 Text("\(visibleCategories.count) live")
                     .font(.caption)
                     .foregroundStyle(AINewsTheme.textMuted)
+            }
+
+            if family != .systemMedium {
+                HStack(spacing: 12) {
+                    if let firstVisible = visibleCategories.first {
+                        Button(intent: RefreshCategoryIntent(categoryID: firstVisible.id)) {
+                            Image(systemName: "arrow.clockwise")
+                        }
+                        .buttonStyle(.plain)
+                    }
+                    Link(destination: URL(string: "ainewswidget://story")!) {
+                        Image(systemName: "arrow.up.right.square")
+                    }
+                    .buttonStyle(.plain)
+                }
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(AINewsTheme.accentCyan)
             }
 
             ForEach(Array(visibleCategories.prefix(4)), id: \.id) { category in

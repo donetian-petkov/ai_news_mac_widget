@@ -58,6 +58,9 @@ public struct ToggleCategoryVisibilityIntent: AppIntent {
     @Parameter(title: "Category ID") public var categoryID: Int
 
     public init() {}
+    public init(categoryID: Int) {
+        self.categoryID = categoryID
+    }
 
     public func perform() async throws -> some IntentResult {
         try await persist(WidgetCommand(kind: .toggleCategoryVisibility, categoryID: categoryID))
@@ -73,6 +76,9 @@ public struct ExpandCategoryIntent: AppIntent {
     @Parameter(title: "Category ID") public var categoryID: Int
 
     public init() {}
+    public init(categoryID: Int) {
+        self.categoryID = categoryID
+    }
 
     public func perform() async throws -> some IntentResult {
         try await persist(WidgetCommand(kind: .expandCategory, categoryID: categoryID))
@@ -88,6 +94,9 @@ public struct ResetCategoryIntent: AppIntent {
     @Parameter(title: "Category ID") public var categoryID: Int
 
     public init() {}
+    public init(categoryID: Int) {
+        self.categoryID = categoryID
+    }
 
     public func perform() async throws -> some IntentResult {
         try await persist(WidgetCommand(kind: .resetCategory, categoryID: categoryID))
