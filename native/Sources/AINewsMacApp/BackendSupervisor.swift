@@ -9,6 +9,14 @@ final class BackendSupervisor {
     private var process: Process?
     private let fileManager = FileManager.default
 
+    /// Terminate the backend this app started, so it doesn't linger as a stale
+    /// orphan that a future launch (possibly on old code) would reuse.
+    func stopBackend() {
+        guard let process, process.isRunning else { return }
+        process.terminate()
+        self.process = nil
+    }
+
     func ensureBackendStarted() {
         guard process?.isRunning != true else { return }
         guard let config = loadConfig() else { return }

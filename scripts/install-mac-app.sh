@@ -32,6 +32,11 @@ rm -rf "$DERIVED_DATA_DIR"
 /usr/bin/osascript -e 'tell application "AI News Widget" to quit' >/dev/null 2>&1 || true
 /usr/bin/killall AINewsMacApp >/dev/null 2>&1 || true
 /usr/bin/killall AINewsWidgets >/dev/null 2>&1 || true
+# Kill any backend this project started so the new build never reuses a stale
+# old-code backend (the app adopts any healthy backend it finds), and clear the
+# discovery file so the fresh app starts its own backend.
+/usr/bin/pkill -f "$ROOT_DIR/backend/apps/api/dist/server.js" >/dev/null 2>&1 || true
+/bin/rm -f "$RUNTIME_INFO_PATH" >/dev/null 2>&1 || true
 sleep 1
 
 "$NODE_PATH" "$ROOT_DIR/scripts/ensure-local-secrets.mjs"

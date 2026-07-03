@@ -105,6 +105,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     @objc private func quitApp() {
         NSApp.terminate(nil)
     }
+
+    func applicationWillTerminate(_ notification: Notification) {
+        // Don't leave the backend running as a stale orphan for the next launch.
+        BackendSupervisor.shared.stopBackend()
+    }
 }
 
 @main
