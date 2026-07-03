@@ -124,7 +124,7 @@ private struct FloatingWidgetView: View {
             Image(systemName: "newspaper.fill")
                 .foregroundStyle(AINewsTheme.accentBlue)
             Text(categoryName)
-                .font(.headline)
+                .font(AINewsTheme.font(16, weight: .bold))
                 .foregroundStyle(AINewsTheme.textPrimary)
                 .lineLimit(1)
             Spacer()
@@ -148,10 +148,10 @@ private struct FloatingWidgetView: View {
         if stories.isEmpty {
             VStack(alignment: .leading, spacing: 6) {
                 Text(loading ? "Loading…" : "No stories yet")
-                    .font(.subheadline.weight(.semibold))
+                    .font(AINewsTheme.font(14, weight: .semibold))
                     .foregroundStyle(AINewsTheme.textPrimary)
                 Text("Refresh this category, or generate summaries from the main window.")
-                    .font(.caption)
+                    .font(AINewsTheme.font(12))
                     .foregroundStyle(AINewsTheme.textSecondary)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
@@ -182,16 +182,16 @@ private struct FloatingWidgetView: View {
                 }
                 VStack(alignment: .leading, spacing: 6) {
                     Text(story.source ?? story.feedUrl)
-                    .font(.caption2)
+                    .font(AINewsTheme.font(11))
                     .foregroundStyle(AINewsTheme.textMuted)
                     .lineLimit(1)
                 Text(story.title)
-                    .font(.subheadline.weight(.semibold))
+                    .font(AINewsTheme.font(14, weight: .semibold))
                     .foregroundStyle(AINewsTheme.accentBlue)
                     .fixedSize(horizontal: false, vertical: true)
                 if let translated = story.translatedTitle, !translated.isEmpty, translated != story.title {
                     Text(translated)
-                        .font(.caption)
+                        .font(AINewsTheme.font(12))
                         .foregroundStyle(AINewsTheme.accentGold)
                         .fixedSize(horizontal: false, vertical: true)
                 }
@@ -212,16 +212,16 @@ private struct FloatingWidgetView: View {
         if let text, !text.isEmpty {
             VStack(alignment: .leading, spacing: 2) {
                 Text(label.uppercased())
-                    .font(.caption2.weight(.semibold))
+                    .font(AINewsTheme.font(10, weight: .semibold))
                     .foregroundStyle(accent.opacity(0.9))
                 Text(text)
-                    .font(.caption)
+                    .font(AINewsTheme.font(12))
                     .foregroundStyle(AINewsTheme.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
         } else if pending {
             Text("\(label): generating…")
-                .font(.caption2)
+                .font(AINewsTheme.font(10))
                 .foregroundStyle(AINewsTheme.textMuted)
         }
     }
