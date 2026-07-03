@@ -3,6 +3,7 @@ import Foundation
 @MainActor
 public final class SnapshotStore {
     public static let shared = SnapshotStore()
+    public static let appGroupIdentifier = "group.com.donetianpetkov.ainewswidget"
 
     private let fm = FileManager.default
     private let encoder = JSONEncoder()
@@ -13,6 +14,7 @@ public final class SnapshotStore {
 
     public init(rootDirectory: URL? = nil) {
         let baseDirectory = rootDirectory
+            ?? Self.sharedContainerURL(fileManager: fm)
             ?? fm.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
                 .appendingPathComponent("AINewsMacWidget", isDirectory: true)
         self.rootDirectory = baseDirectory
@@ -54,5 +56,11 @@ public final class SnapshotStore {
         try fm.createDirectory(at: rootDirectory, withIntermediateDirectories: true)
         let data = try encoder.encode([WidgetCommand]())
         try data.write(to: commandsURL, options: .atomic)
+    }
+
+    private static func sharedContainerURL(fileManager: FileManager) -> URL? {
+        fileManager
+            .containerURL(forSecurityApplicationGroupIdentifier: appGroupIdentifier)?
+            .appendingPathComponent("AINewsMacWidget", isDirectory: true)
     }
 }

@@ -5,57 +5,30 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 NATIVE_DIR="$ROOT_DIR/native"
 APP_NAME="AI News Widget"
 APP_BUNDLE_NAME="$APP_NAME.app"
-(
-  cd "$NATIVE_DIR"
-  swift build -c release --product AINewsMacApp >/dev/null
-)
-RELEASE_BIN_DIR="$(cd "$NATIVE_DIR" && swift build -c release --show-bin-path)"
-SOURCE_BIN="$RELEASE_BIN_DIR/AINewsMacApp"
-STAGING_DIR="$ROOT_DIR/.dist/$APP_BUNDLE_NAME"
+PROJECT_PATH="$NATIVE_DIR/AINewsMacWidget.xcodeproj"
+DERIVED_DATA_DIR="$ROOT_DIR/.build/xcode"
+SOURCE_APP="$DERIVED_DATA_DIR/Build/Products/Release/AINewsMacApp.app"
 INSTALL_DIR="${HOME}/Applications/$APP_BUNDLE_NAME"
-MACOS_DIR="$STAGING_DIR/Contents/MacOS"
-RESOURCES_DIR="$STAGING_DIR/Contents/Resources"
+RESOURCES_DIR="$INSTALL_DIR/Contents/Resources"
+WIDGET_APPEX="$INSTALL_DIR/Contents/PlugIns/AINewsWidgets.appex"
 LOG_DIR="${HOME}/Library/Logs/AINewsMacWidget"
 RUNTIME_INFO_PATH="/tmp/ai-news-mac-widget-runtime.json"
 
 mkdir -p "$LOG_DIR"
-rm -rf "$STAGING_DIR"
-mkdir -p "$MACOS_DIR" "$RESOURCES_DIR"
+ruby "$ROOT_DIR/scripts/generate-xcodeproj.rb"
+rm -rf "$DERIVED_DATA_DIR"
+/usr/bin/xcodebuild \
+  -project "$PROJECT_PATH" \
+  -scheme AINewsMacApp \
+  -configuration Release \
+  -derivedDataPath "$DERIVED_DATA_DIR" \
+  CODE_SIGNING_ALLOWED=NO \
+  build >/dev/null
 
-cat > "$STAGING_DIR/Contents/Info.plist" <<PLIST
-<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-<dict>
-  <key>CFBundleDevelopmentRegion</key>
-  <string>en</string>
-  <key>CFBundleDisplayName</key>
-  <string>$APP_NAME</string>
-  <key>CFBundleExecutable</key>
-  <string>AINewsMacApp</string>
-  <key>CFBundleIdentifier</key>
-  <string>com.donetianpetkov.ai-news-mac-widget</string>
-  <key>CFBundleInfoDictionaryVersion</key>
-  <string>6.0</string>
-  <key>CFBundleName</key>
-  <string>$APP_NAME</string>
-  <key>CFBundlePackageType</key>
-  <string>APPL</string>
-  <key>CFBundleShortVersionString</key>
-  <string>0.1.0</string>
-  <key>CFBundleVersion</key>
-  <string>1</string>
-  <key>LSApplicationCategoryType</key>
-  <string>public.app-category.news</string>
-  <key>LSMinimumSystemVersion</key>
-  <string>14.0</string>
-  <key>NSHighResolutionCapable</key>
-  <true/>
-  <key>NSPrincipalClass</key>
-  <string>NSApplication</string>
-</dict>
-</plist>
-PLIST
+mkdir -p "${HOME}/Applications"
+rm -rf "$INSTALL_DIR"
+cp -R "$SOURCE_APP" "$INSTALL_DIR"
+mkdir -p "$RESOURCES_DIR"
 
 cat > "$RESOURCES_DIR/backend-launch.json" <<JSON
 {
@@ -65,55 +38,12 @@ cat > "$RESOURCES_DIR/backend-launch.json" <<JSON
 }
 JSON
 
-cp "$SOURCE_BIN" "$MACOS_DIR/AINewsMacApp.bin"
-chmod +x "$MACOS_DIR/AINewsMacApp.bin"
-
-cat > "$MACOS_DIR/AINewsMacApp" <<'LAUNCHER'
-#!/usr/bin/env bash
-set -euo pipefail
-
-SELF_DIR="$(cd "$(dirname "$0")" && pwd)"
-APP_DIR="$(cd "$SELF_DIR/.." && pwd)"
-RESOURCES_DIR="$APP_DIR/Resources"
-CONFIG_PATH="$RESOURCES_DIR/backend-launch.json"
-BACKEND_LOG="${HOME}/Library/Logs/AINewsMacWidget/backend.log"
-RUNTIME_INFO_PATH="/tmp/ai-news-mac-widget-runtime.json"
-REPO_ROOT=""
-
-if [[ -f "$CONFIG_PATH" ]]; then
-  REPO_ROOT="$(sed -n 's/.*"repoRoot"[[:space:]]*:[[:space:]]*"\(.*\)".*/\1/p' "$CONFIG_PATH")"
-  RUNTIME_INFO_PATH="$(sed -n 's/.*"runtimeInfoPath"[[:space:]]*:[[:space:]]*"\(.*\)".*/\1/p' "$CONFIG_PATH" || true)"
-  BACKEND_LOG="$(sed -n 's/.*"logFile"[[:space:]]*:[[:space:]]*"\(.*\)".*/\1/p' "$CONFIG_PATH" || true)"
+if [[ -d "$WIDGET_APPEX" ]]; then
+  /usr/bin/codesign --force --sign - --entitlements "$NATIVE_DIR/Support/AINewsWidgets.entitlements" "$WIDGET_APPEX"
 fi
+/usr/bin/codesign --force --deep --sign - --entitlements "$NATIVE_DIR/Support/AINewsMacApp.entitlements" "$INSTALL_DIR"
 
-mkdir -p "$(dirname "$BACKEND_LOG")"
-
-BACKEND_URL=""
-if [[ -f "$RUNTIME_INFO_PATH" ]]; then
-  BACKEND_URL="$(sed -n 's/.*"url"[[:space:]]*:[[:space:]]*"\(http[^"]*\)".*/\1/p' "$RUNTIME_INFO_PATH" | head -n 1)"
-fi
-if [[ -z "$BACKEND_URL" ]]; then
-  BACKEND_URL="http://127.0.0.1:4000"
-fi
-
-HEALTH_JSON=""
-if /usr/bin/curl -fsS "$BACKEND_URL/api/health" >/dev/null 2>&1; then
-  HEALTH_JSON="$(/usr/bin/curl -fsS "$BACKEND_URL/api/health" 2>/dev/null || true)"
-fi
-
-if [[ -z "$HEALTH_JSON" || "$HEALTH_JSON" != *'"authConfigured":true'* ]]; then
-  if [[ -n "$REPO_ROOT" && -d "$REPO_ROOT" ]]; then
-    nohup /bin/bash -lc "cd \"$REPO_ROOT\" && npm run start:backend" >>"$BACKEND_LOG" 2>&1 &
-  fi
-fi
-
-exec "$SELF_DIR/AINewsMacApp.bin"
-LAUNCHER
-chmod +x "$MACOS_DIR/AINewsMacApp"
-
-mkdir -p "${HOME}/Applications"
-rm -rf "$INSTALL_DIR"
-cp -R "$STAGING_DIR" "$INSTALL_DIR"
+touch "$INSTALL_DIR"
 
 echo "Installed $APP_NAME to $INSTALL_DIR"
 echo "Launch it with: open \"$INSTALL_DIR\""

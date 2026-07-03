@@ -20,6 +20,7 @@ public final class WidgetAppState: ObservableObject {
 
     private let sessionStore: SessionStore
     private let snapshotStore: SnapshotStore
+    private var isProcessingCommands = false
 
     public init(
         sessionStore: SessionStore = .shared,
@@ -57,6 +58,7 @@ public final class WidgetAppState: ObservableObject {
             await loadRuntimeContext(suppressUnauthorizedAlert: true)
             await loadStoriesForSelectedCategory(suppressUnauthorizedAlert: true)
         }
+        await processPendingCommands()
     }
 
     public func signIn(username: String, password: String, register: Bool) async {
@@ -181,35 +183,47 @@ public final class WidgetAppState: ObservableObject {
     }
 
     public func triggerStoryAction(_ action: WidgetStoryAction, story: WidgetStory) async {
+        await triggerStoryAction(action, story: story, recordCommand: true)
+    }
+
+    public func triggerStoryAction(_ action: WidgetStoryAction, story: WidgetStory, recordCommand: Bool) async {
         await runBusy("Sending \(action.rawValue) request...") {
             let api = try self.makeAPIClient()
             try await api.triggerStoryAction(action, story: story)
             self.statusMessage = "\(action.rawValue.capitalized) queued for \(story.title)."
-            try? self.snapshotStore.appendCommand(
-                WidgetCommand(
-                    kind: {
-                        switch action {
-                        case .summary: return .openSummary
-                        case .research: return .openResearch
-                        case .translation: return .openTranslation
-                        case .refresh: return .refreshCategory
-                        }
-                    }(),
-                    categoryID: self.selectedCategoryID,
-                    storyID: story.id,
-                    feedURL: story.feedUrl
+            if recordCommand {
+                try? self.snapshotStore.appendCommand(
+                    WidgetCommand(
+                        kind: {
+                            switch action {
+                            case .summary: return .openSummary
+                            case .research: return .openResearch
+                            case .translation: return .openTranslation
+                            case .refresh: return .refreshCategory
+                            }
+                        }(),
+                        categoryID: self.selectedCategoryID,
+                        storyID: story.id,
+                        feedURL: story.feedUrl
+                    )
                 )
-            )
+            }
         }
     }
 
     public func refreshSelectedCategory() async {
+        await refreshSelectedCategory(recordCommand: true)
+    }
+
+    public func refreshSelectedCategory(recordCommand: Bool) async {
         guard let category = selectedCategory else { return }
         await runBusy("Refreshing feeds...") {
             let api = try self.makeAPIClient()
             try await api.refreshCategory(category)
             self.statusMessage = "Refresh requested for \(category.name)."
-            try? self.snapshotStore.appendCommand(WidgetCommand(kind: .refreshCategory, categoryID: category.id))
+            if recordCommand {
+                try? self.snapshotStore.appendCommand(WidgetCommand(kind: .refreshCategory, categoryID: category.id))
+            }
         }
     }
 
@@ -254,6 +268,15 @@ public final class WidgetAppState: ObservableObject {
         scrollToStoryID = stories.first?.id
     }
 
+    public func startCommandLoop() async {
+        while !Task.isCancelled {
+            if session != nil {
+                await processPendingCommands()
+            }
+            try? await Task.sleep(nanoseconds: 2_000_000_000)
+        }
+    }
+
     private func updateCategory(_ category: WidgetCategory) {
         if let index = categories.firstIndex(where: { $0.id == category.id }) {
             categories[index] = category
@@ -275,6 +298,58 @@ public final class WidgetAppState: ObservableObject {
             snapshot.storiesByCategory[String(selectedCategoryID)] = stories
         }
         try? snapshotStore.saveSnapshot(snapshot)
+    }
+
+    private func processPendingCommands() async {
+        guard !isProcessingCommands else { return }
+        let commands = snapshotStore.loadCommands()
+        guard !commands.isEmpty else { return }
+
+        isProcessingCommands = true
+        defer { isProcessingCommands = false }
+        try? snapshotStore.clearCommands()
+
+        for command in commands {
+            await execute(command)
+        }
+    }
+
+    private func execute(_ command: WidgetCommand) async {
+        if let categoryID = command.categoryID,
+           let category = categories.first(where: { $0.id == categoryID }) {
+            selectedCategoryID = category.id
+            await loadStoriesForSelectedCategory(limit: category.activeCount, suppressUnauthorizedAlert: true)
+        }
+
+        switch command.kind {
+        case .refreshCategory:
+            await refreshSelectedCategory(recordCommand: false)
+        case .pinStory:
+            guard let story = story(for: command) else { return }
+            await togglePin(for: story)
+        case .toggleCategoryVisibility:
+            guard let category = selectedCategory else { return }
+            await toggleVisibility(for: category)
+        case .expandCategory:
+            await expandSelectedCategory()
+        case .resetCategory:
+            await resetSelectedCategory()
+        case .openSummary:
+            guard let story = story(for: command) else { return }
+            await triggerStoryAction(.summary, story: story, recordCommand: false)
+        case .openResearch:
+            guard let story = story(for: command) else { return }
+            await triggerStoryAction(.research, story: story, recordCommand: false)
+        case .openTranslation:
+            guard let story = story(for: command) else { return }
+            await triggerStoryAction(.translation, story: story, recordCommand: false)
+        }
+    }
+
+    private func story(for command: WidgetCommand) -> WidgetStory? {
+        stories.first(where: { story in
+            story.id == command.storyID && story.feedUrl == command.feedURL
+        })
     }
 
     private func runBusy(_ status: String, suppressUnauthorizedAlert: Bool = false, operation: @escaping () async throws -> Void) async {

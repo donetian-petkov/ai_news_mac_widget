@@ -4,6 +4,7 @@ import AINewsWidgetShared
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
+        BackendSupervisor.shared.ensureBackendStarted()
         NSApp.setActivationPolicy(.regular)
         NSApp.applicationIconImage = NSImage(
             systemSymbolName: "newspaper.fill",
@@ -29,6 +30,9 @@ struct AINewsMacApp: App {
                 .preferredColorScheme(.dark)
                 .task {
                     await state.bootstrapIfNeeded()
+                }
+                .task {
+                    await state.startCommandLoop()
                 }
         }
         .defaultSize(width: 1280, height: 820)
