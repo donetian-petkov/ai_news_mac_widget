@@ -219,14 +219,15 @@ public struct StoryThumbnail: View {
     @ViewBuilder
     private var content: some View {
         #if canImport(AppKit)
-        if let image {
-            Image(nsImage: image).resizable().aspectRatio(contentMode: .fill)
+        // Read the cache synchronously every render: once an image is cached, it shows
+        // on any re-render (widget auto-refresh, re-poll) even if @State was reset — so
+        // it never flashes back to blank.
+        if let resolved = image ?? ThumbnailCache.shared.object(forKey: url as NSURL) {
+            Image(nsImage: resolved).resizable().aspectRatio(contentMode: .fill)
         } else if failed {
             AINewsTheme.panel.overlay(Image(systemName: "photo").foregroundStyle(AINewsTheme.textMuted))
         } else {
             AINewsTheme.panel.overlay(ProgressView().controlSize(.small))
-                // .task(id:) does not restart on re-render (same url), so the loaded
-                // image state survives refreshes instead of flashing back to blank.
                 .task(id: url) { await load() }
         }
         #else
