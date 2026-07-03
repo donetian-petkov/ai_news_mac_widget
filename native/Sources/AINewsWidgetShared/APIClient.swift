@@ -224,6 +224,20 @@ public struct APIClient: Sendable {
         if path.hasPrefix("http://") || path.hasPrefix("https://") {
             return URL(string: path)!
         }
-        return baseURL.appendingPathComponent(path.trimmingCharacters(in: CharacterSet(charactersIn: "/")))
+
+        let trimmedPath = path.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+        let components = trimmedPath.split(separator: "?", maxSplits: 1, omittingEmptySubsequences: false)
+        let relativePath = String(components.first ?? "")
+        let query = components.count > 1 ? String(components[1]) : nil
+
+        var url = baseURL.appendingPathComponent(relativePath)
+        if let query, !query.isEmpty {
+            var urlComponents = URLComponents(url: url, resolvingAgainstBaseURL: false)
+            urlComponents?.percentEncodedQuery = query
+            if let resolvedURL = urlComponents?.url {
+                url = resolvedURL
+            }
+        }
+        return url
     }
 }
