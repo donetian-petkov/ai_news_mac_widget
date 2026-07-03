@@ -1,4 +1,5 @@
 import express from 'express';
+import type { Server as HttpServer } from 'http';
 import Parser from 'rss-parser';
 import { WebSocketServer, WebSocket } from 'ws';
 import path from 'path';
@@ -52,6 +53,7 @@ bootstrapEnv();
 
 const app = express();
 const PORT = Number(process.env.PORT || 4000);
+const PORT_SEARCH_LIMIT = Math.max(1, Number.parseInt(process.env.PORT_SEARCH_LIMIT || '20', 10) || 20);
 const prisma = new PrismaClient({
   datasources: {
     db: {
@@ -1110,11 +1112,34 @@ app.get('/api/ops/ai-summary-debug', (req, res) => {
   });
 });
 
-const server = app.listen(PORT, () =>
-  console.log(`Live RSS running at http://localhost:${PORT}`)
-);
+let server: HttpServer;
+let wss: WebSocketServer;
 
-const wss = new WebSocketServer({ server });
+function listenOnPort(port: number) {
+  return new Promise<HttpServer>((resolve, reject) => {
+    const nextServer = app.listen(port, () => resolve(nextServer));
+    nextServer.once('error', reject);
+  });
+}
+
+async function bindServer(startPort: number) {
+  let attemptPort = startPort;
+  for (let attempt = 0; attempt < PORT_SEARCH_LIMIT; attempt += 1) {
+    try {
+      const boundServer = await listenOnPort(attemptPort);
+      process.env.PORT = String(attemptPort);
+      if (attemptPort !== startPort) {
+        console.warn(`[startup] Port ${startPort} was busy, switched to ${attemptPort}.`);
+      }
+      return { boundServer, port: attemptPort };
+    } catch (error) {
+      const code = String((error as NodeJS.ErrnoException | undefined)?.code || '');
+      if (code !== 'EADDRINUSE') throw error;
+      attemptPort += 1;
+    }
+  }
+  throw new Error(`Could not find a free port in range ${startPort}-${startPort + PORT_SEARCH_LIMIT - 1}.`);
+}
 
 // -------------------- Runtime timer (exit after X hours) --------------------
 const RUNTIME_HOURS = parseFloat(process.env.RUNTIME_HOURS || '0');
@@ -1131,17 +1156,28 @@ function shutdown(reason: string) {
     productFeatures?.stop();
   } catch {}
   try {
-    wss.clients.forEach((c: WebSocket) => {
+    wss?.clients.forEach((c: WebSocket) => {
       try { c.close(); } catch {}
     });
   } catch {}
-  try { wss.close(); } catch {}
-  try { server.close(() => process.exit(0)); } catch { process.exit(0); }
+  try { wss?.close(); } catch {}
+  try { server?.close(() => process.exit(0)); } catch { process.exit(0); }
   void prisma.$disconnect().catch(() => {});
   setTimeout(() => process.exit(0), 1500);
 }
 process.on('SIGINT', () => shutdown('SIGINT'));
 process.on('SIGTERM', () => shutdown('SIGTERM'));
+void bindServer(PORT)
+  .then(({ boundServer, port }) => {
+    server = boundServer;
+    wss = new WebSocketServer({ server });
+    registerWebSocketHandlers(wss);
+    console.log(`Live RSS running at http://localhost:${port}`);
+  })
+  .catch(error => {
+    console.error('Failed to start server:', (error as Error).message || error);
+    process.exit(1);
+  });
 // ---------------------------------------------------------------------------
 
 const FILTERED_FEED_URL = '__filtered__';
@@ -6828,7 +6864,8 @@ if (!feedSettings.has(FILTERED_FEED_URL)) {
 }
 
 // ---------------- WebSocket handling ----------------
-wss.on('connection', (ws: WebSocket) => {
+function registerWebSocketHandlers(socketServer: WebSocketServer) {
+socketServer.on('connection', (ws: WebSocket) => {
   const askAgentCountByItem = new Map<string, number>();
   const activeSelection = currentModelSelection(aiProvider);
 
@@ -7706,6 +7743,7 @@ wss.on('connection', (ws: WebSocket) => {
     }
   });
 });
+}
 
 // ---------------- Startup ----------------
 (async () => {
