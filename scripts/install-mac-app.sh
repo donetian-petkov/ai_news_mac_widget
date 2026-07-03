@@ -8,7 +8,10 @@ APP_BUNDLE_NAME="$APP_NAME.app"
 PROJECT_PATH="$NATIVE_DIR/AINewsMacWidget.xcodeproj"
 DERIVED_DATA_DIR="$ROOT_DIR/.build/xcode"
 SOURCE_APP="$DERIVED_DATA_DIR/Build/Products/Release/AINewsMacApp.app"
-INSTALL_DIR="${HOME}/Applications/$APP_BUNDLE_NAME"
+INSTALL_DIR="/Applications/$APP_BUNDLE_NAME"
+if [[ ! -w "/Applications" ]]; then
+  INSTALL_DIR="${HOME}/Applications/$APP_BUNDLE_NAME"
+fi
 RESOURCES_DIR="$INSTALL_DIR/Contents/Resources"
 WIDGET_APPEX="$INSTALL_DIR/Contents/PlugIns/AINewsWidgets.appex"
 LOG_DIR="${HOME}/Library/Logs/AINewsMacWidget"
