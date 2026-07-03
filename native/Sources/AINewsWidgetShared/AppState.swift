@@ -365,6 +365,9 @@ public final class WidgetAppState: ObservableObject {
             let api = try self.makeAPIClient()
             try await api.triggerStoryAction(action, story: story)
             self.statusMessage = "\(action.rawValue.capitalized) queued for \(story.title)."
+            // The backend generates asynchronously. Poll the category so the freshly
+            // generated summary/research/translation shows up without a manual refresh.
+            await self.pollForStoryActionResult(action, story: story)
             if recordCommand {
                 try? self.snapshotStore.appendCommand(
                     WidgetCommand(
@@ -381,6 +384,28 @@ public final class WidgetAppState: ObservableObject {
                         feedURL: story.feedUrl
                     )
                 )
+            }
+        }
+    }
+
+    private func pollForStoryActionResult(_ action: WidgetStoryAction, story: WidgetStory) async {
+        guard action != .refresh else { return }
+        func hasResult(_ s: WidgetStory) -> Bool {
+            switch action {
+            case .summary: return !(s.summary ?? "").isEmpty
+            case .research: return !(s.research ?? "").isEmpty
+            case .translation: return !(s.translatedTitle ?? "").isEmpty
+            case .refresh: return true
+            }
+        }
+        // Poll for up to ~16s; generation usually completes within a few seconds.
+        for _ in 0..<8 {
+            try? await Task.sleep(nanoseconds: 2_000_000_000)
+            await loadStoriesForSelectedCategory(suppressUnauthorizedAlert: true)
+            if let updated = stories.first(where: { $0.id == story.id && $0.feedUrl == story.feedUrl }),
+               hasResult(updated) {
+                statusMessage = "\(action.rawValue.capitalized) ready for \(story.title)."
+                return
             }
         }
     }
