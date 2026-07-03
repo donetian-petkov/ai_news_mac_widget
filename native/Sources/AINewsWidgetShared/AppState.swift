@@ -235,6 +235,29 @@ public final class WidgetAppState: ObservableObject {
         }
     }
 
+    public func moveCategory(_ category: WidgetCategory, direction: Int) async {
+        let sorted = categories.sorted {
+            $0.sortOrder == $1.sortOrder ? $0.name < $1.name : $0.sortOrder < $1.sortOrder
+        }
+        guard let index = sorted.firstIndex(where: { $0.id == category.id }) else { return }
+        let targetIndex = index + direction
+        guard sorted.indices.contains(targetIndex) else { return }
+
+        await runBusy("Reordering category...") {
+            let api = try self.makeAPIClient()
+            var current = sorted[index]
+            var other = sorted[targetIndex]
+            let currentOrder = current.sortOrder
+            current.sortOrder = other.sortOrder
+            other.sortOrder = currentOrder
+            let updatedCurrent = try await api.updateCategory(current)
+            let updatedOther = try await api.updateCategory(other)
+            self.updateCategory(updatedCurrent)
+            self.updateCategory(updatedOther)
+            self.statusMessage = "Reordered categories."
+        }
+    }
+
     public func setAllCategoryVisibility(hidden: Bool) async {
         let targets = categories.filter { $0.hidden != hidden }
         guard !targets.isEmpty else { return }

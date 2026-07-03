@@ -3,6 +3,11 @@ import AppKit
 import AINewsWidgetShared
 import Combine
 
+private func copyTextToPasteboard(_ text: String) {
+    NSPasteboard.general.clearContents()
+    NSPasteboard.general.setString(text, forType: .string)
+}
+
 struct RootView: View {
     @EnvironmentObject private var state: WidgetAppState
 
@@ -522,6 +527,9 @@ private struct StoryCardView: View {
                 actionButton("Save", systemImage: "bookmark", tint: AINewsTheme.accentCyan) {
                     Task { await state.saveStory(story) }
                 }
+                actionButton("Share", systemImage: "square.and.arrow.up", tint: AINewsTheme.accentGold) {
+                    Task { await createStoryShareLink() }
+                }
                 actionButton("Pin", systemImage: "pin", tint: AINewsTheme.accentRose) {
                     Task { await state.togglePin(for: story) }
                 }
@@ -581,6 +589,26 @@ private struct StoryCardView: View {
         }
         .buttonStyle(.borderedProminent)
         .tint(tint)
+    }
+
+    private func createStoryShareLink() async {
+        do {
+            let api = try state.authorizedAPIClient()
+            let response = try await api.createShare(kind: "story", title: story.title, payload: [
+                "itemId": .string(story.id),
+                "feedUrl": .string(story.feedUrl),
+                "title": .string(story.title),
+                "link": .string(story.link ?? ""),
+                "source": .string(story.source ?? ""),
+                "summary": .string(story.summary ?? ""),
+                "research": .string(story.research ?? "")
+            ])
+            let shareURL = response.url.hasPrefix("http") ? response.url : "\(state.backendURLString)\(response.url)"
+            copyTextToPasteboard(shareURL)
+            state.statusMessage = "Copied story share link."
+        } catch {
+            state.errorMessage = error.localizedDescription
+        }
     }
 }
 
@@ -877,6 +905,8 @@ private struct DigestsWorkspaceTab: View {
                             .buttonStyle(.borderedProminent)
                             .tint(AINewsTheme.accentBlue)
                             .disabled(bodyDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                        Button("Export Markdown") { exportMarkdown() }
+                            .buttonStyle(.bordered)
                     }
 
                     if let sharedURL {
@@ -956,6 +986,16 @@ private struct DigestsWorkspaceTab: View {
             sharedURL = response.url.hasPrefix("http")
                 ? response.url
                 : "\(state.backendURLString)\(response.url)"
+        } catch {
+            state.errorMessage = error.localizedDescription
+        }
+    }
+
+    private func exportMarkdown() {
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("ai-news-digest.md")
+        do {
+            try bodyDraft.write(to: url, atomically: true, encoding: .utf8)
+            NSWorkspace.shared.activateFileViewerSelecting([url])
         } catch {
             state.errorMessage = error.localizedDescription
         }
@@ -1664,8 +1704,24 @@ private struct SettingsView: View {
                     editingCategoryID = editingCategoryID == category.id ? nil : category.id
                 }
                 .buttonStyle(.bordered)
+                Button {
+                    Task { await state.moveCategory(category, direction: -1) }
+                } label: {
+                    Image(systemName: "arrow.up")
+                }
+                .buttonStyle(.bordered)
+                Button {
+                    Task { await state.moveCategory(category, direction: 1) }
+                } label: {
+                    Image(systemName: "arrow.down")
+                }
+                .buttonStyle(.bordered)
                 Button(category.hidden ? "Show" : "Hide") {
                     Task { await state.toggleVisibility(for: category) }
+                }
+                .buttonStyle(.bordered)
+                Button("Share") {
+                    Task { await shareCategory(category) }
                 }
                 .buttonStyle(.bordered)
                 Button("Remove", role: .destructive) {
@@ -1735,6 +1791,24 @@ private struct SettingsView: View {
                     .toggleStyle(.checkbox)
                 }
             }
+        }
+    }
+
+    private func shareCategory(_ category: WidgetCategory) async {
+        do {
+            let api = try state.authorizedAPIClient()
+            let response = try await api.createShare(kind: "collection", title: category.name, payload: [
+                "name": .string(category.name),
+                "description": .string(category.description),
+                "feedUrls": .array(category.feedUrls.map(JSONValue.string)),
+                "storyIds": .array(category.storyIds.map(JSONValue.string)),
+                "tags": .array(category.tags.map(JSONValue.string))
+            ])
+            let shareURL = response.url.hasPrefix("http") ? response.url : "\(state.backendURLString)\(response.url)"
+            copyTextToPasteboard(shareURL)
+            state.statusMessage = "Copied category share link."
+        } catch {
+            state.errorMessage = error.localizedDescription
         }
     }
 }
