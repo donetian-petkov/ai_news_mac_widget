@@ -704,10 +704,14 @@ export function registerProductFeatureApi({
         : 'SELECT "feedUrl", "itemId", "title", "source", "publishedMs", "createdAt" FROM "NewsItemRecord" ORDER BY "publishedMs" DESC LIMIT ?',
       ...(feedUrl ? [feedUrl, Math.min(limit, 120)] : [Math.min(limit, 120)])
     ).catch(() => []);
+    // Raw SQL returns integer columns as BigInt, which JSON.stringify cannot
+    // serialize — that previously threw and crashed the whole process. Coerce them.
+    const toSerializable = (row: Record<string, unknown>) =>
+      Object.fromEntries(Object.entries(row).map(([k, v]) => [k, typeof v === 'bigint' ? Number(v) : v]));
     res.json({
       ok: true,
-      items: rows.map(row => ({ ...row, details: parseJsonObject(row.detailsJson) })),
-      fetched: newsRows.map(row => ({ ...row, stage: 'feed_fetch', status: 'fetched' }))
+      items: rows.map(row => ({ ...toSerializable(row), details: parseJsonObject(row.detailsJson) })),
+      fetched: newsRows.map(row => ({ ...toSerializable(row), stage: 'feed_fetch', status: 'fetched' }))
     });
   });
 
