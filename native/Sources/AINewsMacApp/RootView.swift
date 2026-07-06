@@ -493,11 +493,12 @@ private struct StoryCardView: View {
     @AppStorage("ai_news_show_thumbnails") private var coversEnabled = true
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
+        VStack(alignment: .leading, spacing: 0) {
+            if coversEnabled, let cover = story.coverUrl, let url = URL(string: cover) {
+                StoryThumbnail(url: url, heroHeight: 200)
+            }
+            VStack(alignment: .leading, spacing: 14) {
             HStack(alignment: .top, spacing: 12) {
-                if coversEnabled, let cover = story.coverUrl, let url = URL(string: cover) {
-                    StoryThumbnail(url: url, size: 84)
-                }
                 VStack(alignment: .leading, spacing: 6) {
                     HStack(spacing: 8) {
                         Text(story.source ?? story.feedUrl)
@@ -577,9 +578,10 @@ private struct StoryCardView: View {
                 .buttonStyle(.bordered)
                 .tint(AINewsTheme.textSecondary)
             }
+            }
+            .padding(22)
         }
-        .padding(22)
-        .aiNewsPanelStyle()
+        .aiNewsCardStyle(cornerRadius: 18)
     }
 
     @ViewBuilder

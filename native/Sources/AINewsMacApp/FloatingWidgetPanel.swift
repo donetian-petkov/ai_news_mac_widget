@@ -176,36 +176,42 @@ private struct FloatingWidgetView: View {
                 NSWorkspace.shared.open(url)
             }
         } label: {
-            HStack(alignment: .top, spacing: 10) {
+            VStack(alignment: .leading, spacing: 0) {
                 if coversEnabled, let cover = story.coverUrl, let url = URL(string: cover) {
-                    StoryThumbnail(url: url, size: 52)
+                    StoryThumbnail(url: url, heroHeight: 150)
+                        .overlay(alignment: .bottom) {
+                            LinearGradient(colors: [.clear, AINewsTheme.panel.opacity(0.9)],
+                                           startPoint: .top, endPoint: .bottom)
+                                .frame(height: 44)
+                                .frame(maxHeight: .infinity, alignment: .bottom)
+                        }
                 }
                 VStack(alignment: .leading, spacing: 6) {
                     HStack(spacing: 6) {
                         Text(story.source ?? story.feedUrl)
-                            .font(AINewsTheme.font(11))
-                            .foregroundStyle(AINewsTheme.textMuted)
+                            .font(AINewsTheme.font(11, weight: .semibold))
+                            .foregroundStyle(AINewsTheme.accentCyan)
                             .lineLimit(1)
                         if let mood = story.mood, !mood.isEmpty {
                             MoodChip(mood: mood)
                         }
                     }
-                Text(story.title)
-                    .font(AINewsTheme.font(14, weight: .semibold))
-                    .foregroundStyle(AINewsTheme.accentBlue)
-                    .fixedSize(horizontal: false, vertical: true)
-                if let translated = story.translatedTitle, !translated.isEmpty, translated != story.title {
-                    Text(translated)
-                        .font(AINewsTheme.font(12))
-                        .foregroundStyle(AINewsTheme.accentGold)
+                    Text(story.title)
+                        .font(AINewsTheme.font(15, weight: .bold))
+                        .foregroundStyle(AINewsTheme.accentBlue)
                         .fixedSize(horizontal: false, vertical: true)
-                }
-                block("Summary", story.summary, pending: story.summaryPending, accent: AINewsTheme.accentBlue)
-                block("Research", story.research, pending: story.researchPending, accent: AINewsTheme.accentCyan)
+                    if let translated = story.translatedTitle, !translated.isEmpty, translated != story.title {
+                        Text(translated)
+                            .font(AINewsTheme.font(12))
+                            .foregroundStyle(AINewsTheme.accentGold)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    block("Summary", story.summary, pending: story.summaryPending, accent: AINewsTheme.accentBlue)
+                    block("Research", story.research, pending: story.researchPending, accent: AINewsTheme.accentCyan)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(14)
             }
-            .padding(14)
             .aiNewsCardStyle()
         }
         .buttonStyle(.plain)

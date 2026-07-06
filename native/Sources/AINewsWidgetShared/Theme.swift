@@ -199,21 +199,36 @@ private final class ThumbnailCache {
 
 public struct StoryThumbnail: View {
     private let url: URL
-    private let size: CGFloat
+    private let fillWidth: Bool
+    private let dimension: CGFloat
+    private let corners: CGFloat
     #if canImport(AppKit)
     @State private var image: NSImage?
     @State private var failed = false
     #endif
 
+    /// Square thumbnail.
     public init(url: URL, size: CGFloat = 72) {
         self.url = url
-        self.size = size
+        self.fillWidth = false
+        self.dimension = size
+        self.corners = 10
+    }
+
+    /// Full-width hero image of a fixed height.
+    public init(url: URL, heroHeight: CGFloat, corners: CGFloat = 0) {
+        self.url = url
+        self.fillWidth = true
+        self.dimension = heroHeight
+        self.corners = corners
     }
 
     public var body: some View {
         content
-            .frame(width: size, height: size)
-            .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+            .frame(maxWidth: fillWidth ? .infinity : dimension)
+            .frame(height: dimension)
+            .clipped()
+            .clipShape(RoundedRectangle(cornerRadius: corners, style: .continuous))
     }
 
     @ViewBuilder
@@ -288,12 +303,12 @@ public extension View {
         self
             .background(
                 RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                    .fill(LinearGradient(colors: [AINewsTheme.panel, AINewsTheme.backgroundAlt],
+                    .fill(LinearGradient(colors: [AINewsTheme.panel, AINewsTheme.background],
                                          startPoint: .top, endPoint: .bottom))
             )
             .overlay(
                 RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                    .stroke(AINewsTheme.panelBorder.opacity(0.28), lineWidth: 1)
+                    .stroke(AINewsTheme.panelBorder.opacity(0.5), lineWidth: 1)
             )
             .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
             .shadow(color: Color.black.opacity(0.28), radius: 9, x: 0, y: 3)
