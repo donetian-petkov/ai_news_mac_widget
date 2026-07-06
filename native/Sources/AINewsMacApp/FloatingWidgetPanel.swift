@@ -136,11 +136,7 @@ private struct FloatingWidgetView: View {
 
     private var pendingCount: Int {
         if isFiltered {
-            return stories.reduce(into: 0) { total, story in
-                if story.summaryPending { total += 1 }
-                if story.researchPending { total += 1 }
-                if story.translationPending { total += 1 }
-            }
+            return state.aiProgress[FilteredFeedURL]?.pending ?? 0
         }
         guard let category = state.categories.first(where: { $0.id == categoryID }) else { return 0 }
         return category.feedUrls.reduce(into: 0) { total, url in

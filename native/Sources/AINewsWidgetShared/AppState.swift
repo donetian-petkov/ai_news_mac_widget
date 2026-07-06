@@ -660,7 +660,7 @@ public final class WidgetAppState: ObservableObject {
             snapshot.storiesByCategory[String(selectedCategoryID)] = stories
         }
         snapshot.pendingByCategory = Dictionary(uniqueKeysWithValues: categories.map { (String($0.id), pendingCount(for: $0)) })
-        snapshot.filteredPendingCount = pendingOutputCount(in: snapshot.keywordMatches)
+        snapshot.filteredPendingCount = aiProgress[FilteredFeedURL]?.pending ?? pendingOutputCount(in: snapshot.keywordMatches)
         try? snapshotStore.saveSnapshot(snapshot)
     }
 
@@ -687,7 +687,7 @@ public final class WidgetAppState: ObservableObject {
             snapshot.keywordMatches = matches
         }
         snapshot.pendingByCategory = Dictionary(uniqueKeysWithValues: snapshot.categories.map { (String($0.id), pendingCount(for: $0)) })
-        snapshot.filteredPendingCount = pendingOutputCount(in: snapshot.keywordMatches)
+        snapshot.filteredPendingCount = aiProgress[FilteredFeedURL]?.pending ?? pendingOutputCount(in: snapshot.keywordMatches)
         try snapshotStore.saveSnapshot(snapshot)
     }
 
