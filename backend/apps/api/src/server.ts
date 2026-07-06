@@ -956,6 +956,7 @@ app.get('/api/ai-progress', async (req, res) => {
   const user = await requireAuthUser(req, res);
   if (!user) return;
   const byFeed = new Map<string, { done: number; pending: number; blocked: number; totalRelevant: number }>();
+  const filteredCfg = feedSettings.get(FILTERED_FEED_URL);
   for (const item of recent) {
     const cfg = feedSettings.get(item.feedUrl);
     if (!cfg) continue;
@@ -992,8 +993,52 @@ app.get('/api/ai-progress', async (req, res) => {
       }
     }
     byFeed.set(item.feedUrl, entry);
+
+    if (filteredCfg && item.isMatch && item.filteredOk !== false) {
+      const filteredBudget = filteredCfg.budget || 'standard';
+      const filteredEntry = byFeed.get(FILTERED_FEED_URL) || { done: 0, pending: 0, blocked: 0, totalRelevant: 0 };
+      if (filteredCfg.summaryEnabled !== false) {
+        filteredEntry.totalRelevant += 1;
+        if (String(item.summary || '').trim()) {
+          filteredEntry.done += 1;
+        } else if (isAutoSummaryEligible(item)) {
+          filteredEntry.pending += 1;
+        } else {
+          filteredEntry.blocked += 1;
+        }
+      }
+      if (filteredCfg.researchEnabled !== false) {
+        filteredEntry.totalRelevant += 1;
+        if (String(item.research || '').trim()) {
+          filteredEntry.done += 1;
+        } else if (budgetAllowsAutoResearch(filteredBudget)) {
+          filteredEntry.pending += 1;
+        } else {
+          filteredEntry.blocked += 1;
+        }
+      }
+      if (filteredCfg.translationEnabled !== false && needsTitleTranslation(item.title, item.titleBg, item.titleEn)) {
+        filteredEntry.totalRelevant += 1;
+        if (String(item.titleBg || '').trim() || String(item.titleEn || '').trim()) {
+          filteredEntry.done += 1;
+        } else if (filteredBudget === 'high') {
+          filteredEntry.pending += 1;
+        } else {
+          filteredEntry.blocked += 1;
+        }
+      }
+      byFeed.set(FILTERED_FEED_URL, filteredEntry);
+    }
   }
-  const feeds = currentFeeds().map(f => {
+  const feeds = [
+    ...currentFeeds(),
+    ...(filteredCfg ? [{
+      url: FILTERED_FEED_URL,
+      label: filteredCfg.label || 'Filtered',
+      kind: filteredCfg.kind || 'rss',
+      intervalSec: filteredCfg.intervalSec || 0
+    }] : [])
+  ].map(f => {
     const e = byFeed.get(f.url) || { done: 0, pending: 0, blocked: 0, totalRelevant: 0 };
     return {
       feedUrl: f.url,
