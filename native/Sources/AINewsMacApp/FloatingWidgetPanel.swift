@@ -235,8 +235,8 @@ private struct FloatingWidgetView: View {
                             .foregroundStyle(AINewsTheme.accentGold)
                             .fixedSize(horizontal: false, vertical: true)
                     }
-                    block("Summary", story.summary, pending: story.summaryPending, accent: AINewsTheme.accentBlue)
-                    block("Research", story.research, pending: story.researchPending, accent: AINewsTheme.accentCyan)
+                    block("Summary", story.summary, pending: story.summaryPending, enabled: state.globalAiDefaults.summaryEnabled, accent: AINewsTheme.accentBlue)
+                    block("Research", story.research, pending: story.researchPending, enabled: state.globalAiDefaults.researchEnabled, accent: AINewsTheme.accentCyan)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
@@ -247,7 +247,7 @@ private struct FloatingWidgetView: View {
     }
 
     @ViewBuilder
-    private func block(_ label: String, _ text: String?, pending: Bool, accent: Color) -> some View {
+    private func block(_ label: String, _ text: String?, pending: Bool, enabled: Bool, accent: Color) -> some View {
         if let text, !text.isEmpty {
             VStack(alignment: .leading, spacing: 2) {
                 Text(label.uppercased())
@@ -258,10 +258,16 @@ private struct FloatingWidgetView: View {
                     .foregroundStyle(AINewsTheme.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
-        } else if pending {
-            Text("\(label): generating…")
-                .font(AINewsTheme.font(10))
-                .foregroundStyle(AINewsTheme.textMuted)
+        } else if enabled {
+            // Enabled for the feed but not produced yet — show the state (matches the main window).
+            VStack(alignment: .leading, spacing: 2) {
+                Text(label.uppercased())
+                    .font(AINewsTheme.font(10, weight: .semibold))
+                    .foregroundStyle(accent.opacity(0.9))
+                Text(pending ? "Generating…" : "Not generated yet.")
+                    .font(AINewsTheme.font(12))
+                    .foregroundStyle(AINewsTheme.textMuted)
+            }
         }
     }
 
