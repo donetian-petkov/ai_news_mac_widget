@@ -257,12 +257,18 @@ private struct DashboardView: View {
                                 .foregroundStyle(AINewsTheme.textMuted)
                             let p = categoryProgress(category)
                             if p.total > 0 && p.done < p.total {
-                                ProgressView(value: Double(p.done), total: Double(p.total))
-                                    .controlSize(.mini)
-                                    .tint(AINewsTheme.accentCyan)
-                                Text("\(p.total - p.done) pending")
-                                    .font(.caption2)
-                                    .foregroundStyle(AINewsTheme.textMuted)
+                                GeometryReader { geo in
+                                    ZStack(alignment: .leading) {
+                                        Capsule().fill(Color.white.opacity(0.25))
+                                        Capsule()
+                                            .fill(AINewsTheme.accentGold)
+                                            .frame(width: max(4, geo.size.width * CGFloat(p.done) / CGFloat(max(p.total, 1))))
+                                    }
+                                }
+                                .frame(height: 6)
+                                Text("\(p.done)/\(p.total) · \(p.total - p.done) pending")
+                                    .font(.caption2.weight(.semibold))
+                                    .foregroundStyle(AINewsTheme.accentGold)
                             }
                         }
                         Spacer()
