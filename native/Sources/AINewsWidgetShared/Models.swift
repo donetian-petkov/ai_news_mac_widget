@@ -628,6 +628,30 @@ public struct RuntimeAiDefaultsResponse: Codable, Sendable {
     public var aiDefaults: GlobalAiDefaults
 }
 
+public struct OpsAiJobEvent: Codable, Sendable {
+    public var stage: String
+    public var kind: String?
+    public var id: String?
+    public var feedUrl: String?
+    public var reason: String?
+    public var isoTime: String?
+    public var manual: Bool?
+}
+
+public struct OpsAiJobsQueue: Codable, Sendable {
+    public var size: Int
+    public var inFlight: Int
+    public var deadLetters: Int
+    public var countsByKind: [String: Int]
+}
+
+public struct OpsAiJobsResponse: Codable, Sendable {
+    public var ok: Bool
+    public var newsAccessLocked: Bool
+    public var queue: OpsAiJobsQueue
+    public var events: [OpsAiJobEvent]
+}
+
 public struct AiFeedProgress: Codable, Sendable, Identifiable {
     public var feedUrl: String
     public var label: String

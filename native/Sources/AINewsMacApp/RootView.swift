@@ -878,6 +878,136 @@ private struct KeywordsWorkspaceTab: View {
     }
 }
 
+private struct DiagnosticsWorkspaceTab: View {
+    @EnvironmentObject private var state: WidgetAppState
+    @State private var ops: OpsAiJobsResponse?
+    @State private var loading = false
+
+    private func stageColor(_ stage: String) -> Color {
+        switch stage {
+        case "success": return AINewsTheme.accentCyan
+        case "error", "drop": return AINewsTheme.accentRose
+        case "skip": return AINewsTheme.textMuted
+        default: return AINewsTheme.accentBlue // enqueue/start
+        }
+    }
+
+    private var issues: [OpsAiJobEvent] {
+        (ops?.events ?? []).filter { $0.stage == "error" || $0.stage == "drop" }
+    }
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 16) {
+                HStack {
+                    header(title: "Diagnostics", subtitle: "Token usage, AI job queue, issues, and live logs.")
+                    Spacer()
+                    if loading { ProgressView().controlSize(.small) }
+                    Button("Refresh") { Task { await reload() } }.buttonStyle(.bordered)
+                }
+
+                // Token usage
+                if let usage = state.usage {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Token usage").font(.headline).foregroundStyle(AINewsTheme.textSecondary)
+                        HStack(spacing: 24) {
+                            metric("Total", "\(usage.totalTokens)")
+                            metric("Input", "\(usage.inputTokens)")
+                            metric("Output", "\(usage.outputTokens)")
+                        }
+                        ForEach(usage.byKind.keys.sorted(), id: \.self) { key in
+                            if let s = usage.byKind[key] {
+                                Text("\(key): \(s.requests) req · \(s.totalTokens) tok")
+                                    .font(.caption).foregroundStyle(AINewsTheme.textMuted)
+                            }
+                        }
+                    }
+                    .padding(16).aiNewsPanelStyle()
+                }
+
+                // Queue
+                if let q = ops?.queue {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("AI job queue").font(.headline).foregroundStyle(AINewsTheme.textSecondary)
+                        HStack(spacing: 24) {
+                            metric("Queued", "\(q.size)")
+                            metric("In flight", "\(q.inFlight)")
+                            metric("Dead", "\(q.deadLetters)")
+                        }
+                        HStack(spacing: 14) {
+                            ForEach(q.countsByKind.keys.sorted(), id: \.self) { k in
+                                if let v = q.countsByKind[k], v > 0 {
+                                    Text("\(k) \(v)").font(.caption).foregroundStyle(AINewsTheme.textMuted)
+                                }
+                            }
+                        }
+                    }
+                    .padding(16).aiNewsPanelStyle()
+                }
+
+                // Issues
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Issues (\(issues.count))").font(.headline).foregroundStyle(AINewsTheme.accentRose)
+                    if issues.isEmpty {
+                        Text("No errors or drops.").font(.caption).foregroundStyle(AINewsTheme.textMuted)
+                    } else {
+                        ForEach(Array(issues.prefix(30).enumerated()), id: \.offset) { _, e in
+                            logRow(e)
+                        }
+                    }
+                }
+                .padding(16).aiNewsPanelStyle()
+
+                // Full log
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Recent AI job log").font(.headline).foregroundStyle(AINewsTheme.textSecondary)
+                    ForEach(Array((ops?.events ?? []).prefix(120).enumerated()), id: \.offset) { _, e in
+                        logRow(e)
+                    }
+                }
+                .padding(16).aiNewsPanelStyle()
+            }
+        }
+        .task {
+            while !Task.isCancelled {
+                await reload()
+                try? await Task.sleep(nanoseconds: 5_000_000_000)
+            }
+        }
+    }
+
+    private func metric(_ label: String, _ value: String) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(value).font(.system(size: 20, weight: .bold)).foregroundStyle(AINewsTheme.textPrimary)
+            Text(label).font(.caption2).foregroundStyle(AINewsTheme.textMuted)
+        }
+    }
+
+    private func logRow(_ e: OpsAiJobEvent) -> some View {
+        HStack(alignment: .top, spacing: 8) {
+            Text(e.stage.uppercased())
+                .font(.caption2.weight(.bold))
+                .foregroundStyle(stageColor(e.stage))
+                .frame(width: 66, alignment: .leading)
+            VStack(alignment: .leading, spacing: 1) {
+                Text("\(e.kind ?? "?")\(e.reason.map { " · \($0)" } ?? "")")
+                    .font(.caption).foregroundStyle(AINewsTheme.textPrimary)
+                Text([e.isoTime, e.id].compactMap { $0 }.joined(separator: "  "))
+                    .font(.caption2).foregroundStyle(AINewsTheme.textMuted).lineLimit(1)
+            }
+        }
+    }
+
+    private func reload() async {
+        loading = true
+        defer { loading = false }
+        await state.refreshUsage()
+        if let api = try? state.authorizedAPIClient() {
+            ops = try? await api.fetchOpsAiJobs(limit: 150)
+        }
+    }
+}
+
 private struct WorkspaceView: View {
     @EnvironmentObject private var state: WidgetAppState
     @State private var tab = 0
@@ -897,9 +1027,10 @@ private struct WorkspaceView: View {
                     Text("Digests").tag(4)
                     Text("OPML").tag(5)
                     Text("Keywords").tag(6)
+                    Text("Diagnostics").tag(7)
                 }
                 .pickerStyle(.segmented)
-                .frame(width: 520)
+                .frame(width: 620)
                 Button("Done") { state.showingWorkspace = false }
             }
             .padding(24)
@@ -918,8 +1049,10 @@ private struct WorkspaceView: View {
                     DigestsWorkspaceTab()
                 case 5:
                     OpmlWorkspaceTab()
-                default:
+                case 6:
                     KeywordsWorkspaceTab()
+                default:
+                    DiagnosticsWorkspaceTab()
                 }
             }
             .padding(.horizontal, 24)
