@@ -8068,17 +8068,18 @@ async function loadSavedProviderKeysFromDb() {
   // load embeddings once
   if (aiEnabled) await safeInitKeywordEmbeddings(undefined, 'Startup keyword matching');
 
-  // Recompute Filtered matches for cached items against saved keywords + tracked topics.
-  if (matchTerms().length) {
-    try { await refreshMatchStateForRecent(); } catch {}
-  }
-
   // Push the hydrated state to already-connected clients so they do not wait
   // for the browser replay to restore keywords and filtered-column state.
   broadcastConfig();
 
   // start scheduler
   startScheduler();
+
+  // Recompute Filtered matches for cached items in the background — it embeds every
+  // cached item, so it must NOT block startup / the scheduler + AI job pump.
+  if (matchTerms().length) {
+    void refreshMatchStateForRecent().catch(() => {});
+  }
 
   if (RUNTIME_MS > 0) {
     console.log(`Runtime limit set to ${RUNTIME_HOURS} hours`);
