@@ -159,7 +159,9 @@ private struct FloatingWidgetView: View {
                 Text(loading ? "Loading…" : "No stories yet")
                     .font(AINewsTheme.font(14, weight: .semibold))
                     .foregroundStyle(AINewsTheme.textPrimary)
-                Text("Refresh this category, or generate summaries from the main window.")
+                Text(isFiltered
+                     ? "Add keywords (Workspace ▸ Keywords) or tracked topics (Settings ▸ Personalization) to see matches here."
+                     : "Refresh this category, or generate summaries from the main window.")
                     .font(AINewsTheme.font(12))
                     .foregroundStyle(AINewsTheme.textSecondary)
             }

@@ -989,6 +989,9 @@ app.put('/api/preferences', async (req, res) => {
       trackedTopics = normalizeTrimmedList(body.trackedTopics.map(v => (typeof v === 'string' ? v : '')), 80);
     }
     markDirty();
+    // Tracked topics also drive the Filtered engine, so recompute matches.
+    await safeInitKeywordEmbeddings(undefined, 'Tracked topics update');
+    reprocessCachedItems(true, true);
     res.json({ ok: true, localRegion, trackedTopics });
   } catch (error) {
     res.status(500).json({ error: (error as Error).message || 'Failed to update preferences.' });
@@ -3184,7 +3187,7 @@ async function embed(text: string): Promise<number[] | null> {
 
 async function initKeywordEmbeddings() {
   const runId = ++keywordEmbeddingsInitRunId;
-  const keywordSnapshot = Array.isArray(keywords) ? [...keywords] : [];
+  const keywordSnapshot = matchTerms();
 
   if (!activeEmbeddingClient() || !aiEnabled || keywordSnapshot.length === 0) {
     if (runId === keywordEmbeddingsInitRunId) {
@@ -3225,11 +3228,21 @@ async function safeInitKeywordEmbeddings(ws?: WebSocket, context = 'AI keyword m
   }
 }
 
+// The Filtered engine matches on both explicit keywords and the user's tracked
+// topics, so terms entered in either place drive the Filtered list.
+function matchTerms(): string[] {
+  const set = new Set<string>();
+  for (const k of keywords) { const t = String(k || '').trim(); if (t) set.add(t); }
+  for (const t of trackedTopics) { const s = String(t || '').trim(); if (s) set.add(s); }
+  return Array.from(set);
+}
+
 function substringHit(title: string): boolean {
-  if (!keywords.length) return false;
+  const terms = matchTerms();
+  if (!terms.length) return false;
   const t = normalizeText(title);
   if (!t) return false;
-  return keywords.some(k => t.includes(normalizeText(k)));
+  return terms.some(k => t.includes(normalizeText(k)));
 }
 
 async function hybridMatch(
