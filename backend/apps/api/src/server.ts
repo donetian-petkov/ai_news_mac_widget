@@ -3303,32 +3303,16 @@ async function hybridMatch(
 async function refreshMatchStateForRecent() {
   filteredDedupeWindow = [];
   const sorted = recent.slice().sort((a, b) => b.publishedMs - a.publishedMs);
+  // Substring-only recompute: instant and complete for the whole cache.
+  // Previously this awaited an embedding call per story (hundreds of items),
+  // which made the Filtered view reappear one match at a time under rate
+  // limits after a keyword/tracked-topic change. New items still get semantic
+  // (embedding) matching via hybridMatch at fetch time.
   for (const it of sorted) {
-    let isMatch = false;
-    let matchScore = 0;
-    let titleVec: number[] | null = null;
-
-    try {
-      const m = await hybridMatch(it.title);
-      isMatch = m.isMatch;
-      matchScore = m.score;
-      titleVec = m.vec;
-    } catch {
-      const hit = substringHit(it.title);
-      isMatch = hit;
-      matchScore = hit ? 1 : 0;
-      titleVec = null;
-    }
-
-    let filteredOk = isMatch;
-    if (filteredOk && aiEnabled && FILTERED_AI_DEDUPE && titleVec) {
-      if (isFilteredDuplicate(titleVec)) filteredOk = false;
-      else addToFilteredDedupe(titleVec);
-    }
-
-    it.isMatch = isMatch;
-    it.matchScore = matchScore;
-    it.filteredOk = filteredOk;
+    const hit = substringHit(it.title);
+    it.isMatch = hit;
+    it.matchScore = hit ? 1 : 0;
+    it.filteredOk = hit;
     refreshDerivedDataForItem(it);
     await upsertPersistedNewsItem(it);
   }
