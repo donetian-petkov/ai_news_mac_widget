@@ -163,6 +163,18 @@ public struct APIClient: Sendable {
         )
     }
 
+    public func fetchPreferences() async throws -> (region: String, topics: [String]) {
+        struct Response: Codable { var ok: Bool; var localRegion: String; var trackedTopics: [String] }
+        let response: Response = try await send(path: "/api/preferences")
+        return (response.localRegion, response.trackedTopics)
+    }
+
+    public func savePreferences(region: String, topics: [String]) async throws {
+        struct Body: Codable { var localRegion: String; var trackedTopics: [String] }
+        struct Response: Codable { var ok: Bool }
+        let _: Response = try await send(path: "/api/preferences", method: "PUT", body: Body(localRegion: region, trackedTopics: topics))
+    }
+
     public func fetchKeywords() async throws -> [String] {
         struct Response: Codable { var ok: Bool; var keywords: [String] }
         let response: Response = try await send(path: "/api/keywords")

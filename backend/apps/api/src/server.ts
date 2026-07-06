@@ -973,6 +973,28 @@ app.put('/api/keywords', async (req, res) => {
   }
 });
 
+app.get('/api/preferences', async (req, res) => {
+  const user = await requireAuthUser(req, res);
+  if (!user) return;
+  res.json({ ok: true, localRegion, trackedTopics });
+});
+
+app.put('/api/preferences', async (req, res) => {
+  try {
+    const user = await requireAuthUser(req, res);
+    if (!user) return;
+    const body = (req.body as Record<string, unknown> | undefined) || {};
+    if (typeof body.localRegion === 'string') localRegion = body.localRegion.trim().slice(0, 120);
+    if (Array.isArray(body.trackedTopics)) {
+      trackedTopics = normalizeTrimmedList(body.trackedTopics.map(v => (typeof v === 'string' ? v : '')), 80);
+    }
+    markDirty();
+    res.json({ ok: true, localRegion, trackedTopics });
+  } catch (error) {
+    res.status(500).json({ error: (error as Error).message || 'Failed to update preferences.' });
+  }
+});
+
 app.get('/api/health', (_req, res) => {
   res.json({
     ok: true,

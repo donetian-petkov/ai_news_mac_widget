@@ -1557,6 +1557,8 @@ private struct SettingsView: View {
     @EnvironmentObject private var state: WidgetAppState
     @EnvironmentObject private var theme: ThemeSettings
     @AppStorage("ai_news_show_thumbnails") private var showThumbnails = true
+    @State private var regionDraft = ""
+    @State private var topicsDraft = ""
     @State private var newCategoryName = ""
     @State private var newCategoryDescription = ""
     @State private var newCategoryFeedURLs = Set<String>()
@@ -1590,6 +1592,48 @@ private struct SettingsView: View {
         .aiNewsPanelStyle()
     }
 
+    private var personalizationPanel: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Personalization")
+                .font(.headline)
+                .foregroundStyle(AINewsTheme.textSecondary)
+            Text("Region and tracked topics steer AI research and relevance.")
+                .font(.caption)
+                .foregroundStyle(AINewsTheme.textMuted)
+            TextField("Region (e.g. Bulgaria)", text: $regionDraft)
+                .textFieldStyle(.roundedBorder)
+            TextField("Tracked topics, comma separated", text: $topicsDraft)
+                .textFieldStyle(.roundedBorder)
+            Button("Save personalization") {
+                Task { await savePreferences() }
+            }
+            .buttonStyle(.borderedProminent)
+            .tint(AINewsTheme.accentBlue)
+        }
+        .padding(16)
+        .aiNewsPanelStyle()
+        .task { await loadPreferences() }
+    }
+
+    private func loadPreferences() async {
+        guard regionDraft.isEmpty, topicsDraft.isEmpty else { return }
+        if let api = try? state.authorizedAPIClient(), let prefs = try? await api.fetchPreferences() {
+            regionDraft = prefs.region
+            topicsDraft = prefs.topics.joined(separator: ", ")
+        }
+    }
+
+    private func savePreferences() async {
+        do {
+            let api = try state.authorizedAPIClient()
+            let topics = topicsDraft.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
+            try await api.savePreferences(region: regionDraft.trimmingCharacters(in: .whitespaces), topics: topics)
+            state.statusMessage = "Saved personalization."
+        } catch {
+            state.errorMessage = error.localizedDescription
+        }
+    }
+
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
@@ -1604,6 +1648,8 @@ private struct SettingsView: View {
             }
 
             appearancePanel
+
+            personalizationPanel
 
             if let runtimeConfig = state.runtimeConfig {
                 VStack(alignment: .leading, spacing: 10) {
