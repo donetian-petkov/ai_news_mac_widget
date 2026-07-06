@@ -780,29 +780,37 @@ public struct WidgetSnapshot: Codable, Equatable, Sendable {
     public var categories: [WidgetCategory]
     public var activeCategoryID: Int?
     public var storiesByCategory: [String: [WidgetStory]]
+    /// Pending AI outputs aggregated per widget category id.
+    public var pendingByCategory: [String: Int]
     /// Tracked topics the user configured (drives the Keywords widget header).
     public var keywords: [String]
     /// Stories that matched the tracked topics, powering the dedicated Keywords widget.
     public var keywordMatches: [WidgetStory]
+    /// Total pending AI outputs across the filtered/keyword-matches story set.
+    public var filteredPendingCount: Int
 
     public init(
         lastUpdated: Date = Date(),
         categories: [WidgetCategory] = [],
         activeCategoryID: Int? = nil,
         storiesByCategory: [String: [WidgetStory]] = [:],
+        pendingByCategory: [String: Int] = [:],
         keywords: [String] = [],
-        keywordMatches: [WidgetStory] = []
+        keywordMatches: [WidgetStory] = [],
+        filteredPendingCount: Int = 0
     ) {
         self.lastUpdated = lastUpdated
         self.categories = categories
         self.activeCategoryID = activeCategoryID
         self.storiesByCategory = storiesByCategory
+        self.pendingByCategory = pendingByCategory
         self.keywords = keywords
         self.keywordMatches = keywordMatches
+        self.filteredPendingCount = filteredPendingCount
     }
 
     enum CodingKeys: String, CodingKey {
-        case lastUpdated, categories, activeCategoryID, storiesByCategory, keywords, keywordMatches
+        case lastUpdated, categories, activeCategoryID, storiesByCategory, pendingByCategory, keywords, keywordMatches, filteredPendingCount
     }
 
     public init(from decoder: Decoder) throws {
@@ -811,9 +819,11 @@ public struct WidgetSnapshot: Codable, Equatable, Sendable {
         categories = try container.decodeIfPresent([WidgetCategory].self, forKey: .categories) ?? []
         activeCategoryID = try container.decodeIfPresent(Int.self, forKey: .activeCategoryID)
         storiesByCategory = try container.decodeIfPresent([String: [WidgetStory]].self, forKey: .storiesByCategory) ?? [:]
+        pendingByCategory = try container.decodeIfPresent([String: Int].self, forKey: .pendingByCategory) ?? [:]
         // Tolerate older snapshots written before these fields existed.
         keywords = try container.decodeIfPresent([String].self, forKey: .keywords) ?? []
         keywordMatches = try container.decodeIfPresent([WidgetStory].self, forKey: .keywordMatches) ?? []
+        filteredPendingCount = try container.decodeIfPresent(Int.self, forKey: .filteredPendingCount) ?? 0
     }
 }
 

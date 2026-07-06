@@ -115,6 +115,7 @@ public final class WidgetAppState: ObservableObject {
             if selectFirstCategory || self.selectedCategoryID == nil || !self.categories.contains(where: { $0.id == self.selectedCategoryID }) {
                 self.selectedCategoryID = self.categories.first(where: { !$0.hidden })?.id ?? self.categories.first?.id
             }
+            await self.refreshAiProgress()
             try await self.refreshAllCategorySnapshots(using: api)
             await self.loadRuntimeContext(suppressUnauthorizedAlert: suppressUnauthorizedAlert)
             await self.loadStoriesForSelectedCategory(suppressUnauthorizedAlert: suppressUnauthorizedAlert)
@@ -158,6 +159,7 @@ public final class WidgetAppState: ObservableObject {
         guard let api = try? makeAPIClient(), let feeds = try? await api.fetchAiProgress() else { return }
         aiProgress = Dictionary(uniqueKeysWithValues: feeds.map { ($0.feedUrl, $0) })
         backendOps = try? await api.fetchOpsAiJobs(limit: 80)
+        saveSnapshot()
     }
 
     public func loadRuntimeContext(suppressUnauthorizedAlert: Bool = false) async {
@@ -657,6 +659,8 @@ public final class WidgetAppState: ObservableObject {
         if let selectedCategoryID {
             snapshot.storiesByCategory[String(selectedCategoryID)] = stories
         }
+        snapshot.pendingByCategory = Dictionary(uniqueKeysWithValues: categories.map { (String($0.id), pendingCount(for: $0)) })
+        snapshot.filteredPendingCount = pendingOutputCount(in: snapshot.keywordMatches)
         try? snapshotStore.saveSnapshot(snapshot)
     }
 
@@ -682,7 +686,23 @@ public final class WidgetAppState: ObservableObject {
         if let matches = try? await api.fetchKeywordMatches(limit: 30) {
             snapshot.keywordMatches = matches
         }
+        snapshot.pendingByCategory = Dictionary(uniqueKeysWithValues: snapshot.categories.map { (String($0.id), pendingCount(for: $0)) })
+        snapshot.filteredPendingCount = pendingOutputCount(in: snapshot.keywordMatches)
         try snapshotStore.saveSnapshot(snapshot)
+    }
+
+    private func pendingCount(for category: WidgetCategory) -> Int {
+        category.feedUrls.reduce(into: 0) { total, url in
+            total += aiProgress[url]?.pending ?? 0
+        }
+    }
+
+    private func pendingOutputCount(in stories: [WidgetStory]) -> Int {
+        stories.reduce(into: 0) { total, story in
+            if story.summaryPending { total += 1 }
+            if story.researchPending { total += 1 }
+            if story.translationPending { total += 1 }
+        }
     }
 
     private func processPendingCommands() async {

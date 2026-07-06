@@ -50,6 +50,7 @@ struct CategoryWidgetEntry: TimelineEntry {
     let date: Date
     let category: WidgetCategory?
     let stories: [WidgetStory]
+    let pendingCount: Int
 }
 
 @available(macOS 14.0, *)
@@ -67,7 +68,8 @@ struct CategoryWidgetProvider: AppIntentTimelineProvider {
             stories: [
                 WidgetStory(id: "1", feedUrl: "feed", title: "Ingenuity images reveal a blade broke off", summary: "A short summary for the widget preview."),
                 WidgetStory(id: "2", feedUrl: "feed", title: "A new material solved a long-time engineering issue", summary: "Another compact summary line.")
-            ]
+            ],
+            pendingCount: 2
         )
     }
 
@@ -87,7 +89,8 @@ struct CategoryWidgetProvider: AppIntentTimelineProvider {
             visibleCategories.first(where: { $0.id == selected.id })
         } ?? visibleCategories.first ?? snapshot.categories.first
         let stories = category.flatMap { snapshot.storiesByCategory[String($0.id)] } ?? []
-        return CategoryWidgetEntry(date: Date(), category: category, stories: stories)
+        let pendingCount = category.flatMap { snapshot.pendingByCategory[String($0.id)] } ?? 0
+        return CategoryWidgetEntry(date: Date(), category: category, stories: stories, pendingCount: pendingCount)
     }
 }
 
@@ -153,6 +156,12 @@ struct CategoryWidgetView: View {
                         Image(systemName: "arrow.clockwise")
                     }
                     .buttonStyle(.plain)
+                }
+
+                if entry.pendingCount > 0 {
+                    Text("\(entry.pendingCount) pending")
+                        .font(.caption2.weight(.semibold))
+                        .foregroundStyle(AINewsTheme.accentGold)
                 }
 
                 if family != .systemSmall {
@@ -261,6 +270,12 @@ struct MasterWidgetView: View {
             .sorted { $0.sortOrder == $1.sortOrder ? $0.name < $1.name : $0.sortOrder < $1.sortOrder }
     }
 
+    private var totalPending: Int {
+        visibleCategories.reduce(into: 0) { total, category in
+            total += entry.snapshot.pendingByCategory[String(category.id)] ?? 0
+        }
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack {
@@ -268,9 +283,9 @@ struct MasterWidgetView: View {
                     .font(.headline)
                     .foregroundStyle(AINewsTheme.textPrimary)
                 Spacer()
-                Text("\(visibleCategories.count) live")
+                Text(totalPending > 0 ? "\(visibleCategories.count) live · \(totalPending) pending" : "\(visibleCategories.count) live")
                     .font(.caption)
-                    .foregroundStyle(AINewsTheme.textMuted)
+                    .foregroundStyle(totalPending > 0 ? AINewsTheme.accentGold : AINewsTheme.textMuted)
             }
 
             if family != .systemMedium {
@@ -302,6 +317,11 @@ struct MasterWidgetView: View {
                             Text(category.name)
                                 .font(.caption.weight(.semibold))
                                 .foregroundStyle(AINewsTheme.accentCyan)
+                            if let pendingCount = entry.snapshot.pendingByCategory[String(category.id)], pendingCount > 0 {
+                                Text("\(pendingCount) pending")
+                                    .font(.caption2.weight(.semibold))
+                                    .foregroundStyle(AINewsTheme.accentGold)
+                            }
                             Text(topStory?.title ?? "No stories cached yet")
                                 .font(.caption)
                                 .foregroundStyle(AINewsTheme.textSecondary)
@@ -372,6 +392,7 @@ struct KeywordWidgetEntry: TimelineEntry {
     let date: Date
     let keywords: [String]
     let stories: [WidgetStory]
+    let pendingCount: Int
 }
 
 @available(macOS 14.0, *)
@@ -383,7 +404,8 @@ struct KeywordWidgetProvider: TimelineProvider {
             stories: [
                 WidgetStory(id: "1", feedUrl: "feed", title: "OpenAI ships a new model for agents", summary: "Matched your tracked topics."),
                 WidgetStory(id: "2", feedUrl: "feed", title: "Humanoid robotics startup raises a large round", summary: "Another tracked-topic match.")
-            ]
+            ],
+            pendingCount: 3
         )
     }
 
@@ -402,7 +424,12 @@ struct KeywordWidgetProvider: TimelineProvider {
 
     private func entry() async -> KeywordWidgetEntry {
         let snapshot = await MainActor.run { SnapshotStore.shared.loadSnapshot() }
-        return KeywordWidgetEntry(date: Date(), keywords: snapshot.keywords, stories: snapshot.keywordMatches)
+        return KeywordWidgetEntry(
+            date: Date(),
+            keywords: snapshot.keywords,
+            stories: snapshot.keywordMatches,
+            pendingCount: snapshot.filteredPendingCount
+        )
     }
 }
 
@@ -433,9 +460,11 @@ struct KeywordWidgetView: View {
                     .font(.headline)
                     .foregroundStyle(AINewsTheme.textPrimary)
                 Spacer()
-                Text("\(entry.stories.count) match\(entry.stories.count == 1 ? "" : "es")")
+                Text(entry.pendingCount > 0
+                     ? "\(entry.stories.count) match\(entry.stories.count == 1 ? "" : "es") · \(entry.pendingCount) pending"
+                     : "\(entry.stories.count) match\(entry.stories.count == 1 ? "" : "es")")
                     .font(.caption)
-                    .foregroundStyle(AINewsTheme.textMuted)
+                    .foregroundStyle(entry.pendingCount > 0 ? AINewsTheme.accentGold : AINewsTheme.textMuted)
             }
 
             if family != .systemSmall, !entry.keywords.isEmpty {

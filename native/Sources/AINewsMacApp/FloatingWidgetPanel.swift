@@ -134,6 +134,20 @@ private struct FloatingWidgetView: View {
     @State private var reachedEnd = false
     private let pageStep = 10
 
+    private var pendingCount: Int {
+        if isFiltered {
+            return stories.reduce(into: 0) { total, story in
+                if story.summaryPending { total += 1 }
+                if story.researchPending { total += 1 }
+                if story.translationPending { total += 1 }
+            }
+        }
+        guard let category = state.categories.first(where: { $0.id == categoryID }) else { return 0 }
+        return category.feedUrls.reduce(into: 0) { total, url in
+            total += state.aiProgress[url]?.pending ?? 0
+        }
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             header
@@ -175,6 +189,9 @@ private struct FloatingWidgetView: View {
                     Text("\(tokenText) tokens")
                         .font(AINewsTheme.font(10))
                         .foregroundStyle(AINewsTheme.accentCyan)
+                    Text("\(pendingCount) pending")
+                        .font(AINewsTheme.font(10, weight: .semibold))
+                        .foregroundStyle(pendingCount > 0 ? AINewsTheme.accentGold : AINewsTheme.textMuted)
                 }
                 .lineLimit(1)
             }
