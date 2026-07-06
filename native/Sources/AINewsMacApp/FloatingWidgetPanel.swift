@@ -237,25 +237,55 @@ private struct FloatingWidgetView: View {
                     visibleCount += pageStep
                     Task { await reload() }
                 } label: {
-                    Label("Show \(pageStep) More News", systemImage: "chevron.down")
-                        .font(AINewsTheme.font(12, weight: .semibold))
-                        .frame(maxWidth: .infinity)
+                    paginationButtonLabel(
+                        title: "Show \(pageStep) More News",
+                        systemImage: "chevron.down",
+                        prominent: true
+                    )
                 }
-                .buttonStyle(WidgetPaginationButtonStyle(prominent: true))
+                .buttonStyle(.plain)
             }
             if visibleCount > pageStep {
                 Button {
                     visibleCount = pageStep
                     Task { await reload() }
                 } label: {
-                    Label("Reset to the First \(pageStep) News", systemImage: "arrow.uturn.up")
-                        .font(AINewsTheme.font(12))
-                        .frame(maxWidth: .infinity)
+                    paginationButtonLabel(
+                        title: "Reset to the First \(pageStep) News",
+                        systemImage: "arrow.uturn.up",
+                        prominent: false
+                    )
                 }
-                .buttonStyle(WidgetPaginationButtonStyle(prominent: false))
+                .buttonStyle(.plain)
             }
         }
         .padding(.top, 4)
+    }
+
+    private func paginationButtonLabel(title: String, systemImage: String, prominent: Bool) -> some View {
+        HStack(spacing: 8) {
+            Image(systemName: systemImage)
+                .font(AINewsTheme.font(12, weight: .semibold))
+            Text(title)
+                .font(AINewsTheme.font(12, weight: .semibold))
+                .lineLimit(1)
+        }
+        .foregroundStyle(prominent ? Color.black : AINewsTheme.textPrimary)
+        .frame(maxWidth: .infinity)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 9)
+        .background(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .fill(prominent ? AINewsTheme.accentCyan.opacity(0.96) : AINewsTheme.backgroundAlt.opacity(0.96))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .stroke(
+                    prominent ? AINewsTheme.accentCyan.opacity(0.98) : AINewsTheme.panelBorder.opacity(0.85),
+                    lineWidth: 1
+                )
+        )
+        .contentShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
     }
 
     @AppStorage("ai_news_show_thumbnails") private var coversEnabled = true
@@ -343,37 +373,5 @@ private struct FloatingWidgetView: View {
             stories = response.stories
             reachedEnd = response.stories.count < visibleCount
         }
-    }
-}
-
-private struct WidgetPaginationButtonStyle: ButtonStyle {
-    let prominent: Bool
-
-    func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .foregroundStyle(AINewsTheme.textPrimary)
-            .padding(.horizontal, 12)
-            .padding(.vertical, 9)
-            .background(
-                RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .fill(backgroundFill(pressed: configuration.isPressed))
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .stroke(borderColor, lineWidth: 1)
-            )
-            .opacity(configuration.isPressed ? 0.92 : 1)
-            .animation(.easeOut(duration: 0.12), value: configuration.isPressed)
-    }
-
-    private func backgroundFill(pressed: Bool) -> Color {
-        if prominent {
-            return AINewsTheme.accentCyan.opacity(pressed ? 0.82 : 0.96)
-        }
-        return AINewsTheme.backgroundAlt.opacity(pressed ? 0.88 : 0.96)
-    }
-
-    private var borderColor: Color {
-        prominent ? AINewsTheme.accentCyan.opacity(0.98) : AINewsTheme.panelBorder.opacity(0.85)
     }
 }
