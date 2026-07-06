@@ -62,6 +62,10 @@ final class FloatingWidgetManager: NSObject, NSWindowDelegate {
         )
         panel.title = categoryName
         panel.contentView = hosting
+        // Translucent frosted-glass window (modern macOS look).
+        panel.isOpaque = false
+        panel.backgroundColor = .clear
+        panel.titlebarAppearsTransparent = true
         // Float above other apps and follow the user across Spaces / full-screen.
         panel.level = .floating
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
@@ -89,6 +93,22 @@ final class FloatingWidgetManager: NSObject, NSWindowDelegate {
     }
 }
 
+/// Frosted-glass window background (NSVisualEffectView), so the desktop shows
+/// through the floating widget for the modern macOS translucent look.
+private struct VisualEffectBackground: NSViewRepresentable {
+    var material: NSVisualEffectView.Material = .hudWindow
+    func makeNSView(context: Context) -> NSVisualEffectView {
+        let view = NSVisualEffectView()
+        view.material = material
+        view.blendingMode = .behindWindow
+        view.state = .active
+        return view
+    }
+    func updateNSView(_ view: NSVisualEffectView, context: Context) {
+        view.material = material
+    }
+}
+
 /// Compact, scrollable view shown inside a floating panel. Fetches its own
 /// category's stories so multiple widgets can show different categories at once.
 private struct FloatingWidgetView: View {
@@ -107,7 +127,15 @@ private struct FloatingWidgetView: View {
             content
         }
         .frame(minWidth: 220, minHeight: 180)
-        .background(AINewsBackground())
+        .background {
+            // Liquid-glass: system material lets the desktop show through, with a
+            // faint theme-colored tint so the vibe still reads.
+            ZStack {
+                VisualEffectBackground(material: .hudWindow)
+                AINewsTheme.panelBorder.opacity(0.10)
+            }
+            .ignoresSafeArea()
+        }
         .dynamicTypeSize(theme.fontSize.dynamicTypeSize)
         .task {
             // Load now, then auto-refresh so the widget picks up new stories and
@@ -201,8 +229,11 @@ private struct FloatingWidgetView: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
             .padding(12)
-            .background(AINewsTheme.panel.opacity(0.7))
-            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .stroke(AINewsTheme.panelBorder.opacity(0.35), lineWidth: 1)
+            )
         }
         .buttonStyle(.plain)
     }
