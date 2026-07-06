@@ -2466,10 +2466,13 @@ private struct EditableComboField: View {
                         }
                     }
                 } label: {
-                    Image(systemName: "chevron.down")
+                    Image(systemName: "list.bullet")
                         .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(AINewsTheme.textSecondary)
+                        .frame(width: 16, height: 16)
                 }
                 .menuStyle(.borderlessButton)
+                .menuIndicator(.hidden)
                 .frame(width: 24)
                 .help("Choose a suggested value")
             }
