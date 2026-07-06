@@ -46,6 +46,21 @@ public enum BackendDiscovery {
         loadRuntimeInfo()?.url
     }
 
+    public static func candidateBackendURLStrings(primary: String) -> [String] {
+        var urls: [String] = []
+        if !primary.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            urls.append(primary)
+        }
+        if let runtime = runtimeBackendURLString(), !runtime.isEmpty {
+            urls.append(runtime)
+        }
+        urls.append("http://127.0.0.1:3000")
+        urls.append("http://127.0.0.1:4000")
+        urls.append("http://localhost:3000")
+        urls.append("http://localhost:4000")
+        return uniqueStrings(urls)
+    }
+
     private static func loadRuntimeInfo() -> BackendRuntimeInfo? {
         for url in runtimeInfoURLs() {
             guard let data = try? Data(contentsOf: url),
@@ -85,6 +100,19 @@ public enum BackendDiscovery {
             let path = url.standardizedFileURL.path
             if seen.insert(path).inserted {
                 out.append(URL(fileURLWithPath: path))
+            }
+        }
+        return out
+    }
+
+    private static func uniqueStrings(_ values: [String]) -> [String] {
+        var seen = Set<String>()
+        var out: [String] = []
+        for value in values {
+            let normalized = value.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !normalized.isEmpty else { continue }
+            if seen.insert(normalized).inserted {
+                out.append(normalized)
             }
         }
         return out

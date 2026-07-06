@@ -645,11 +645,22 @@ public struct OpsAiJobsQueue: Codable, Sendable {
     public var countsByKind: [String: Int]
 }
 
+public struct OpsBackendHealth: Codable, Sendable {
+    public var aiAvailable: Bool
+    public var aiEnabled: Bool
+    public var lastEventAt: String?
+    public var lastSuccessAt: String?
+    public var stalled: Bool
+    public var failingFeeds: Int
+    public var breakerFeeds: Int
+}
+
 public struct OpsAiJobsResponse: Codable, Sendable {
     public var ok: Bool
     public var newsAccessLocked: Bool
     public var queue: OpsAiJobsQueue
     public var events: [OpsAiJobEvent]
+    public var health: OpsBackendHealth?
 }
 
 public struct AiFeedProgress: Codable, Sendable, Identifiable {
@@ -658,6 +669,8 @@ public struct AiFeedProgress: Codable, Sendable, Identifiable {
     public var done: Int
     public var total: Int
     public var pending: Int
+    public var blocked: Int
+    public var totalRelevant: Int
     public var id: String { feedUrl }
 }
 

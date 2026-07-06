@@ -145,18 +145,47 @@ private struct DashboardView: View {
         state.categories.filter { $0.hidden }.count
     }
 
-    private var aggregateProgress: (done: Int, total: Int) {
-        var done = 0, total = 0
-        for p in state.aiProgress.values { done += p.done; total += p.total }
-        return (done, total)
+    private var aggregateProgress: (done: Int, total: Int, pending: Int, blocked: Int, totalRelevant: Int) {
+        var done = 0, total = 0, pending = 0, blocked = 0, totalRelevant = 0
+        for p in state.aiProgress.values {
+            done += p.done
+            total += p.total
+            pending += p.pending
+            blocked += p.blocked
+            totalRelevant += p.totalRelevant
+        }
+        return (done, total, pending, blocked, totalRelevant)
     }
 
-    private func categoryProgress(_ category: WidgetCategory) -> (done: Int, total: Int) {
-        var done = 0, total = 0
+    private func categoryProgress(_ category: WidgetCategory) -> (done: Int, total: Int, pending: Int, blocked: Int, totalRelevant: Int) {
+        var done = 0, total = 0, pending = 0, blocked = 0, totalRelevant = 0
         for url in category.feedUrls {
-            if let p = state.aiProgress[url] { done += p.done; total += p.total }
+            if let p = state.aiProgress[url] {
+                done += p.done
+                total += p.total
+                pending += p.pending
+                blocked += p.blocked
+                totalRelevant += p.totalRelevant
+            }
         }
-        return (done, total)
+        return (done, total, pending, blocked, totalRelevant)
+    }
+
+    private var backendHealthSummary: String? {
+        guard let health = state.backendOps?.health else { return nil }
+        if !health.aiEnabled || !health.aiAvailable {
+            return "AI is not fully configured."
+        }
+        if health.stalled {
+            return "AI queue stalled."
+        }
+        if health.breakerFeeds > 0 || health.failingFeeds > 0 {
+            return "\(health.breakerFeeds) feeds cooling down, \(health.failingFeeds) failing."
+        }
+        if state.backendOps?.queue.size ?? 0 > 0 || state.backendOps?.queue.inFlight ?? 0 > 0 {
+            return "AI queue active."
+        }
+        return "Backend healthy."
     }
 
     private var filteredStories: [WidgetStory] {
@@ -236,7 +265,7 @@ private struct DashboardView: View {
                 .foregroundStyle(AINewsTheme.textMuted)
 
                 let total = aggregateProgress
-                if total.total > 0 && total.done < total.total {
+                if total.total > 0 || total.blocked > 0 {
                     GeometryReader { geo in
                         ZStack(alignment: .leading) {
                             Capsule().fill(Color.white.opacity(0.2))
@@ -246,9 +275,19 @@ private struct DashboardView: View {
                         }
                     }
                     .frame(height: 6)
-                    Text("All feeds · \(total.done)/\(total.total) · \(total.total - total.done) pending")
+                    Text("All feeds · \(total.done)/\(total.total) · \(total.pending) pending")
                         .font(.caption2.weight(.semibold))
                         .foregroundStyle(AINewsTheme.accentCyan)
+                    if total.blocked > 0 {
+                        Text("\(total.blocked) waiting on manual action or higher budget")
+                            .font(.caption2)
+                            .foregroundStyle(AINewsTheme.textMuted)
+                    }
+                }
+                if let backendHealthSummary {
+                    Text(backendHealthSummary)
+                        .font(.caption2.weight(.semibold))
+                        .foregroundStyle((state.backendOps?.health?.stalled ?? false) ? AINewsTheme.accentRose : AINewsTheme.textMuted)
                 }
             }
 
@@ -272,7 +311,7 @@ private struct DashboardView: View {
                                 .font(.caption)
                                 .foregroundStyle(AINewsTheme.textMuted)
                             let p = categoryProgress(category)
-                            if p.total > 0 && p.done < p.total {
+                            if p.total > 0 || p.blocked > 0 {
                                 GeometryReader { geo in
                                     ZStack(alignment: .leading) {
                                         Capsule().fill(Color.white.opacity(0.25))
@@ -282,9 +321,14 @@ private struct DashboardView: View {
                                     }
                                 }
                                 .frame(height: 6)
-                                Text("\(p.done)/\(p.total) · \(p.total - p.done) pending")
+                                Text("\(p.done)/\(p.total) · \(p.pending) pending")
                                     .font(.caption2.weight(.semibold))
                                     .foregroundStyle(AINewsTheme.accentGold)
+                                if p.blocked > 0 {
+                                    Text("\(p.blocked) blocked by budget/manual mode")
+                                        .font(.caption2)
+                                        .foregroundStyle(AINewsTheme.textMuted)
+                                }
                             }
                         }
                         Spacer()
@@ -940,6 +984,26 @@ private struct DiagnosticsWorkspaceTab: View {
                                     Text("\(k) \(v)").font(.caption).foregroundStyle(AINewsTheme.textMuted)
                                 }
                             }
+                        }
+                    }
+                    .padding(16).aiNewsPanelStyle()
+                }
+
+                if let health = ops?.health {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Backend health").font(.headline).foregroundStyle(AINewsTheme.textSecondary)
+                        HStack(spacing: 24) {
+                            metric("AI", health.aiEnabled && health.aiAvailable ? "ready" : "off")
+                            metric("Failing feeds", "\(health.failingFeeds)")
+                            metric("Cooling down", "\(health.breakerFeeds)")
+                        }
+                        Text(health.stalled ? "Queue looks stalled." : "Queue looks alive.")
+                            .font(.caption)
+                            .foregroundStyle(health.stalled ? AINewsTheme.accentRose : AINewsTheme.textMuted)
+                        if let lastSuccessAt = health.lastSuccessAt {
+                            Text("Last AI success: \(lastSuccessAt)")
+                                .font(.caption2)
+                                .foregroundStyle(AINewsTheme.textMuted)
                         }
                     }
                     .padding(16).aiNewsPanelStyle()
@@ -2513,6 +2577,11 @@ private struct FeedSettingsCard: View {
                          : "All \(progress.total) generated")
                         .font(.caption2)
                         .foregroundStyle(AINewsTheme.textMuted)
+                    if progress.blocked > 0 {
+                        Text("\(progress.blocked) waiting on manual trigger or high budget")
+                            .font(.caption2)
+                            .foregroundStyle(AINewsTheme.textMuted)
+                    }
                 }
             }
 

@@ -10,6 +10,7 @@ public final class WidgetAppState: ObservableObject {
     @Published public var usage: AIUsageExport?
     @Published public var runtimeConfig: RuntimeConfigResponse?
     @Published public var aiProgress: [String: AiFeedProgress] = [:]
+    @Published public var backendOps: OpsAiJobsResponse?
     @Published public var globalAiDefaults = GlobalAiDefaults()
     @Published public var accountSettings = AccountSettings()
     @Published public var isBusy = false
@@ -156,6 +157,7 @@ public final class WidgetAppState: ObservableObject {
     public func refreshAiProgress() async {
         guard let api = try? makeAPIClient(), let feeds = try? await api.fetchAiProgress() else { return }
         aiProgress = Dictionary(uniqueKeysWithValues: feeds.map { ($0.feedUrl, $0) })
+        backendOps = try? await api.fetchOpsAiJobs(limit: 80)
     }
 
     public func loadRuntimeContext(suppressUnauthorizedAlert: Bool = false) async {
@@ -170,6 +172,7 @@ public final class WidgetAppState: ObservableObject {
             if let provider = runtimeConfig?.aiProvider {
                 providerKeyStatus[provider] = try await api.fetchProviderKeyStatus(provider: provider)
             }
+            backendOps = try? await api.fetchOpsAiJobs(limit: 80)
         } catch {
             handleAsyncError(error, suppressUnauthorizedAlert: suppressUnauthorizedAlert)
         }
@@ -772,9 +775,14 @@ public final class WidgetAppState: ObservableObject {
 
     private func waitForBackendReady(maxAttempts: Int = 20) async {
         for attempt in 0..<maxAttempts {
-            refreshDiscoveredBackendURL()
-            if let api = try? makeAPIClient(), await api.isBackendReachable() {
-                return
+            for candidate in BackendDiscovery.candidateBackendURLStrings(primary: backendURLString) {
+                if let api = try? APIClient(baseURLString: candidate, token: session?.token),
+                   await api.isBackendReachable() {
+                    if backendURLString != candidate {
+                        backendURLString = candidate
+                    }
+                    return
+                }
             }
             if attempt < maxAttempts - 1 {
                 try? await Task.sleep(nanoseconds: 1_000_000_000)

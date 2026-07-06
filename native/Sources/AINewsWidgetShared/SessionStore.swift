@@ -17,14 +17,7 @@ public final class SessionStore {
 
     public var baseURLString: String {
         get {
-            if let runtimeURL = BackendDiscovery.runtimeBackendURLString(), !runtimeURL.isEmpty {
-                let stored = defaults.string(forKey: baseURLKey)
-                if stored != runtimeURL {
-                    defaults.set(runtimeURL, forKey: baseURLKey)
-                }
-                return runtimeURL
-            }
-            return defaults.string(forKey: baseURLKey) ?? "http://127.0.0.1:4000"
+            defaults.string(forKey: baseURLKey) ?? BackendDiscovery.discoveredBackendURLString(fallback: "http://127.0.0.1:4000")
         }
         set { defaults.set(newValue, forKey: baseURLKey) }
     }
@@ -53,8 +46,7 @@ public final class SessionStore {
     }
 
     public func synchronizeDiscoveredBaseURL() {
-        let runtimeURL = BackendDiscovery.runtimeBackendURLString()
         let fallback = defaults.string(forKey: baseURLKey) ?? "http://127.0.0.1:4000"
-        defaults.set(runtimeURL ?? fallback, forKey: baseURLKey)
+        defaults.set(BackendDiscovery.discoveredBackendURLString(fallback: fallback), forKey: baseURLKey)
     }
 }

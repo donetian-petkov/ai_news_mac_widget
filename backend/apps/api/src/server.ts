@@ -955,28 +955,55 @@ app.put('/api/runtime/ai-defaults', async (req, res) => {
 app.get('/api/ai-progress', async (req, res) => {
   const user = await requireAuthUser(req, res);
   if (!user) return;
-  const byFeed = new Map<string, { done: number; total: number }>();
+  const byFeed = new Map<string, { done: number; pending: number; blocked: number; totalRelevant: number }>();
   for (const item of recent) {
     const cfg = feedSettings.get(item.feedUrl);
     if (!cfg) continue;
-    const entry = byFeed.get(item.feedUrl) || { done: 0, total: 0 };
+    const budget = cfg.budget || 'standard';
+    const entry = byFeed.get(item.feedUrl) || { done: 0, pending: 0, blocked: 0, totalRelevant: 0 };
     if (cfg.summaryEnabled !== false) {
-      entry.total += 1;
-      if (String(item.summary || '').trim()) entry.done += 1;
+      entry.totalRelevant += 1;
+      if (String(item.summary || '').trim()) {
+        entry.done += 1;
+      } else if (isAutoSummaryEligible(item)) {
+        entry.pending += 1;
+      } else {
+        entry.blocked += 1;
+      }
     }
     if (cfg.researchEnabled !== false) {
-      entry.total += 1;
-      if (String(item.research || '').trim()) entry.done += 1;
+      entry.totalRelevant += 1;
+      if (String(item.research || '').trim()) {
+        entry.done += 1;
+      } else if (budgetAllowsAutoResearch(budget)) {
+        entry.pending += 1;
+      } else {
+        entry.blocked += 1;
+      }
     }
     if (cfg.translationEnabled !== false && needsTitleTranslation(item.title, item.titleBg, item.titleEn)) {
-      entry.total += 1;
-      if (String(item.titleBg || '').trim() || String(item.titleEn || '').trim()) entry.done += 1;
+      entry.totalRelevant += 1;
+      if (String(item.titleBg || '').trim() || String(item.titleEn || '').trim()) {
+        entry.done += 1;
+      } else if (budget === 'high') {
+        entry.pending += 1;
+      } else {
+        entry.blocked += 1;
+      }
     }
     byFeed.set(item.feedUrl, entry);
   }
   const feeds = currentFeeds().map(f => {
-    const e = byFeed.get(f.url) || { done: 0, total: 0 };
-    return { feedUrl: f.url, label: labelForFeed(f), done: e.done, total: e.total, pending: Math.max(0, e.total - e.done) };
+    const e = byFeed.get(f.url) || { done: 0, pending: 0, blocked: 0, totalRelevant: 0 };
+    return {
+      feedUrl: f.url,
+      label: labelForFeed(f),
+      done: e.done,
+      total: e.done + e.pending,
+      pending: e.pending,
+      blocked: e.blocked,
+      totalRelevant: e.totalRelevant
+    };
   });
   res.json({ ok: true, feeds });
 });
@@ -1265,6 +1292,15 @@ app.get('/api/ops/ai-jobs', (req, res) => {
     .reverse();
 
   const inFlightKeys = Array.from(aiInFlight).slice(-Math.min(limit, 200));
+  const lastEvent = aiJobLogEvents.length ? aiJobLogEvents[aiJobLogEvents.length - 1] : undefined;
+  const lastSuccess = [...aiJobLogEvents].reverse().find(event => event.stage === 'success');
+  const nowMs = Date.now();
+  const failingFeeds = Array.from(feedRuntime.values()).filter(rt => rt.failCount > 0).length;
+  const breakerFeeds = Array.from(feedRuntime.values()).filter(rt => rt.disabledUntilMs > nowMs).length;
+  const stalled =
+    (aiQueue.length > 0 || aiInFlight.size > 0)
+    && !!lastEvent
+    && (nowMs - lastEvent.atMs) > 120_000;
 
   res.json({
     ok: true,
@@ -1285,6 +1321,15 @@ app.get('/api/ops/ai-jobs', (req, res) => {
       deadLetters: aiDeadLetters.length,
       queuedJobs: queuePreview,
       inFlightKeys
+    },
+    health: {
+      aiAvailable,
+      aiEnabled,
+      lastEventAt: lastEvent?.isoTime,
+      lastSuccessAt: lastSuccess?.isoTime,
+      stalled,
+      failingFeeds,
+      breakerFeeds
     },
     events,
     deadLetters
