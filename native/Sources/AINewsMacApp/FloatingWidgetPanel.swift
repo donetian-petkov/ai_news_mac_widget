@@ -241,7 +241,7 @@ private struct FloatingWidgetView: View {
                         .font(AINewsTheme.font(12, weight: .semibold))
                         .frame(maxWidth: .infinity)
                 }
-                .buttonStyle(.bordered)
+                .buttonStyle(WidgetPaginationButtonStyle(prominent: true))
             }
             if visibleCount > pageStep {
                 Button {
@@ -252,8 +252,7 @@ private struct FloatingWidgetView: View {
                         .font(AINewsTheme.font(12))
                         .frame(maxWidth: .infinity)
                 }
-                .buttonStyle(.borderless)
-                .foregroundStyle(AINewsTheme.textSecondary)
+                .buttonStyle(WidgetPaginationButtonStyle(prominent: false))
             }
         }
         .padding(.top, 4)
@@ -344,5 +343,37 @@ private struct FloatingWidgetView: View {
             stories = response.stories
             reachedEnd = response.stories.count < visibleCount
         }
+    }
+}
+
+private struct WidgetPaginationButtonStyle: ButtonStyle {
+    let prominent: Bool
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .foregroundStyle(prominent ? AINewsTheme.background : AINewsTheme.textPrimary)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 9)
+            .background(
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .fill(backgroundFill(pressed: configuration.isPressed))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .stroke(borderColor, lineWidth: 1)
+            )
+            .opacity(configuration.isPressed ? 0.92 : 1)
+            .animation(.easeOut(duration: 0.12), value: configuration.isPressed)
+    }
+
+    private func backgroundFill(pressed: Bool) -> Color {
+        if prominent {
+            return AINewsTheme.accentCyan.opacity(pressed ? 0.82 : 0.96)
+        }
+        return AINewsTheme.backgroundAlt.opacity(pressed ? 0.88 : 0.96)
+    }
+
+    private var borderColor: Color {
+        prominent ? AINewsTheme.accentCyan.opacity(0.98) : AINewsTheme.panelBorder.opacity(0.85)
     }
 }
