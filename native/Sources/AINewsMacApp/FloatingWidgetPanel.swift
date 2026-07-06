@@ -136,7 +136,20 @@ private struct FloatingWidgetView: View {
                 .font(AINewsTheme.font(16, weight: .bold))
                 .foregroundStyle(AINewsTheme.textPrimary)
                 .lineLimit(1)
-            Spacer()
+            Spacer(minLength: 8)
+            // Centered: live time/date + total AI token usage.
+            TimelineView(.periodic(from: Date(), by: 30)) { context in
+                VStack(spacing: 1) {
+                    Text(context.date.formatted(date: .abbreviated, time: .shortened))
+                        .font(AINewsTheme.font(11, weight: .semibold))
+                        .foregroundStyle(AINewsTheme.textSecondary)
+                    Text("\(tokenText) tokens")
+                        .font(AINewsTheme.font(10))
+                        .foregroundStyle(AINewsTheme.accentCyan)
+                }
+                .lineLimit(1)
+            }
+            Spacer(minLength: 8)
             if loading {
                 ProgressView().controlSize(.small)
             }
@@ -150,6 +163,13 @@ private struct FloatingWidgetView: View {
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 10)
+    }
+
+    private var tokenText: String {
+        let n = state.usage?.totalTokens ?? 0
+        if n >= 1_000_000 { return String(format: "%.1fM", Double(n) / 1_000_000) }
+        if n >= 1_000 { return String(format: "%.1fk", Double(n) / 1_000) }
+        return "\(n)"
     }
 
     @ViewBuilder
@@ -244,6 +264,7 @@ private struct FloatingWidgetView: View {
     private func reload() async {
         loading = true
         defer { loading = false }
+        await state.refreshUsage()
         guard let api = try? state.authorizedAPIClient() else { return }
         if isFiltered {
             if let matches = try? await api.fetchKeywordMatches(limit: 20) {

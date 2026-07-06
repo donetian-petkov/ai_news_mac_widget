@@ -76,6 +76,11 @@ final class BackendSupervisor {
         // backend's WebSocket-based news lock (meant for the shared web server) would
         // just stop the scheduler from ever polling feeds. Disable it here.
         environment["REQUIRE_LOGIN_AND_KEY_FOR_NEWS"] = "false"
+        // Default AI throughput is 1 job at a time with a 600-job queue, which drops
+        // work and crawls once all feeds are fetched. Raise both so summaries and
+        // translations actually keep up with the backlog.
+        if environment["AI_MAX_CONCURRENCY"] == nil { environment["AI_MAX_CONCURRENCY"] = "6" }
+        if environment["AI_QUEUE_MAX"] == nil { environment["AI_QUEUE_MAX"] = "6000" }
         return environment
     }
 
