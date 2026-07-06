@@ -163,6 +163,26 @@ public struct APIClient: Sendable {
         )
     }
 
+    public func fetchKeywords() async throws -> [String] {
+        struct Response: Codable { var ok: Bool; var keywords: [String] }
+        let response: Response = try await send(path: "/api/keywords")
+        return response.keywords
+    }
+
+    @discardableResult
+    public func saveKeywords(_ keywords: [String]) async throws -> [String] {
+        struct Body: Codable { var keywords: [String] }
+        struct Response: Codable { var ok: Bool; var keywords: [String] }
+        let response: Response = try await send(path: "/api/keywords", method: "PUT", body: Body(keywords: keywords))
+        return response.keywords
+    }
+
+    public func fetchKeywordMatches(limit: Int = 30) async throws -> [WidgetStory] {
+        struct Response: Codable { var ok: Bool; var stories: [WidgetStory] }
+        let response: Response = try await send(path: "/api/widget/keyword-matches?limit=\(limit)")
+        return response.stories
+    }
+
     public func fetchAccountSettings() async throws -> AccountSettings {
         let response: AccountSettingsResponse = try await send(path: "/api/account/settings")
         return response.settings

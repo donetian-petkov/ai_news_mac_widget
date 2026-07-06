@@ -952,6 +952,27 @@ app.put('/api/runtime/ai-defaults', async (req, res) => {
   }
 });
 
+app.get('/api/keywords', async (req, res) => {
+  const user = await requireAuthUser(req, res);
+  if (!user) return;
+  res.json({ ok: true, keywords });
+});
+
+app.put('/api/keywords', async (req, res) => {
+  try {
+    const user = await requireAuthUser(req, res);
+    if (!user) return;
+    const body = (req.body as Record<string, unknown> | undefined) || {};
+    keywords = parseKeywordsPayload(body.keywords);
+    markDirty();
+    await safeInitKeywordEmbeddings(undefined, 'Keyword update');
+    reprocessCachedItems(true, true);
+    res.json({ ok: true, keywords });
+  } catch (error) {
+    res.status(500).json({ error: (error as Error).message || 'Failed to update keywords.' });
+  }
+});
+
 app.get('/api/health', (_req, res) => {
   res.json({
     ok: true,

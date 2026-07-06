@@ -641,6 +641,141 @@ private struct StoryCardView: View {
     }
 }
 
+private struct KeywordsWorkspaceTab: View {
+    @EnvironmentObject private var state: WidgetAppState
+    @State private var keywords: [String] = []
+    @State private var draft = ""
+    @State private var matches: [WidgetStory] = []
+    @State private var loading = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            header(title: "Keywords & Filtered", subtitle: "Stories matching these keywords are highlighted in the Filtered list below.")
+
+            HStack(spacing: 10) {
+                TextField("Add a keyword and press Return", text: $draft)
+                    .textFieldStyle(.roundedBorder)
+                    .onSubmit { addKeyword() }
+                Button("Add") { addKeyword() }
+                    .buttonStyle(.borderedProminent)
+                    .tint(AINewsTheme.accentBlue)
+                    .disabled(draft.trimmingCharacters(in: .whitespaces).isEmpty)
+            }
+
+            if keywords.isEmpty {
+                Text("No keywords yet. Add some to build the Filtered list.")
+                    .font(.caption)
+                    .foregroundStyle(AINewsTheme.textMuted)
+            } else {
+                LazyVGrid(columns: [GridItem(.adaptive(minimum: 140), spacing: 8)], spacing: 8) {
+                    ForEach(keywords, id: \.self) { keyword in
+                        HStack(spacing: 6) {
+                            Text(keyword)
+                                .font(.caption)
+                                .foregroundStyle(AINewsTheme.textPrimary)
+                            Spacer(minLength: 0)
+                            Button {
+                                remove(keyword)
+                            } label: {
+                                Image(systemName: "xmark.circle.fill").foregroundStyle(AINewsTheme.textMuted)
+                            }
+                            .buttonStyle(.plain)
+                        }
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 6)
+                        .background(AINewsTheme.panel.opacity(0.7))
+                        .clipShape(Capsule())
+                    }
+                }
+            }
+
+            HStack {
+                Text("Filtered stories")
+                    .font(.headline)
+                    .foregroundStyle(AINewsTheme.textSecondary)
+                if loading { ProgressView().controlSize(.small) }
+                Spacer()
+                Button("Refresh") { Task { await loadMatches() } }
+                    .buttonStyle(.bordered)
+            }
+
+            ScrollView {
+                LazyVStack(spacing: 12) {
+                    if matches.isEmpty {
+                        Text("No stories match your keywords yet.")
+                            .font(.caption)
+                            .foregroundStyle(AINewsTheme.textMuted)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(.top, 8)
+                    }
+                    ForEach(matches) { story in
+                        Button {
+                            if let link = story.link, let url = URL(string: link) { NSWorkspace.shared.open(url) }
+                        } label: {
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text(story.source ?? story.feedUrl)
+                                    .font(.caption2).foregroundStyle(AINewsTheme.textMuted)
+                                Text(story.title)
+                                    .font(.headline).foregroundStyle(AINewsTheme.accentBlue)
+                                    .fixedSize(horizontal: false, vertical: true)
+                                if let summary = story.summary, !summary.isEmpty {
+                                    Text(summary).font(.body).foregroundStyle(AINewsTheme.textSecondary)
+                                        .fixedSize(horizontal: false, vertical: true)
+                                }
+                            }
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(16)
+                            .aiNewsPanelStyle()
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+            }
+        }
+        .task { await reload() }
+    }
+
+    private func reload() async {
+        do {
+            let api = try state.authorizedAPIClient()
+            keywords = try await api.fetchKeywords()
+        } catch { state.errorMessage = error.localizedDescription }
+        await loadMatches()
+    }
+
+    private func loadMatches() async {
+        loading = true
+        defer { loading = false }
+        if let api = try? state.authorizedAPIClient() {
+            matches = (try? await api.fetchKeywordMatches(limit: 40)) ?? matches
+        }
+    }
+
+    private func addKeyword() {
+        let value = draft.trimmingCharacters(in: .whitespaces)
+        guard !value.isEmpty, !keywords.contains(where: { $0.caseInsensitiveCompare(value) == .orderedSame }) else { return }
+        keywords.append(value)
+        draft = ""
+        Task { await save() }
+    }
+
+    private func remove(_ keyword: String) {
+        keywords.removeAll { $0 == keyword }
+        Task { await save() }
+    }
+
+    private func save() async {
+        do {
+            let api = try state.authorizedAPIClient()
+            keywords = try await api.saveKeywords(keywords)
+            state.statusMessage = "Updated keywords."
+            // Give the backend a moment to reprocess, then refresh matches.
+            try? await Task.sleep(nanoseconds: 1_500_000_000)
+            await loadMatches()
+        } catch { state.errorMessage = error.localizedDescription }
+    }
+}
+
 private struct WorkspaceView: View {
     @EnvironmentObject private var state: WidgetAppState
     @State private var tab = 0
@@ -659,9 +794,10 @@ private struct WorkspaceView: View {
                     Text("Automations").tag(3)
                     Text("Digests").tag(4)
                     Text("OPML").tag(5)
+                    Text("Keywords").tag(6)
                 }
                 .pickerStyle(.segmented)
-                .frame(width: 420)
+                .frame(width: 520)
                 Button("Done") { state.showingWorkspace = false }
             }
             .padding(24)
@@ -678,8 +814,10 @@ private struct WorkspaceView: View {
                     AutomationsWorkspaceTab()
                 case 4:
                     DigestsWorkspaceTab()
-                default:
+                case 5:
                     OpmlWorkspaceTab()
+                default:
+                    KeywordsWorkspaceTab()
                 }
             }
             .padding(.horizontal, 24)

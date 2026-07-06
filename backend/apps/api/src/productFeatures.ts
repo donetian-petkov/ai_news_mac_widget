@@ -771,6 +771,20 @@ export function registerProductFeatureApi({
     res.json({ ok: true, items: categories });
   });
 
+  // Stories matching the user's keywords (the "Filtered" column from the web app).
+  app.get('/api/widget/keyword-matches', async (req, res) => {
+    const user = await requireAuthUser(req, res);
+    if (!user) return;
+    const limitRaw = Number(req.query.limit);
+    const limit = Number.isFinite(limitRaw) ? Math.max(1, Math.min(100, Math.floor(limitRaw))) : 30;
+    const stories = getRecentNews()
+      .filter(item => item.isMatch === true && item.filteredOk !== false)
+      .sort((a, b) => Number(b.publishedMs || 0) - Number(a.publishedMs || 0))
+      .slice(0, limit)
+      .map(toWidgetStory);
+    res.json({ ok: true, stories, count: stories.length });
+  });
+
   app.get('/api/widget/master', async (req, res) => {
     const user = await requireAuthUser(req, res);
     if (!user) return;
