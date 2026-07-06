@@ -145,6 +145,12 @@ private struct DashboardView: View {
         state.categories.filter { $0.hidden }.count
     }
 
+    private var aggregateProgress: (done: Int, total: Int) {
+        var done = 0, total = 0
+        for p in state.aiProgress.values { done += p.done; total += p.total }
+        return (done, total)
+    }
+
     private var filteredStories: [WidgetStory] {
         let query = storySearch.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !query.isEmpty else { return state.stories }
@@ -182,6 +188,13 @@ private struct DashboardView: View {
                 .environmentObject(state)
                 .environmentObject(theme)
                 .frame(minWidth: 980, minHeight: 700)
+        }
+        .task {
+            // Keep the header AI progress bar current.
+            while !Task.isCancelled {
+                await state.refreshAiProgress()
+                try? await Task.sleep(nanoseconds: 6_000_000_000)
+            }
         }
     }
 
@@ -344,6 +357,17 @@ private struct DashboardView: View {
                 Text(statusMessage)
                     .font(.subheadline)
                     .foregroundStyle(AINewsTheme.accentCyan)
+            }
+
+            let progress = aggregateProgress
+            if progress.total > 0 && progress.done < progress.total {
+                VStack(alignment: .leading, spacing: 3) {
+                    ProgressView(value: Double(progress.done), total: Double(progress.total))
+                        .tint(AINewsTheme.accentCyan)
+                    Text("Generating AI content — \(progress.total - progress.done) pending · \(progress.done)/\(progress.total) done")
+                        .font(.caption)
+                        .foregroundStyle(AINewsTheme.textMuted)
+                }
             }
 
             HStack(spacing: 12) {
