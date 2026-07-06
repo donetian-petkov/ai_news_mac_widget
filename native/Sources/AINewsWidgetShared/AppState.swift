@@ -666,6 +666,14 @@ public final class WidgetAppState: ObservableObject {
                 stories = selectedStories
             }
         }
+        // Best-effort: refresh the Keywords widget feed. A failure here must not
+        // abort the category snapshot that already succeeded above.
+        if let keywords = try? await api.fetchKeywords() {
+            snapshot.keywords = keywords
+        }
+        if let matches = try? await api.fetchKeywordMatches(limit: 30) {
+            snapshot.keywordMatches = matches
+        }
         try snapshotStore.saveSnapshot(snapshot)
     }
 

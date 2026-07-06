@@ -1637,6 +1637,40 @@ private struct SettingsView: View {
         }
     }
 
+    static let providerOptions = ["openai", "claude", "openrouter", "local"]
+
+    // Curated model suggestions per provider, mirroring the backend defaults in
+    // server.ts (modelOptionsByProvider). Free text is still allowed via the field.
+    private struct ModelSuggestions {
+        var summary: [String]
+        var research: [String]
+        var ask: [String]
+    }
+
+    private static let modelOptionsByProvider: [String: ModelSuggestions] = [
+        "openai": ModelSuggestions(
+            summary: ["gpt-4.1-nano", "gpt-4.1-mini", "gpt-4o-mini", "gpt-4.1"],
+            research: ["gpt-4.1-mini", "gpt-4.1", "gpt-4o-mini"],
+            ask: ["gpt-4.1-nano", "gpt-4.1-mini", "gpt-4o-mini"]
+        ),
+        "claude": ModelSuggestions(
+            summary: ["claude-3-5-haiku-latest", "claude-3-7-sonnet-latest"],
+            research: ["claude-3-7-sonnet-latest", "claude-3-5-haiku-latest"],
+            ask: ["claude-3-5-haiku-latest", "claude-3-7-sonnet-latest"]
+        ),
+        "openrouter": ModelSuggestions(
+            summary: ["openai/gpt-4.1-mini", "openai/gpt-4.1", "anthropic/claude-3.5-haiku"],
+            research: ["openai/gpt-4.1", "openai/gpt-4.1-mini", "anthropic/claude-3.7-sonnet"],
+            ask: ["openai/gpt-4.1-mini", "openai/gpt-4.1-nano", "anthropic/claude-3.5-haiku"]
+        )
+    ]
+
+    private func modelSuggestions(for kind: KeyPath<ModelSuggestions, [String]>) -> [String] {
+        let provider = (state.accountSettings.aiProvider ?? state.runtimeConfig?.aiProvider ?? "openai")
+            .lowercased()
+        return SettingsView.modelOptionsByProvider[provider]?[keyPath: kind] ?? []
+    }
+
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
@@ -1746,29 +1780,41 @@ private struct SettingsView: View {
                     .font(.headline)
                     .foregroundStyle(AINewsTheme.textSecondary)
 
-                TextField("Preferred provider", text: Binding(
-                    get: { state.accountSettings.aiProvider ?? "" },
-                    set: { state.accountSettings.aiProvider = $0.isEmpty ? nil : $0 }
-                ))
-                .textFieldStyle(.roundedBorder)
+                EditableComboField(
+                    placeholder: "Preferred provider",
+                    value: Binding(
+                        get: { state.accountSettings.aiProvider ?? "" },
+                        set: { state.accountSettings.aiProvider = $0.isEmpty ? nil : $0 }
+                    ),
+                    suggestions: SettingsView.providerOptions
+                )
 
-                TextField("Summary model", text: Binding(
-                    get: { state.accountSettings.summaryModel ?? "" },
-                    set: { state.accountSettings.summaryModel = $0.isEmpty ? nil : $0 }
-                ))
-                .textFieldStyle(.roundedBorder)
+                EditableComboField(
+                    placeholder: "Summary model",
+                    value: Binding(
+                        get: { state.accountSettings.summaryModel ?? "" },
+                        set: { state.accountSettings.summaryModel = $0.isEmpty ? nil : $0 }
+                    ),
+                    suggestions: modelSuggestions(for: \.summary)
+                )
 
-                TextField("Research model", text: Binding(
-                    get: { state.accountSettings.researchModel ?? "" },
-                    set: { state.accountSettings.researchModel = $0.isEmpty ? nil : $0 }
-                ))
-                .textFieldStyle(.roundedBorder)
+                EditableComboField(
+                    placeholder: "Research model",
+                    value: Binding(
+                        get: { state.accountSettings.researchModel ?? "" },
+                        set: { state.accountSettings.researchModel = $0.isEmpty ? nil : $0 }
+                    ),
+                    suggestions: modelSuggestions(for: \.research)
+                )
 
-                TextField("Ask model", text: Binding(
-                    get: { state.accountSettings.askModel ?? "" },
-                    set: { state.accountSettings.askModel = $0.isEmpty ? nil : $0 }
-                ))
-                .textFieldStyle(.roundedBorder)
+                EditableComboField(
+                    placeholder: "Ask model",
+                    value: Binding(
+                        get: { state.accountSettings.askModel ?? "" },
+                        set: { state.accountSettings.askModel = $0.isEmpty ? nil : $0 }
+                    ),
+                    suggestions: modelSuggestions(for: \.ask)
+                )
 
                 Toggle("Show cover thumbnails on stories", isOn: $showThumbnails)
 
@@ -2088,6 +2134,43 @@ private struct SettingsView: View {
             state.statusMessage = "Copied category share link."
         } catch {
             state.errorMessage = error.localizedDescription
+        }
+    }
+}
+
+/// A text field that also offers a dropdown of suggested values.
+/// Users can pick a suggestion or type any custom value (free text).
+private struct EditableComboField: View {
+    let placeholder: String
+    @Binding var value: String
+    let suggestions: [String]
+
+    var body: some View {
+        HStack(spacing: 6) {
+            TextField(placeholder, text: $value)
+                .textFieldStyle(.roundedBorder)
+
+            if !suggestions.isEmpty {
+                Menu {
+                    ForEach(suggestions, id: \.self) { option in
+                        Button {
+                            value = option
+                        } label: {
+                            if option == value {
+                                Label(option, systemImage: "checkmark")
+                            } else {
+                                Text(option)
+                            }
+                        }
+                    }
+                } label: {
+                    Image(systemName: "chevron.down")
+                        .font(.system(size: 11, weight: .semibold))
+                }
+                .menuStyle(.borderlessButton)
+                .frame(width: 24)
+                .help("Choose a suggested value")
+            }
         }
     }
 }

@@ -734,17 +734,40 @@ public struct WidgetSnapshot: Codable, Equatable, Sendable {
     public var categories: [WidgetCategory]
     public var activeCategoryID: Int?
     public var storiesByCategory: [String: [WidgetStory]]
+    /// Tracked topics the user configured (drives the Keywords widget header).
+    public var keywords: [String]
+    /// Stories that matched the tracked topics, powering the dedicated Keywords widget.
+    public var keywordMatches: [WidgetStory]
 
     public init(
         lastUpdated: Date = Date(),
         categories: [WidgetCategory] = [],
         activeCategoryID: Int? = nil,
-        storiesByCategory: [String: [WidgetStory]] = [:]
+        storiesByCategory: [String: [WidgetStory]] = [:],
+        keywords: [String] = [],
+        keywordMatches: [WidgetStory] = []
     ) {
         self.lastUpdated = lastUpdated
         self.categories = categories
         self.activeCategoryID = activeCategoryID
         self.storiesByCategory = storiesByCategory
+        self.keywords = keywords
+        self.keywordMatches = keywordMatches
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case lastUpdated, categories, activeCategoryID, storiesByCategory, keywords, keywordMatches
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        lastUpdated = try container.decodeIfPresent(Date.self, forKey: .lastUpdated) ?? Date()
+        categories = try container.decodeIfPresent([WidgetCategory].self, forKey: .categories) ?? []
+        activeCategoryID = try container.decodeIfPresent(Int.self, forKey: .activeCategoryID)
+        storiesByCategory = try container.decodeIfPresent([String: [WidgetStory]].self, forKey: .storiesByCategory) ?? [:]
+        // Tolerate older snapshots written before these fields existed.
+        keywords = try container.decodeIfPresent([String].self, forKey: .keywords) ?? []
+        keywordMatches = try container.decodeIfPresent([WidgetStory].self, forKey: .keywordMatches) ?? []
     }
 }
 

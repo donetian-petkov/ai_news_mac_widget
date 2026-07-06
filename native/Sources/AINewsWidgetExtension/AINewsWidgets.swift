@@ -368,10 +368,142 @@ struct MasterWidget: Widget {
 }
 
 @available(macOS 14.0, *)
+struct KeywordWidgetEntry: TimelineEntry {
+    let date: Date
+    let keywords: [String]
+    let stories: [WidgetStory]
+}
+
+@available(macOS 14.0, *)
+struct KeywordWidgetProvider: TimelineProvider {
+    func placeholder(in context: Context) -> KeywordWidgetEntry {
+        KeywordWidgetEntry(
+            date: Date(),
+            keywords: ["openai", "robotics"],
+            stories: [
+                WidgetStory(id: "1", feedUrl: "feed", title: "OpenAI ships a new model for agents", summary: "Matched your tracked topics."),
+                WidgetStory(id: "2", feedUrl: "feed", title: "Humanoid robotics startup raises a large round", summary: "Another tracked-topic match.")
+            ]
+        )
+    }
+
+    func getSnapshot(in context: Context, completion: @escaping (KeywordWidgetEntry) -> Void) {
+        Task {
+            completion(await entry())
+        }
+    }
+
+    func getTimeline(in context: Context, completion: @escaping (Timeline<KeywordWidgetEntry>) -> Void) {
+        Task {
+            let entry = await entry()
+            completion(Timeline(entries: [entry], policy: .after(Date().addingTimeInterval(300))))
+        }
+    }
+
+    private func entry() async -> KeywordWidgetEntry {
+        let snapshot = await MainActor.run { SnapshotStore.shared.loadSnapshot() }
+        return KeywordWidgetEntry(date: Date(), keywords: snapshot.keywords, stories: snapshot.keywordMatches)
+    }
+}
+
+@available(macOS 14.0, *)
+struct KeywordWidgetView: View {
+    @Environment(\.widgetFamily) private var family
+    let entry: KeywordWidgetEntry
+
+    private var storyLimit: Int {
+        switch family {
+        case .systemSmall: return 3
+        case .systemMedium: return 4
+        default: return 8
+        }
+    }
+
+    private func storyURL(_ story: WidgetStory) -> URL {
+        if let link = story.link, let url = URL(string: link) {
+            return url
+        }
+        return URL(string: "ainewswidget://story")!
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                Label("Keywords", systemImage: "text.magnifyingglass")
+                    .font(.headline)
+                    .foregroundStyle(AINewsTheme.textPrimary)
+                Spacer()
+                Text("\(entry.stories.count) match\(entry.stories.count == 1 ? "" : "es")")
+                    .font(.caption)
+                    .foregroundStyle(AINewsTheme.textMuted)
+            }
+
+            if family != .systemSmall, !entry.keywords.isEmpty {
+                Text(entry.keywords.prefix(6).joined(separator: " · "))
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(AINewsTheme.accentCyan)
+                    .lineLimit(1)
+            }
+
+            if entry.stories.isEmpty {
+                Text(entry.keywords.isEmpty
+                     ? "Add tracked topics in the app, then refresh to see matches here."
+                     : "No matching stories cached yet. Refresh in the app to populate this widget.")
+                    .font(.caption)
+                    .foregroundStyle(AINewsTheme.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            } else {
+                ForEach(Array(entry.stories.prefix(storyLimit).enumerated()), id: \.element.storyKey) { index, story in
+                    Link(destination: storyURL(story)) {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(story.title)
+                                .font(.subheadline.weight(.semibold))
+                                .foregroundStyle(AINewsTheme.accentBlue)
+                                .lineLimit(2)
+                            if family != .systemSmall {
+                                Text(story.summary ?? story.source ?? story.feedUrl)
+                                    .font(.caption)
+                                    .foregroundStyle(AINewsTheme.textSecondary)
+                                    .lineLimit(2)
+                            }
+                        }
+                    }
+                    .buttonStyle(.plain)
+
+                    if story.storyKey != entry.stories.prefix(storyLimit).last?.storyKey {
+                        Divider()
+                            .overlay(AINewsTheme.panelBorder.opacity(0.4))
+                    }
+                }
+            }
+        }
+        .padding(16)
+        .containerBackground(for: .widget) {
+            AINewsTheme.background
+        }
+    }
+}
+
+@available(macOS 14.0, *)
+struct KeywordWidget: Widget {
+    let kind = "AINewsKeywordWidget"
+
+    var body: some WidgetConfiguration {
+        StaticConfiguration(kind: kind, provider: KeywordWidgetProvider()) { entry in
+            KeywordWidgetView(entry: entry)
+        }
+        .configurationDisplayName("AI News Keywords")
+        .description("Show the latest stories that match your tracked topics.")
+        .supportedFamilies([.systemSmall, .systemMedium, .systemLarge])
+    }
+}
+
+@available(macOS 14.0, *)
 @main
 struct AINewsWidgetBundle: WidgetBundle {
     var body: some Widget {
         MasterWidget()
         CategoryWidget()
+        KeywordWidget()
     }
 }
