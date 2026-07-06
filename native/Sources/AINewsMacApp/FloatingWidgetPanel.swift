@@ -225,6 +225,11 @@ private struct FloatingWidgetView: View {
                             MoodChip(mood: mood)
                         }
                     }
+                    if let date = story.publishedDate {
+                        Text(date.formatted(date: .abbreviated, time: .shortened))
+                            .font(AINewsTheme.font(10))
+                            .foregroundStyle(AINewsTheme.textMuted)
+                    }
                     Text(story.title)
                         .font(AINewsTheme.font(14, weight: .bold))
                         .foregroundStyle(AINewsTheme.accentBlue)
