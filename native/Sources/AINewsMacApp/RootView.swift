@@ -382,14 +382,16 @@ private struct DashboardView: View {
                     .foregroundStyle(AINewsTheme.accentCyan)
             }
 
-            let progress = aggregateProgress
-            if progress.total > 0 && progress.done < progress.total {
-                VStack(alignment: .leading, spacing: 3) {
-                    ProgressView(value: Double(progress.done), total: Double(progress.total))
-                        .tint(AINewsTheme.accentCyan)
-                    Text("Generating AI content — \(progress.total - progress.done) pending · \(progress.done)/\(progress.total) done")
-                        .font(.caption)
-                        .foregroundStyle(AINewsTheme.textMuted)
+            if let selected = state.selectedCategory {
+                let progress = categoryProgress(selected)
+                if progress.total > 0 && progress.done < progress.total {
+                    VStack(alignment: .leading, spacing: 3) {
+                        ProgressView(value: Double(progress.done), total: Double(progress.total))
+                            .tint(AINewsTheme.accentCyan)
+                        Text("Generating AI for \(selected.name) — \(progress.total - progress.done) pending · \(progress.done)/\(progress.total) done")
+                            .font(.caption)
+                            .foregroundStyle(AINewsTheme.textMuted)
+                    }
                 }
             }
 
