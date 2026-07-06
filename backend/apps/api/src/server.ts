@@ -2553,17 +2553,18 @@ let globalAiDefaults: GlobalAiDefaults = {
 // Feed URLs whose AI settings the user set explicitly. Global changes leave these alone.
 const customizedFeedUrls = new Set<string>();
 
-// Re-apply the global AI defaults to every non-customized feed.
+// Apply the global AI defaults to EVERY feed (Apply-to-all overrides per-feed
+// tweaks), and clear the customized set so feeds follow the global baseline again.
 function applyGlobalAiDefaultsToFeeds() {
   for (const fi of feedsList) {
     if (fi.url === FILTERED_FEED_URL) continue;
-    if (customizedFeedUrls.has(fi.url)) continue;
     const current = feedSettings.get(fi.url) || defaultSettingsForFeed(fi);
     current.summaryEnabled = globalAiDefaults.summaryEnabled;
     current.researchEnabled = globalAiDefaults.researchEnabled;
     current.translationEnabled = globalAiDefaults.translationEnabled;
     feedSettings.set(fi.url, current);
   }
+  customizedFeedUrls.clear();
 }
 
 // runtime-only fetch cache + breaker
