@@ -127,7 +127,7 @@ public final class WidgetAppState: ObservableObject {
         guard runtimeConfig?.aiEnabled == true else { return }
         do {
             let api = try makeAPIClient()
-            let result = try await api.regenerateMissingAI()
+            let result = try await api.regenerateMissingAI(limit: 5000)
             let q = result.queued
             AINewsDebugLog.log("backfill queued summary=\(q.summary) research=\(q.research) translation=\(q.translation) skipped summary=\(result.skipped.summary)")
             let total = q.summary + q.research + q.translation

@@ -1129,7 +1129,7 @@ app.post('/api/maintenance/regenerate', async (req, res) => {
   const kind = ['summary', 'translation', 'research', 'all'].includes(kindRaw) ? kindRaw as 'summary' | 'translation' | 'research' | 'all' : 'all';
   const feedUrl = String(body.feedUrl || '').trim();
   const limitRaw = Number(body.limit);
-  const limit = Number.isFinite(limitRaw) ? Math.max(1, Math.min(500, Math.floor(limitRaw))) : 80;
+  const limit = Number.isFinite(limitRaw) ? Math.max(1, Math.min(6000, Math.floor(limitRaw))) : 80;
   const missingOnly = body.missingOnly === true;
   const jobs = new Set<AiJobKind>();
   if (kind === 'summary' || kind === 'all') jobs.add('summary');
