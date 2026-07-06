@@ -151,6 +151,14 @@ private struct DashboardView: View {
         return (done, total)
     }
 
+    private func categoryProgress(_ category: WidgetCategory) -> (done: Int, total: Int) {
+        var done = 0, total = 0
+        for url in category.feedUrls {
+            if let p = state.aiProgress[url] { done += p.done; total += p.total }
+        }
+        return (done, total)
+    }
+
     private var filteredStories: [WidgetStory] {
         let query = storySearch.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !query.isEmpty else { return state.stories }
@@ -247,6 +255,15 @@ private struct DashboardView: View {
                             Text(category.hidden ? "Hidden" : "\(category.activeCount) visible")
                                 .font(.caption)
                                 .foregroundStyle(AINewsTheme.textMuted)
+                            let p = categoryProgress(category)
+                            if p.total > 0 && p.done < p.total {
+                                ProgressView(value: Double(p.done), total: Double(p.total))
+                                    .controlSize(.mini)
+                                    .tint(AINewsTheme.accentCyan)
+                                Text("\(p.total - p.done) pending")
+                                    .font(.caption2)
+                                    .foregroundStyle(AINewsTheme.textMuted)
+                            }
                         }
                         Spacer()
                         Button {
