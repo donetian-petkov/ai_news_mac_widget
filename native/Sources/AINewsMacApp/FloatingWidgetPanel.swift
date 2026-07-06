@@ -351,7 +351,7 @@ private struct WidgetPaginationButtonStyle: ButtonStyle {
 
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .foregroundStyle(prominent ? AINewsTheme.background : AINewsTheme.textPrimary)
+            .foregroundStyle(AINewsTheme.textPrimary)
             .padding(.horizontal, 12)
             .padding(.vertical, 9)
             .background(
