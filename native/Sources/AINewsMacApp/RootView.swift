@@ -499,9 +499,14 @@ private struct StoryCardView: View {
                     StoryThumbnail(url: url, size: 84)
                 }
                 VStack(alignment: .leading, spacing: 6) {
-                    Text(story.source ?? story.feedUrl)
-                        .font(.headline)
-                        .foregroundStyle(AINewsTheme.textPrimary)
+                    HStack(spacing: 8) {
+                        Text(story.source ?? story.feedUrl)
+                            .font(.headline)
+                            .foregroundStyle(AINewsTheme.textPrimary)
+                        if let mood = story.mood, !mood.isEmpty {
+                            MoodChip(mood: mood)
+                        }
+                    }
                     if let date = story.publishedDate {
                         Text(date.formatted(date: .abbreviated, time: .shortened))
                             .font(.caption)

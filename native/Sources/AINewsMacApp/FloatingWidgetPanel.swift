@@ -181,10 +181,15 @@ private struct FloatingWidgetView: View {
                     StoryThumbnail(url: url, size: 52)
                 }
                 VStack(alignment: .leading, spacing: 6) {
-                    Text(story.source ?? story.feedUrl)
-                    .font(AINewsTheme.font(11))
-                    .foregroundStyle(AINewsTheme.textMuted)
-                    .lineLimit(1)
+                    HStack(spacing: 6) {
+                        Text(story.source ?? story.feedUrl)
+                            .font(AINewsTheme.font(11))
+                            .foregroundStyle(AINewsTheme.textMuted)
+                            .lineLimit(1)
+                        if let mood = story.mood, !mood.isEmpty {
+                            MoodChip(mood: mood)
+                        }
+                    }
                 Text(story.title)
                     .font(AINewsTheme.font(14, weight: .semibold))
                     .foregroundStyle(AINewsTheme.accentBlue)
@@ -200,9 +205,8 @@ private struct FloatingWidgetView: View {
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
-            .padding(12)
-            .background(AINewsTheme.panel.opacity(0.7))
-            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+            .padding(14)
+            .aiNewsCardStyle()
         }
         .buttonStyle(.plain)
     }

@@ -257,7 +257,48 @@ public struct StoryThumbnail: View {
     #endif
 }
 
+/// A small colored pill for a story's mood/sentiment.
+public struct MoodChip: View {
+    private let mood: String
+    public init(mood: String) { self.mood = mood }
+
+    private var color: Color {
+        let m = mood.lowercased()
+        if m.contains("posi") || m.contains("optim") || m.contains("hope") || m.contains("upbeat") { return AINewsTheme.accentCyan }
+        if m.contains("neg") || m.contains("crit") || m.contains("anger") || m.contains("fear") || m.contains("sad") || m.contains("alarm") { return AINewsTheme.accentRose }
+        if m.contains("neutral") || m.contains("factual") { return AINewsTheme.textMuted }
+        return AINewsTheme.accentGold
+    }
+
+    public var body: some View {
+        Text(mood.capitalized)
+            .font(.system(size: 10, weight: .semibold))
+            .padding(.horizontal, 8)
+            .padding(.vertical, 3)
+            .background(color.opacity(0.18))
+            .foregroundStyle(color)
+            .clipShape(Capsule())
+    }
+}
+
+/// Modern elevated card style: subtle vertical gradient, hairline accent border,
+/// and a soft shadow for depth — readable (unlike translucent glass over dark).
 public extension View {
+    func aiNewsCardStyle(cornerRadius: CGFloat = 16) -> some View {
+        self
+            .background(
+                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                    .fill(LinearGradient(colors: [AINewsTheme.panel, AINewsTheme.backgroundAlt],
+                                         startPoint: .top, endPoint: .bottom))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                    .stroke(AINewsTheme.panelBorder.opacity(0.28), lineWidth: 1)
+            )
+            .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
+            .shadow(color: Color.black.opacity(0.28), radius: 9, x: 0, y: 3)
+    }
+
     func aiNewsPanelStyle() -> some View {
         self
             .background(AINewsTheme.cardGradient)
