@@ -8,6 +8,7 @@ extension Notification.Name {
     static let aiNewsOpenWidgetHelp = Notification.Name("AINewsOpenWidgetHelp")
     static let aiNewsOpenWorkspace = Notification.Name("AINewsOpenWorkspace")
     static let aiNewsToggleFloatingWidget = Notification.Name("AINewsToggleFloatingWidget")
+    static let aiNewsOpenFilteredWidget = Notification.Name("AINewsOpenFilteredWidget")
 }
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
@@ -36,6 +37,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             name: .aiNewsToggleFloatingWidget,
             object: nil
         )
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(openFilteredWidget),
+            name: .aiNewsOpenFilteredWidget,
+            object: nil
+        )
         NSApp.activate(ignoringOtherApps: true)
         showMainWindow()
     }
@@ -55,6 +62,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         menu.addItem(NSMenuItem(title: "Settings & AI", action: #selector(openSettings), keyEquivalent: ","))
         menu.addItem(NSMenuItem(title: "Widget Help", action: #selector(openWidgetHelp), keyEquivalent: "w"))
         menu.addItem(NSMenuItem(title: "Floating Widget", action: #selector(toggleFloatingWidget), keyEquivalent: "f"))
+        menu.addItem(NSMenuItem(title: "Filtered Widget", action: #selector(openFilteredWidget), keyEquivalent: ""))
         let reopenItem = NSMenuItem(title: "Reopen Closed Widget", action: #selector(reopenClosedWidget), keyEquivalent: "t")
         reopenItem.keyEquivalentModifierMask = [.command, .shift]
         menu.addItem(reopenItem)
@@ -108,6 +116,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     @MainActor
     @objc private func reopenClosedWidget() {
         floatingWidgetManager?.reopenLastClosed()
+    }
+
+    @MainActor
+    @objc private func openFilteredWidget() {
+        guard let appState else { return }
+        if floatingWidgetManager == nil {
+            floatingWidgetManager = FloatingWidgetManager(state: appState)
+        }
+        floatingWidgetManager?.openFiltered()
     }
 
     @objc private func quitApp() {

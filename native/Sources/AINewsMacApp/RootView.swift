@@ -279,6 +279,13 @@ private struct DashboardView: View {
             .tint(AINewsTheme.accentGold)
             .help("Open an always-on-top, scrollable panel for the selected category. Select another category and click again to open more at once.")
 
+            Button("Filtered Widget") {
+                NotificationCenter.default.post(name: .aiNewsOpenFilteredWidget, object: nil)
+            }
+            .buttonStyle(.bordered)
+            .tint(AINewsTheme.accentCyan)
+            .help("Open an always-on-top floating panel of stories matching your keywords.")
+
             Button("Sign out") {
                 state.signOut()
             }

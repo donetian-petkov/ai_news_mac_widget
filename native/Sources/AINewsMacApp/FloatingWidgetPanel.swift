@@ -18,16 +18,24 @@ final class FloatingWidgetManager: NSObject, NSWindowDelegate {
         super.init()
     }
 
+    /// Sentinel id for the keyword-matches ("Filtered") floating widget.
+    private let filteredKey = -1
+
     /// Open (or focus) a floating widget for whichever category is selected.
     func openForSelectedCategory() {
         guard let category = state.selectedCategory else { return }
         openWidget(categoryID: category.id, categoryName: category.name)
     }
 
+    /// Open (or focus) the Filtered floating widget (keyword/tracked-topic matches).
+    func openFiltered() {
+        openWidget(categoryID: filteredKey, categoryName: "Filtered", isFiltered: true)
+    }
+
     /// Reopen the most recently closed widget (⌘⇧T, browser-style).
     func reopenLastClosed() {
         guard let id = closedStack.popLast(), let name = names[id] else { return }
-        openWidget(categoryID: id, categoryName: name)
+        openWidget(categoryID: id, categoryName: name, isFiltered: id == filteredKey)
     }
 
     func windowWillClose(_ notification: Notification) {
@@ -40,7 +48,7 @@ final class FloatingWidgetManager: NSObject, NSWindowDelegate {
         closedStack.append(id)
     }
 
-    func openWidget(categoryID: Int, categoryName: String) {
+    func openWidget(categoryID: Int, categoryName: String, isFiltered: Bool = false) {
         names[categoryID] = categoryName
         closedStack.removeAll { $0 == categoryID }
         if let existing = panels[categoryID] {
@@ -49,7 +57,7 @@ final class FloatingWidgetManager: NSObject, NSWindowDelegate {
         }
 
         let hosting = NSHostingView(
-            rootView: FloatingWidgetView(categoryID: categoryID, categoryName: categoryName)
+            rootView: FloatingWidgetView(categoryID: categoryID, categoryName: categoryName, isFiltered: isFiltered)
                 .environmentObject(state)
                 .environmentObject(ThemeSettings.shared)
         )
@@ -96,6 +104,7 @@ private struct FloatingWidgetView: View {
     @EnvironmentObject private var theme: ThemeSettings
     let categoryID: Int
     let categoryName: String
+    var isFiltered: Bool = false
 
     @State private var stories: [WidgetStory] = []
     @State private var loading = false
@@ -234,10 +243,12 @@ private struct FloatingWidgetView: View {
         loading = true
         defer { loading = false }
         guard let api = try? state.authorizedAPIClient() else { return }
-        if let response = try? await api.fetchStories(categoryID: categoryID, limit: 10) {
+        if isFiltered {
+            if let matches = try? await api.fetchKeywordMatches(limit: 20) {
+                stories = matches
+            }
+        } else if let response = try? await api.fetchStories(categoryID: categoryID, limit: 10) {
             stories = response.stories
-            let covers = response.stories.filter { !($0.coverUrl ?? "").isEmpty }.count
-            AINewsDebugLog.log("widget reload cat=\(categoryID) n=\(response.stories.count) covers=\(covers) coversEnabled=\(coversEnabled)")
         }
     }
 }
