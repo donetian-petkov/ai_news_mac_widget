@@ -3267,29 +3267,12 @@ function matchTerms(): string[] {
   return Array.from(set);
 }
 
-function escapeRegExp(s: string): string {
-  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-}
-
-// Does `term` appear in the already-normalized `title`? Short terms (≤3 chars
-// like "ЕС", "AI", "САЩ") must match as a whole word — otherwise they hit
-// inside unrelated words ("арЕСт", "UkrAIne") and flood the Filtered view.
-// Longer terms keep substring matching so Bulgarian inflections still match.
-function termHit(normalizedTitle: string, term: string): boolean {
-  if (!term) return false;
-  if (term.length <= 3) {
-    const re = new RegExp(`(^|[^\\p{L}\\p{N}])${escapeRegExp(term)}([^\\p{L}\\p{N}]|$)`, 'u');
-    return re.test(normalizedTitle);
-  }
-  return normalizedTitle.includes(term);
-}
-
 function substringHit(title: string): boolean {
   const terms = matchTerms();
   if (!terms.length) return false;
   const t = normalizeText(title);
   if (!t) return false;
-  return terms.some(k => termHit(t, normalizeText(k)));
+  return terms.some(k => t.includes(normalizeText(k)));
 }
 
 async function hybridMatch(
