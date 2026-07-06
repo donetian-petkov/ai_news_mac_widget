@@ -38,11 +38,29 @@ final class FloatingWidgetManager: NSObject, NSWindowDelegate {
         openWidget(categoryID: id, categoryName: name, isFiltered: id == filteredKey)
     }
 
+    /// UserDefaults key holding a category's persisted panel frame.
+    private static func frameKey(_ id: Int) -> String { "AINewsFloatingWidgetFrame-\(id)" }
+
+    /// Save the panel's current frame so size/position survive close + relaunch.
+    private func persistFrame(for window: NSWindow) {
+        guard let entry = panels.first(where: { $0.value === window }) else { return }
+        UserDefaults.standard.set(NSStringFromRect(window.frame), forKey: Self.frameKey(entry.key))
+    }
+
+    func windowDidMove(_ notification: Notification) {
+        if let window = notification.object as? NSWindow { persistFrame(for: window) }
+    }
+
+    func windowDidResize(_ notification: Notification) {
+        if let window = notification.object as? NSWindow { persistFrame(for: window) }
+    }
+
     func windowWillClose(_ notification: Notification) {
         guard
             let window = notification.object as? NSWindow,
             let entry = panels.first(where: { $0.value === window })
         else { return }
+        persistFrame(for: window)
         let id = entry.key
         closedStack.removeAll { $0 == id }
         closedStack.append(id)
@@ -80,10 +98,11 @@ final class FloatingWidgetManager: NSObject, NSWindowDelegate {
         panel.isReleasedWhenClosed = false
         panel.minSize = NSSize(width: 220, height: 180)
         // Remember each widget's size/position across launches, per category.
-        let autosaveName = "AINewsFloatingWidget-\(categoryID)"
-        let restored = panel.setFrameUsingName(autosaveName)
-        panel.setFrameAutosaveName(autosaveName)
-        if !restored {
+        // We persist the frame ourselves (windowDidMove/Resize/WillClose) rather
+        // than relying on AppKit's autosave, which is unreliable for panels.
+        if let saved = UserDefaults.standard.string(forKey: Self.frameKey(categoryID)) {
+            panel.setFrame(NSRectFromString(saved), display: false)
+        } else {
             panel.center()
             // Offset each new panel so multiple widgets don't stack exactly on top.
             let offset = CGFloat((cascadeIndex % 6) * 32)
@@ -108,6 +127,12 @@ private struct FloatingWidgetView: View {
 
     @State private var stories: [WidgetStory] = []
     @State private var loading = false
+    /// How many stories to show. Grows by `pageStep` via "Show More", resets to
+    /// `pageStep` via "Reset". Mirrors ai_news_deploy_ready's column behaviour.
+    @State private var visibleCount = 10
+    /// True once the backend returns fewer stories than requested (no more left).
+    @State private var reachedEnd = false
+    private let pageStep = 10
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -197,10 +222,41 @@ private struct FloatingWidgetView: View {
                     ForEach(stories) { story in
                         storyRow(story)
                     }
+                    paginationControls
                 }
                 .padding(14)
             }
         }
+    }
+
+    @ViewBuilder
+    private var paginationControls: some View {
+        VStack(spacing: 8) {
+            if !reachedEnd {
+                Button {
+                    visibleCount += pageStep
+                    Task { await reload() }
+                } label: {
+                    Label("Show \(pageStep) More News", systemImage: "chevron.down")
+                        .font(AINewsTheme.font(12, weight: .semibold))
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.bordered)
+            }
+            if visibleCount > pageStep {
+                Button {
+                    visibleCount = pageStep
+                    Task { await reload() }
+                } label: {
+                    Label("Reset to the First \(pageStep) News", systemImage: "arrow.uturn.up")
+                        .font(AINewsTheme.font(12))
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.borderless)
+                .foregroundStyle(AINewsTheme.textSecondary)
+            }
+        }
+        .padding(.top, 4)
     }
 
     @AppStorage("ai_news_show_thumbnails") private var coversEnabled = true
@@ -280,11 +336,13 @@ private struct FloatingWidgetView: View {
         await state.refreshUsage()
         guard let api = try? state.authorizedAPIClient() else { return }
         if isFiltered {
-            if let matches = try? await api.fetchKeywordMatches(limit: 20) {
+            if let matches = try? await api.fetchKeywordMatches(limit: visibleCount) {
                 stories = matches
+                reachedEnd = matches.count < visibleCount
             }
-        } else if let response = try? await api.fetchStories(categoryID: categoryID, limit: 10) {
+        } else if let response = try? await api.fetchStories(categoryID: categoryID, limit: visibleCount) {
             stories = response.stories
+            reachedEnd = response.stories.count < visibleCount
         }
     }
 }
