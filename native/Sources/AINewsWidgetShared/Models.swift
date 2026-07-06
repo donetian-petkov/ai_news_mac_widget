@@ -790,6 +790,8 @@ public struct WidgetSnapshot: Codable, Equatable, Sendable {
     public var keywordMatches: [WidgetStory]
     /// Total pending AI outputs across the filtered/keyword-matches story set.
     public var filteredPendingCount: Int
+    /// Total pending AI outputs across the entire app queue.
+    public var totalPendingCount: Int
 
     public init(
         lastUpdated: Date = Date(),
@@ -799,7 +801,8 @@ public struct WidgetSnapshot: Codable, Equatable, Sendable {
         pendingByCategory: [String: Int] = [:],
         keywords: [String] = [],
         keywordMatches: [WidgetStory] = [],
-        filteredPendingCount: Int = 0
+        filteredPendingCount: Int = 0,
+        totalPendingCount: Int = 0
     ) {
         self.lastUpdated = lastUpdated
         self.categories = categories
@@ -809,10 +812,11 @@ public struct WidgetSnapshot: Codable, Equatable, Sendable {
         self.keywords = keywords
         self.keywordMatches = keywordMatches
         self.filteredPendingCount = filteredPendingCount
+        self.totalPendingCount = totalPendingCount
     }
 
     enum CodingKeys: String, CodingKey {
-        case lastUpdated, categories, activeCategoryID, storiesByCategory, pendingByCategory, keywords, keywordMatches, filteredPendingCount
+        case lastUpdated, categories, activeCategoryID, storiesByCategory, pendingByCategory, keywords, keywordMatches, filteredPendingCount, totalPendingCount
     }
 
     public init(from decoder: Decoder) throws {
@@ -826,6 +830,7 @@ public struct WidgetSnapshot: Codable, Equatable, Sendable {
         keywords = try container.decodeIfPresent([String].self, forKey: .keywords) ?? []
         keywordMatches = try container.decodeIfPresent([WidgetStory].self, forKey: .keywordMatches) ?? []
         filteredPendingCount = try container.decodeIfPresent(Int.self, forKey: .filteredPendingCount) ?? 0
+        totalPendingCount = try container.decodeIfPresent(Int.self, forKey: .totalPendingCount) ?? 0
     }
 }
 

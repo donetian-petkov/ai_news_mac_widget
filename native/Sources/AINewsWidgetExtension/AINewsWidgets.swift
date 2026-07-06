@@ -405,7 +405,7 @@ struct KeywordWidgetProvider: TimelineProvider {
                 WidgetStory(id: "1", feedUrl: "feed", title: "OpenAI ships a new model for agents", summary: "Matched your tracked topics."),
                 WidgetStory(id: "2", feedUrl: "feed", title: "Humanoid robotics startup raises a large round", summary: "Another tracked-topic match.")
             ],
-            pendingCount: 3
+            pendingCount: 16
         )
     }
 
@@ -428,7 +428,7 @@ struct KeywordWidgetProvider: TimelineProvider {
             date: Date(),
             keywords: snapshot.keywords,
             stories: snapshot.keywordMatches,
-            pendingCount: snapshot.filteredPendingCount
+            pendingCount: snapshot.totalPendingCount
         )
     }
 }
