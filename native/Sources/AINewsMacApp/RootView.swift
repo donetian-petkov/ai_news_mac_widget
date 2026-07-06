@@ -593,9 +593,19 @@ private struct StoryCardView: View {
                 actionButton("Save", systemImage: "bookmark", tint: AINewsTheme.accentCyan) {
                     Task { await state.saveStory(story) }
                 }
-                actionButton("Share", systemImage: "square.and.arrow.up", tint: AINewsTheme.accentGold) {
-                    Task { await createStoryShareLink() }
+                Menu {
+                    Button { copyTextToPasteboard(story.link ?? "") } label: { Label("Copy link", systemImage: "link") }
+                    Button { openShare("https://x.com/intent/post") } label: { Label("Share on X", systemImage: "character.bubble") }
+                    Button { openShare("https://www.facebook.com/sharer/sharer.php") } label: { Label("Facebook", systemImage: "person.2.fill") }
+                    Button { openShare("https://www.reddit.com/submit") } label: { Label("Reddit", systemImage: "globe") }
+                    Divider()
+                    Button { Task { await createStoryShareLink() } } label: { Label("Create share link", systemImage: "square.and.arrow.up") }
+                } label: {
+                    Label("Share", systemImage: "square.and.arrow.up")
                 }
+                .menuStyle(.borderlessButton)
+                .fixedSize()
+                .tint(AINewsTheme.accentGold)
                 actionButton("Pin", systemImage: "pin", tint: AINewsTheme.accentRose) {
                     Task { await state.togglePin(for: story) }
                 }
@@ -657,6 +667,18 @@ private struct StoryCardView: View {
         }
         .buttonStyle(.borderedProminent)
         .tint(tint)
+    }
+
+    private func openShare(_ base: String) {
+        guard let link = story.link, !link.isEmpty, var comps = URLComponents(string: base) else { return }
+        if base.contains("x.com") {
+            comps.queryItems = [URLQueryItem(name: "text", value: "\(story.title) \(link)")]
+        } else if base.contains("reddit") {
+            comps.queryItems = [URLQueryItem(name: "url", value: link), URLQueryItem(name: "title", value: story.title)]
+        } else {
+            comps.queryItems = [URLQueryItem(name: "u", value: link)]
+        }
+        if let url = comps.url { NSWorkspace.shared.open(url) }
     }
 
     private func createStoryShareLink() async {
