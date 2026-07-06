@@ -248,25 +248,23 @@ private struct FloatingWidgetView: View {
 
     @ViewBuilder
     private func block(_ label: String, _ text: String?, pending: Bool, enabled: Bool, accent: Color) -> some View {
-        if let text, !text.isEmpty {
+        // Only show the section when the action is enabled — disabling it globally hides
+        // it here even if older content still exists on the story.
+        if enabled {
             VStack(alignment: .leading, spacing: 2) {
                 Text(label.uppercased())
                     .font(AINewsTheme.font(10, weight: .semibold))
                     .foregroundStyle(accent.opacity(0.9))
-                Text(text)
-                    .font(AINewsTheme.font(12))
-                    .foregroundStyle(AINewsTheme.textSecondary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-        } else if enabled {
-            // Enabled for the feed but not produced yet — show the state (matches the main window).
-            VStack(alignment: .leading, spacing: 2) {
-                Text(label.uppercased())
-                    .font(AINewsTheme.font(10, weight: .semibold))
-                    .foregroundStyle(accent.opacity(0.9))
-                Text(pending ? "Generating…" : "Not generated yet.")
-                    .font(AINewsTheme.font(12))
-                    .foregroundStyle(AINewsTheme.textMuted)
+                if let text, !text.isEmpty {
+                    Text(text)
+                        .font(AINewsTheme.font(12))
+                        .foregroundStyle(AINewsTheme.textSecondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                } else {
+                    Text(pending ? "Generating…" : "Not generated yet.")
+                        .font(AINewsTheme.font(12))
+                        .foregroundStyle(AINewsTheme.textMuted)
+                }
             }
         }
     }

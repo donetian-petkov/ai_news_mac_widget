@@ -9,6 +9,7 @@ public final class WidgetAppState: ObservableObject {
     @Published public var stories: [WidgetStory] = []
     @Published public var usage: AIUsageExport?
     @Published public var runtimeConfig: RuntimeConfigResponse?
+    @Published public var aiProgress: [String: AiFeedProgress] = [:]
     @Published public var globalAiDefaults = GlobalAiDefaults()
     @Published public var accountSettings = AccountSettings()
     @Published public var isBusy = false
@@ -150,6 +151,11 @@ public final class WidgetAppState: ObservableObject {
         } catch {
             // Backfill is best-effort; never surface an alert for it.
         }
+    }
+
+    public func refreshAiProgress() async {
+        guard let api = try? makeAPIClient(), let feeds = try? await api.fetchAiProgress() else { return }
+        aiProgress = Dictionary(uniqueKeysWithValues: feeds.map { ($0.feedUrl, $0) })
     }
 
     public func loadRuntimeContext(suppressUnauthorizedAlert: Bool = false) async {

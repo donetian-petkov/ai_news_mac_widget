@@ -628,6 +628,15 @@ public struct RuntimeAiDefaultsResponse: Codable, Sendable {
     public var aiDefaults: GlobalAiDefaults
 }
 
+public struct AiFeedProgress: Codable, Sendable, Identifiable {
+    public var feedUrl: String
+    public var label: String
+    public var done: Int
+    public var total: Int
+    public var pending: Int
+    public var id: String { feedUrl }
+}
+
 public struct RegenerateResponse: Codable, Sendable {
     public struct Counts: Codable, Sendable {
         public var summary: Int

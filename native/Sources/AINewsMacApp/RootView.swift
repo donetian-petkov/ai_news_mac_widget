@@ -1623,6 +1623,13 @@ private struct SettingsView: View {
         .padding(16)
         .aiNewsPanelStyle()
         .task { await loadPreferences() }
+        .task {
+            // Keep per-feed AI progress bars current while Settings is open.
+            while !Task.isCancelled {
+                await state.refreshAiProgress()
+                try? await Task.sleep(nanoseconds: 6_000_000_000)
+            }
+        }
     }
 
     private func loadPreferences() async {
@@ -2275,6 +2282,18 @@ private struct FeedSettingsCard: View {
                 ))
             }
             .toggleStyle(.switch)
+
+            if let progress = state.aiProgress[draft.url], progress.total > 0 {
+                VStack(alignment: .leading, spacing: 3) {
+                    ProgressView(value: Double(progress.done), total: Double(max(progress.total, 1)))
+                        .tint(progress.pending > 0 ? AINewsTheme.accentCyan : AINewsTheme.accentGold)
+                    Text(progress.pending > 0
+                         ? "\(progress.pending) pending · \(progress.done)/\(progress.total) generated"
+                         : "All \(progress.total) generated")
+                        .font(.caption2)
+                        .foregroundStyle(AINewsTheme.textMuted)
+                }
+            }
 
             HStack(spacing: 16) {
                 Picker("Budget", selection: Binding(

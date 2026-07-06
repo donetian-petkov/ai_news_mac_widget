@@ -952,6 +952,35 @@ app.put('/api/runtime/ai-defaults', async (req, res) => {
   }
 });
 
+app.get('/api/ai-progress', async (req, res) => {
+  const user = await requireAuthUser(req, res);
+  if (!user) return;
+  const byFeed = new Map<string, { done: number; total: number }>();
+  for (const item of recent) {
+    const cfg = feedSettings.get(item.feedUrl);
+    if (!cfg) continue;
+    const entry = byFeed.get(item.feedUrl) || { done: 0, total: 0 };
+    if (cfg.summaryEnabled !== false) {
+      entry.total += 1;
+      if (String(item.summary || '').trim()) entry.done += 1;
+    }
+    if (cfg.researchEnabled !== false) {
+      entry.total += 1;
+      if (String(item.research || '').trim()) entry.done += 1;
+    }
+    if (cfg.translationEnabled !== false && needsTitleTranslation(item.title, item.titleBg, item.titleEn)) {
+      entry.total += 1;
+      if (String(item.titleBg || '').trim() || String(item.titleEn || '').trim()) entry.done += 1;
+    }
+    byFeed.set(item.feedUrl, entry);
+  }
+  const feeds = currentFeeds().map(f => {
+    const e = byFeed.get(f.url) || { done: 0, total: 0 };
+    return { feedUrl: f.url, label: labelForFeed(f), done: e.done, total: e.total, pending: Math.max(0, e.total - e.done) };
+  });
+  res.json({ ok: true, feeds });
+});
+
 app.get('/api/keywords', async (req, res) => {
   const user = await requireAuthUser(req, res);
   if (!user) return;

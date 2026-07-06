@@ -175,6 +175,12 @@ public struct APIClient: Sendable {
         let _: Response = try await send(path: "/api/preferences", method: "PUT", body: Body(localRegion: region, trackedTopics: topics))
     }
 
+    public func fetchAiProgress() async throws -> [AiFeedProgress] {
+        struct Response: Codable { var ok: Bool; var feeds: [AiFeedProgress] }
+        let response: Response = try await send(path: "/api/ai-progress")
+        return response.feeds
+    }
+
     public func fetchKeywords() async throws -> [String] {
         struct Response: Codable { var ok: Bool; var keywords: [String] }
         let response: Response = try await send(path: "/api/keywords")
