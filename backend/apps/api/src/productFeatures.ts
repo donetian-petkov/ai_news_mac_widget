@@ -727,7 +727,7 @@ export function registerProductFeatureApi({
       return {
         ...feed,
         recentCount: feedNews.length,
-        latest: feedNews[0] || null,
+        latest: feedNews[0] ? toWidgetStory(feedNews[0]) : null,
         moods: Object.fromEntries(moods),
         newsTypes: Object.fromEntries(types),
         discordEnabled: !!feed.discordWebhookUrl

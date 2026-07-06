@@ -1029,6 +1029,7 @@ private struct WorkspaceView: View {
                     Text("Keywords").tag(6)
                     Text("Diagnostics").tag(7)
                 }
+                .labelsHidden()
                 .pickerStyle(.menu)
                 .frame(width: 200)
                 Button("Done") { state.showingWorkspace = false }
