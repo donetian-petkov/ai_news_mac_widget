@@ -123,8 +123,12 @@ private struct FloatingWidgetView: View {
             // freshly generated summaries/translations without clicking reload.
             while !Task.isCancelled {
                 await reload()
-                try? await Task.sleep(nanoseconds: 45_000_000_000)
+                try? await Task.sleep(nanoseconds: 12_000_000_000)
             }
+        }
+        // Refresh immediately when the app signals new AI content (summary/research/translation done).
+        .onReceive(NotificationCenter.default.publisher(for: Notification.Name("AINewsWidgetShouldRefresh"))) { _ in
+            Task { await reload() }
         }
     }
 

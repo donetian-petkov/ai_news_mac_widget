@@ -181,9 +181,8 @@ public final class WidgetAppState: ObservableObject {
             let api = try makeAPIClient()
             let response = try await api.fetchStories(categoryID: category.id, limit: limit ?? category.activeCount)
             stories = response.stories
-            let covers = response.stories.filter { !($0.coverUrl ?? "").isEmpty }.count
-            let sums = response.stories.filter { !($0.summary ?? "").isEmpty }.count
-            AINewsDebugLog.log("loadStories cat=\(category.id) '\(category.name)' n=\(response.stories.count) covers=\(covers) summaries=\(sums)")
+            // Signal floating widgets to refresh (picks up newly generated AI content).
+            NotificationCenter.default.post(name: Notification.Name("AINewsWidgetShouldRefresh"), object: nil)
             updateCategory(response.category)
             saveSnapshot()
         } catch {

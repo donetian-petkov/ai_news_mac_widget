@@ -1715,8 +1715,11 @@ private struct SettingsView: View {
                         .font(.caption)
                         .foregroundStyle(AINewsTheme.textMuted)
                     Toggle("Summaries for every feed", isOn: $state.globalAiDefaults.summaryEnabled)
+                        .toggleStyle(.switch)
                     Toggle("Research for every feed", isOn: $state.globalAiDefaults.researchEnabled)
+                        .toggleStyle(.switch)
                     Toggle("Translations for every feed", isOn: $state.globalAiDefaults.translationEnabled)
+                        .toggleStyle(.switch)
                     Button("Apply to all feeds") {
                         Task { await state.saveGlobalAiDefaults() }
                     }
