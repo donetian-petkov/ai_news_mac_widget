@@ -81,6 +81,10 @@ final class BackendSupervisor {
         // translations actually keep up with the backlog.
         if environment["AI_MAX_CONCURRENCY"] == nil { environment["AI_MAX_CONCURRENCY"] = "6" }
         if environment["AI_QUEUE_MAX"] == nil { environment["AI_QUEUE_MAX"] = "6000" }
+        // The default TTL string ('180_000') is parsed as 180 and clamped to 15s, so
+        // queued jobs expire before they run under a backlog. Use a long TTL (6h) so
+        // jobs wait and drain instead of being dropped.
+        if environment["AI_JOB_TTL_MS"] == nil { environment["AI_JOB_TTL_MS"] = "21600000" }
         return environment
     }
 
