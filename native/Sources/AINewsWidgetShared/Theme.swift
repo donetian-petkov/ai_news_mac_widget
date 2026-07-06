@@ -198,7 +198,7 @@ private final class ThumbnailCache {
 #endif
 
 public struct StoryThumbnail: View {
-    private let url: URL
+    private let url: URL?
     private let fillWidth: Bool
     private let dimension: CGFloat
     private let corners: CGFloat
@@ -207,8 +207,8 @@ public struct StoryThumbnail: View {
     @State private var failed = false
     #endif
 
-    /// Square thumbnail.
-    public init(url: URL, size: CGFloat = 72) {
+    /// Square thumbnail. A nil URL renders the placeholder.
+    public init(url: URL?, size: CGFloat = 72) {
         self.url = url
         self.fillWidth = false
         self.dimension = size
@@ -216,7 +216,7 @@ public struct StoryThumbnail: View {
     }
 
     /// Full-width hero image of a fixed height.
-    public init(url: URL, heroHeight: CGFloat, corners: CGFloat = 0) {
+    public init(url: URL?, heroHeight: CGFloat, corners: CGFloat = 0) {
         self.url = url
         self.fillWidth = true
         self.dimension = heroHeight
@@ -231,31 +231,41 @@ public struct StoryThumbnail: View {
             .clipShape(RoundedRectangle(cornerRadius: corners, style: .continuous))
     }
 
+    /// Themed placeholder shown when there's no cover, or while loading / on failure.
+    private var placeholder: some View {
+        LinearGradient(colors: [AINewsTheme.panel, AINewsTheme.background],
+                       startPoint: .topLeading, endPoint: .bottomTrailing)
+            .overlay(
+                Image(systemName: "newspaper")
+                    .font(.system(size: max(14, dimension * 0.34)))
+                    .foregroundStyle(AINewsTheme.textMuted.opacity(0.55))
+            )
+    }
+
     @ViewBuilder
     private var content: some View {
         #if canImport(AppKit)
-        // Read the cache synchronously every render: once an image is cached, it shows
-        // on any re-render (widget auto-refresh, re-poll) even if @State was reset — so
-        // it never flashes back to blank.
-        if let resolved = image ?? ThumbnailCache.shared.object(forKey: url as NSURL) {
-            Image(nsImage: resolved).resizable().aspectRatio(contentMode: .fill)
-                .onAppear { AINewsDebugLog.log("thumb SHOW image \(url.lastPathComponent)") }
-        } else if failed {
-            AINewsTheme.panel.overlay(Image(systemName: "photo").foregroundStyle(AINewsTheme.textMuted))
-                .onAppear { AINewsDebugLog.log("thumb SHOW failed-placeholder \(url.lastPathComponent)") }
+        if let url {
+            // Read the cache synchronously so a loaded image survives re-renders.
+            if let resolved = image ?? ThumbnailCache.shared.object(forKey: url as NSURL) {
+                Image(nsImage: resolved).resizable().aspectRatio(contentMode: .fill)
+            } else if failed {
+                placeholder
+            } else {
+                placeholder.overlay(ProgressView().controlSize(.small))
+                    .task(id: url) { await load(url) }
+            }
         } else {
-            AINewsTheme.panel.overlay(ProgressView().controlSize(.small))
-                .onAppear { AINewsDebugLog.log("thumb SHOW loading-placeholder \(url.lastPathComponent)") }
-                .task(id: url) { await load() }
+            placeholder
         }
         #else
-        AINewsTheme.panel
+        placeholder
         #endif
     }
 
     #if canImport(AppKit)
     @MainActor
-    private func load() async {
+    private func load(_ url: URL) async {
         if let cached = ThumbnailCache.shared.object(forKey: url as NSURL) {
             image = cached
             return

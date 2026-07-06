@@ -566,8 +566,8 @@ private struct StoryCardView: View {
 
     var body: some View {
         HStack(alignment: .top, spacing: 16) {
-            if coversEnabled, let cover = story.coverUrl, let url = URL(string: cover) {
-                StoryThumbnail(url: url, size: 120)
+            if coversEnabled {
+                StoryThumbnail(url: story.coverUrl.flatMap { URL(string: $0) }, size: 120)
             }
             VStack(alignment: .leading, spacing: 14) {
             HStack(alignment: .top, spacing: 12) {

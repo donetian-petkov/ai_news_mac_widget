@@ -212,8 +212,8 @@ private struct FloatingWidgetView: View {
             }
         } label: {
             HStack(alignment: .top, spacing: 12) {
-                if coversEnabled, let cover = story.coverUrl, let url = URL(string: cover) {
-                    StoryThumbnail(url: url, size: 66)
+                if coversEnabled {
+                    StoryThumbnail(url: story.coverUrl.flatMap { URL(string: $0) }, size: 66)
                 }
                 VStack(alignment: .leading, spacing: 6) {
                     HStack(spacing: 6) {
