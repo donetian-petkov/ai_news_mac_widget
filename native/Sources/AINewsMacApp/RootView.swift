@@ -1714,12 +1714,12 @@ private struct SettingsView: View {
                     Text("Baseline for every feed. Per-feed and per-category settings below override this.")
                         .font(.caption)
                         .foregroundStyle(AINewsTheme.textMuted)
-                    Toggle("Summaries for every feed", isOn: $state.globalAiDefaults.summaryEnabled)
-                        .toggleStyle(.switch)
-                    Toggle("Research for every feed", isOn: $state.globalAiDefaults.researchEnabled)
-                        .toggleStyle(.switch)
-                    Toggle("Translations for every feed", isOn: $state.globalAiDefaults.translationEnabled)
-                        .toggleStyle(.switch)
+                    HStack(spacing: 14) {
+                        Toggle("Summary", isOn: $state.globalAiDefaults.summaryEnabled)
+                        Toggle("Translation", isOn: $state.globalAiDefaults.translationEnabled)
+                        Toggle("Research", isOn: $state.globalAiDefaults.researchEnabled)
+                    }
+                    .toggleStyle(.switch)
                     Button("Apply to all feeds") {
                         Task { await state.saveGlobalAiDefaults() }
                     }
