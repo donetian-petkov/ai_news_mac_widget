@@ -72,6 +72,10 @@ final class BackendSupervisor {
         environment["PATH"] = pathEntries
             .filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
             .joined(separator: ":")
+        // The Mac app already gates news behind its own login + provider key, so the
+        // backend's WebSocket-based news lock (meant for the shared web server) would
+        // just stop the scheduler from ever polling feeds. Disable it here.
+        environment["REQUIRE_LOGIN_AND_KEY_FOR_NEWS"] = "false"
         return environment
     }
 
