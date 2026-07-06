@@ -176,15 +176,9 @@ private struct FloatingWidgetView: View {
                 NSWorkspace.shared.open(url)
             }
         } label: {
-            VStack(alignment: .leading, spacing: 0) {
+            HStack(alignment: .top, spacing: 12) {
                 if coversEnabled, let cover = story.coverUrl, let url = URL(string: cover) {
-                    StoryThumbnail(url: url, heroHeight: 150)
-                        .overlay(alignment: .bottom) {
-                            LinearGradient(colors: [.clear, AINewsTheme.panel.opacity(0.9)],
-                                           startPoint: .top, endPoint: .bottom)
-                                .frame(height: 44)
-                                .frame(maxHeight: .infinity, alignment: .bottom)
-                        }
+                    StoryThumbnail(url: url, size: 66)
                 }
                 VStack(alignment: .leading, spacing: 6) {
                     HStack(spacing: 6) {
@@ -197,7 +191,7 @@ private struct FloatingWidgetView: View {
                         }
                     }
                     Text(story.title)
-                        .font(AINewsTheme.font(15, weight: .bold))
+                        .font(AINewsTheme.font(14, weight: .bold))
                         .foregroundStyle(AINewsTheme.accentBlue)
                         .fixedSize(horizontal: false, vertical: true)
                     if let translated = story.translatedTitle, !translated.isEmpty, translated != story.title {
@@ -210,8 +204,8 @@ private struct FloatingWidgetView: View {
                     block("Research", story.research, pending: story.researchPending, accent: AINewsTheme.accentCyan)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(14)
             }
+            .padding(12)
             .aiNewsCardStyle()
         }
         .buttonStyle(.plain)
