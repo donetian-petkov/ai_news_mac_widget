@@ -966,7 +966,7 @@ app.put('/api/keywords', async (req, res) => {
     keywords = parseKeywordsPayload(body.keywords);
     markDirty();
     await safeInitKeywordEmbeddings(undefined, 'Keyword update');
-    reprocessCachedItems(true, true);
+    await refreshMatchStateForRecent();
     res.json({ ok: true, keywords });
   } catch (error) {
     res.status(500).json({ error: (error as Error).message || 'Failed to update keywords.' });
@@ -991,7 +991,7 @@ app.put('/api/preferences', async (req, res) => {
     markDirty();
     // Tracked topics also drive the Filtered engine, so recompute matches.
     await safeInitKeywordEmbeddings(undefined, 'Tracked topics update');
-    reprocessCachedItems(true, true);
+    await refreshMatchStateForRecent();
     res.json({ ok: true, localRegion, trackedTopics });
   } catch (error) {
     res.status(500).json({ error: (error as Error).message || 'Failed to update preferences.' });
@@ -8036,6 +8036,11 @@ async function loadSavedProviderKeysFromDb() {
 
   // load embeddings once
   if (aiEnabled) await safeInitKeywordEmbeddings(undefined, 'Startup keyword matching');
+
+  // Recompute Filtered matches for cached items against saved keywords + tracked topics.
+  if (matchTerms().length) {
+    try { await refreshMatchStateForRecent(); } catch {}
+  }
 
   // Push the hydrated state to already-connected clients so they do not wait
   // for the browser replay to restore keywords and filtered-column state.
