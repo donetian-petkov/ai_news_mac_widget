@@ -6726,6 +6726,35 @@ async function fetchFeedXml(fi: FeedInfo): Promise<{ xml: string | null; notModi
 }
 // ---------------------------------------------------------------------------
 
+// Compute match state and enqueue AI (summary/research/title translation) for a
+// freshly fetched item based on its feed settings — independent of Discord, which
+// previously gated all of this so items only generated when a webhook was set.
+async function enqueueAiForFetchedItem(item: NewsInternal) {
+  try {
+    const m = await hybridMatch(item.title);
+    item.isMatch = m.isMatch;
+    item.matchScore = m.score;
+    item.filteredOk = m.isMatch;
+  } catch {}
+
+  if (!aiEnabled || !aiAvailable) return;
+  const cfg = feedSettings.get(item.feedUrl);
+  if (!cfg) return;
+
+  if (cfg.summaryEnabled !== false && !String(item.summary || '').trim()
+      && activeModel('summary') !== 'none' && !hasSummaryJobQueuedOrRunning(item.id, item.feedUrl)) {
+    enqueueJob({ kind: 'summary', id: item.id, feedUrl: item.feedUrl });
+  }
+  if (cfg.researchEnabled !== false && !String(item.research || '').trim()
+      && activeModel('research') !== 'none' && !hasResearchJobQueuedOrRunning(item.id, item.feedUrl)) {
+    enqueueJob({ kind: 'research', id: item.id, feedUrl: item.feedUrl });
+  }
+  if (cfg.translationEnabled !== false && needsTitleTranslation(item.title, item.titleBg, item.titleEn)
+      && activeModel('summary') !== 'none' && !hasTitleTranslateJobQueuedOrRunning(item.id, item.feedUrl)) {
+    enqueueJob({ kind: 'title_translate', id: item.id, feedUrl: item.feedUrl });
+  }
+}
+
 async function processFeed(fi: FeedInfo) {
   ensureFeedSettings(fi);
   ensureFeedRuntime(fi.url);
@@ -6891,6 +6920,7 @@ async function processFeed(fi: FeedInfo) {
       recent.push(pkt);
       if (recent.length > MAX_RECENT_ITEMS) recent.shift();
       refreshDerivedDataForItem(pkt);
+      await enqueueAiForFetchedItem(pkt);
       await upsertPersistedNewsItem(pkt);
 
       broadcastNewsUpdate(pkt);
