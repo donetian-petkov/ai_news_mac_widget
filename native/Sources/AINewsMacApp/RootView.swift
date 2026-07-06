@@ -234,6 +234,22 @@ private struct DashboardView: View {
                 }
                 .font(.caption)
                 .foregroundStyle(AINewsTheme.textMuted)
+
+                let total = aggregateProgress
+                if total.total > 0 && total.done < total.total {
+                    GeometryReader { geo in
+                        ZStack(alignment: .leading) {
+                            Capsule().fill(Color.white.opacity(0.2))
+                            Capsule()
+                                .fill(AINewsTheme.accentCyan)
+                                .frame(width: max(4, geo.size.width * CGFloat(total.done) / CGFloat(max(total.total, 1))))
+                        }
+                    }
+                    .frame(height: 6)
+                    Text("All feeds · \(total.done)/\(total.total) · \(total.total - total.done) pending")
+                        .font(.caption2.weight(.semibold))
+                        .foregroundStyle(AINewsTheme.accentCyan)
+                }
             }
 
             List(selection: Binding(
