@@ -29,6 +29,7 @@ end
 
 sources_group = project.main_group.new_group('Sources', 'Sources')
 support_group = project.main_group.new_group('Support', 'Support')
+resources_group = project.main_group.new_group('Resources', '.')
 
 shared_group = sources_group.new_group('AINewsWidgetShared', 'AINewsWidgetShared')
 app_group = sources_group.new_group('AINewsMacApp', 'AINewsMacApp')
@@ -59,7 +60,7 @@ set_build_settings(app_target, common_settings.merge(
   'INFOPLIST_FILE' => 'Support/AINewsMacApp-Info.plist',
   'CODE_SIGN_ENTITLEMENTS' => 'Support/AINewsMacApp.entitlements',
   'LD_RUNPATH_SEARCH_PATHS' => '$(inherited) @executable_path/../Frameworks @executable_path/../PlugIns',
-  'ASSETCATALOG_COMPILER_APPICON_NAME' => '',
+  'ASSETCATALOG_COMPILER_APPICON_NAME' => 'AppIcon',
   'SKIP_INSTALL' => 'NO'
 ))
 
@@ -102,6 +103,9 @@ support_files.each do |relative_path|
   support_group.new_file(File.basename(relative_path))
 end
 app_target.resources_build_phase.add_file_reference(support_group.files.find { |f| f.path == 'backend-launch.json' })
+
+asset_catalog_ref = resources_group.new_file('Assets.xcassets')
+app_target.resources_build_phase.add_file_reference(asset_catalog_ref)
 
 app_target.add_dependency(shared_target)
 app_target.add_dependency(widget_target)

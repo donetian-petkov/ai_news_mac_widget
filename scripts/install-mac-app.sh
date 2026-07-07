@@ -80,13 +80,6 @@ fi
 
 touch "$INSTALL_DIR"
 
-GROUP_SNAPSHOT_DIR="${HOME}/Library/Group Containers/group.com.donetianpetkov.ainewswidget/AINewsMacWidget"
-WIDGET_SNAPSHOT_DIR="${HOME}/Library/Containers/com.donetianpetkov.ainewsmacwidget.widgets/Data/Library/Application Support/AINewsMacWidget"
-if [[ -f "$GROUP_SNAPSHOT_DIR/widget-snapshot.json" ]]; then
-  mkdir -p "$WIDGET_SNAPSHOT_DIR"
-  cp "$GROUP_SNAPSHOT_DIR/widget-snapshot.json" "$WIDGET_SNAPSHOT_DIR/widget-snapshot.json"
-fi
-
 echo "Installed $APP_NAME to $INSTALL_DIR"
 if [[ "$HAD_STALE_COPY" -eq 1 ]]; then
   echo "Removed stale copy at $STALE_INSTALL_DIR"

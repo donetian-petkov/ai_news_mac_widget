@@ -107,18 +107,6 @@ public final class SnapshotStore {
             urls.append(appGroupURL)
         }
 
-        let explicitGroupURL = fileManager.homeDirectoryForCurrentUser
-            .appendingPathComponent("Library/Group Containers/\(appGroupIdentifier)/AINewsMacWidget", isDirectory: true)
-        urls.append(explicitGroupURL)
-
-        let widgetContainerURL = fileManager.homeDirectoryForCurrentUser
-            .appendingPathComponent("Library/Containers/com.donetianpetkov.ainewsmacwidget.widgets/Data/Library/Application Support/AINewsMacWidget", isDirectory: true)
-        urls.append(widgetContainerURL)
-
-        let appContainerURL = fileManager.homeDirectoryForCurrentUser
-            .appendingPathComponent("Library/Containers/com.donetianpetkov.ainewsmacwidget/Data/Library/Application Support/AINewsMacWidget", isDirectory: true)
-        urls.append(appContainerURL)
-
         if let appSupportURL = fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask).first?
             .appendingPathComponent("AINewsMacWidget", isDirectory: true) {
             urls.append(appSupportURL)
