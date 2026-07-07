@@ -36,7 +36,7 @@ func newspaperImage(size: CGFloat) -> NSImage {
         xRadius: size * 0.15,
         yRadius: size * 0.15
     )
-    let tileGradient = NSGradient(colors: [color(8), color(16)])!
+    let tileGradient = NSGradient(colors: [color(6), color(12)])!
     tileGradient.draw(in: tilePath, angle: -90)
     let tileHighlight = NSGradient(colors: [
         NSColor(calibratedWhite: 1, alpha: 0.08),
@@ -44,22 +44,36 @@ func newspaperImage(size: CGFloat) -> NSImage {
     ])!
     tileHighlight.draw(in: tilePath, angle: -90)
 
-    let glyphColor = color(52)
-    let accentColor = color(148)
-    let lineColor = color(246)
+    let badgeRect = NSRect(
+        x: size * 0.34,
+        y: size * 0.21,
+        width: size * 0.42,
+        height: size * 0.50
+    )
+    let badgePath = NSBezierPath(
+        roundedRect: badgeRect,
+        xRadius: size * 0.06,
+        yRadius: size * 0.06
+    )
+    let badgeGradient = NSGradient(colors: [color(72), color(58)])!
+    badgeGradient.draw(in: badgePath, angle: -90)
+    NSColor(calibratedWhite: 1, alpha: 0.08).setStroke()
+    badgePath.lineWidth = max(1, size * 0.005)
+    badgePath.stroke()
+
+    let glyphFill = color(10)
+    let glyphDetail = color(240)
+    let accentColor = color(156)
 
     let paperRect = NSRect(
-        x: size * 0.43,
+        x: size * 0.42,
         y: size * 0.25,
-        width: size * 0.29,
-        height: size * 0.41
+        width: size * 0.28,
+        height: size * 0.42
     )
     let paperPath = NSBezierPath(roundedRect: paperRect, xRadius: size * 0.04, yRadius: size * 0.04)
-    glyphColor.setFill()
+    glyphFill.setFill()
     paperPath.fill()
-    NSColor(calibratedWhite: 1, alpha: 0.05).setStroke()
-    paperPath.lineWidth = max(1, size * 0.006)
-    paperPath.stroke()
 
     let spineRect = NSRect(
         x: size * 0.27,
@@ -68,7 +82,7 @@ func newspaperImage(size: CGFloat) -> NSImage {
         height: size * 0.27
     )
     let spinePath = NSBezierPath(roundedRect: spineRect, xRadius: size * 0.03, yRadius: size * 0.03)
-    glyphColor.setFill()
+    glyphFill.setFill()
     spinePath.fill()
 
     let lineHeight = size * 0.038
@@ -79,7 +93,7 @@ func newspaperImage(size: CGFloat) -> NSImage {
 
     [topLine1, topLine2, bottomLine].forEach { rect in
         let path = NSBezierPath(roundedRect: rect, xRadius: lineHeight / 2, yRadius: lineHeight / 2)
-        lineColor.setFill()
+        glyphDetail.setFill()
         path.fill()
     }
 
@@ -99,7 +113,7 @@ func newspaperImage(size: CGFloat) -> NSImage {
 
     [shortLine1, shortLine2].forEach { rect in
         let path = NSBezierPath(roundedRect: rect, xRadius: rect.height / 2, yRadius: rect.height / 2)
-        lineColor.setFill()
+        glyphDetail.setFill()
         path.fill()
     }
 
