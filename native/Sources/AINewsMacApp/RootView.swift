@@ -142,6 +142,38 @@ private struct DashboardView: View {
         showHiddenCategories ? state.categories : state.categories.filter { !$0.hidden }
     }
 
+    private var filteredFeedPending: Int {
+        state.aiProgress[FilteredFeedURL]?.pending ?? state.keywordMatches.reduce(into: 0) { total, story in
+            if story.summaryPending { total += 1 }
+            if story.researchPending { total += 1 }
+            if story.translationPending { total += 1 }
+        }
+    }
+
+    private var filteredFeedVisibleCount: Int {
+        min(state.keywordMatches.count, 30)
+    }
+
+    private var detailTitle: String {
+        if state.isFilteredSelected {
+            return "Filtered Feed"
+        }
+        return state.selectedCategory?.name ?? "Pick a category"
+    }
+
+    private var detailSubtitle: String {
+        if state.isFilteredSelected {
+            if state.keywords.isEmpty {
+                return "Keyword-matched stories live here. Add keywords in Workspace to turn this feed on."
+            }
+            return "Stories matching your tracked keywords. Keywords: \(state.keywords.joined(separator: ", "))"
+        }
+        if let description = state.selectedCategory?.description, !description.isEmpty {
+            return description
+        }
+        return "Stories are image-free here on purpose, so the text and AI actions stay fast and widget-safe."
+    }
+
     private var visibleCategoryCount: Int {
         state.categories.filter { !$0.hidden }.count
     }
@@ -307,11 +339,50 @@ private struct DashboardView: View {
             List(selection: Binding(
                 get: { state.selectedCategoryID },
                 set: { newValue in
-                    if let id = newValue, let category = state.categories.first(where: { $0.id == id }) {
+                    if newValue == FilteredCategoryID {
+                        Task { await state.selectFilteredFeed() }
+                    } else if let id = newValue, let category = state.categories.first(where: { $0.id == id }) {
                         Task { await state.selectCategory(category) }
                     }
                 }
             )) {
+                HStack(spacing: 10) {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Filtered Feed")
+                            .font(AINewsTheme.font(15, weight: .semibold))
+                            .foregroundStyle(AINewsTheme.textPrimary)
+                            .lineLimit(2)
+                            .fixedSize(horizontal: false, vertical: true)
+                        Text("\(filteredFeedVisibleCount) visible")
+                            .font(.caption)
+                            .foregroundStyle(AINewsTheme.textMuted)
+                        if !state.keywordMatches.isEmpty || filteredFeedPending > 0 {
+                            GeometryReader { geo in
+                                ZStack(alignment: .leading) {
+                                    Capsule().fill(Color.white.opacity(0.25))
+                                    Capsule()
+                                        .fill(AINewsTheme.accentCyan)
+                                        .frame(width: max(4, geo.size.width * CGFloat(state.keywordMatches.count) / CGFloat(max(state.keywordMatches.count + filteredFeedPending, 1))))
+                                }
+                            }
+                            .frame(height: 6)
+                            Text("\(state.keywordMatches.count) loaded · \(filteredFeedPending) pending")
+                                .font(.caption2.weight(.semibold))
+                                .foregroundStyle(AINewsTheme.accentCyan)
+                        }
+                    }
+                    Spacer()
+                    Image(systemName: "line.3.horizontal.decrease.circle")
+                        .foregroundStyle(AINewsTheme.accentCyan)
+                }
+                .tag(FilteredCategoryID)
+                .padding(.vertical, 6)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .contentShape(Rectangle())
+                .onTapGesture(count: 2) {
+                    NotificationCenter.default.post(name: .aiNewsOpenFilteredWidget, object: nil)
+                }
+
                 ForEach(sidebarCategories) { category in
                     HStack(spacing: 10) {
                         VStack(alignment: .leading, spacing: 4) {
@@ -392,14 +463,14 @@ private struct DashboardView: View {
             }
             .buttonStyle(.bordered)
 
-            Button("Selected Feed Widget") {
+            Button("Open Selected Feed Widget") {
                 NotificationCenter.default.post(name: .aiNewsToggleFloatingWidget, object: nil)
             }
             .buttonStyle(.borderedProminent)
             .tint(AINewsTheme.accentGold)
             .help("Open an always-on-top, scrollable widget for the currently selected feed/category.")
 
-            Button("Filtered Feed Widget") {
+            Button("Open Filtered Feed Widget") {
                 NotificationCenter.default.post(name: .aiNewsOpenFilteredWidget, object: nil)
             }
             .buttonStyle(.bordered)
@@ -419,17 +490,19 @@ private struct DashboardView: View {
         VStack(alignment: .leading, spacing: 18) {
             HStack(alignment: .center) {
                 VStack(alignment: .leading, spacing: 6) {
-                    Text(state.selectedCategory?.name ?? "Pick a category")
+                    Text(detailTitle)
                         .font(AINewsTheme.font(30, weight: .bold))
                         .foregroundStyle(AINewsTheme.textPrimary)
-                    Text(state.selectedCategory?.description.isEmpty == false ? state.selectedCategory?.description ?? "" : "Stories are image-free here on purpose, so the text and AI actions stay fast and widget-safe.")
+                    Text(detailSubtitle)
                         .foregroundStyle(AINewsTheme.textSecondary)
                 }
                 Spacer()
                 HStack(spacing: 10) {
                     Button("Top") { state.scrollToTop() }
                     Button("Reset 5") { Task { await state.resetSelectedCategory() } }
+                        .disabled(state.isFilteredSelected)
                     Button("Expand 10") { Task { await state.expandSelectedCategory() } }
+                        .disabled(state.isFilteredSelected)
                     Button("Refresh") { Task { await state.refreshSelectedCategory() } }
                 }
                 .buttonStyle(.bordered)
@@ -508,7 +581,7 @@ private struct DashboardView: View {
             HStack(spacing: 12) {
                 Image(systemName: "magnifyingglass")
                     .foregroundStyle(AINewsTheme.textMuted)
-                TextField("Search stories in this category", text: $storySearch)
+                TextField(state.isFilteredSelected ? "Search stories in the filtered feed" : "Search stories in this category", text: $storySearch)
                     .textFieldStyle(.plain)
                     .foregroundStyle(AINewsTheme.textPrimary)
                 if !storySearch.isEmpty {
@@ -741,8 +814,10 @@ private struct StoryCardView: View {
                 .menuStyle(.borderlessButton)
                 .fixedSize()
                 .tint(AINewsTheme.accentGold)
-                actionButton("Pin", systemImage: "pin", tint: AINewsTheme.accentRose) {
-                    Task { await state.togglePin(for: story) }
+                if !state.isFilteredSelected {
+                    actionButton("Pin", systemImage: "pin", tint: AINewsTheme.accentRose) {
+                        Task { await state.togglePin(for: story) }
+                    }
                 }
                 Button {
                     if let link = story.link, let url = URL(string: link) {

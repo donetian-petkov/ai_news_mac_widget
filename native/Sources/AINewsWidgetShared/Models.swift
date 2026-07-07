@@ -1,6 +1,7 @@
 import Foundation
 
 public let FilteredFeedURL = "__filtered__"
+public let FilteredCategoryID = -1
 
 public enum JSONValue: Codable, Equatable, Sendable {
     case string(String)

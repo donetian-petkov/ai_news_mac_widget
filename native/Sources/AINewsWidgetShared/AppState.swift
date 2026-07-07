@@ -7,6 +7,8 @@ public final class WidgetAppState: ObservableObject {
     @Published public var categories: [WidgetCategory] = []
     @Published public var selectedCategoryID: Int?
     @Published public var stories: [WidgetStory] = []
+    @Published public var keywords: [String] = []
+    @Published public var keywordMatches: [WidgetStory] = []
     @Published public var usage: AIUsageExport?
     @Published public var runtimeConfig: RuntimeConfigResponse?
     @Published public var aiProgress: [String: AiFeedProgress] = [:]
@@ -41,7 +43,13 @@ public final class WidgetAppState: ObservableObject {
         let snapshot = self.snapshotStore.loadSnapshot()
         self.categories = snapshot.categories
         self.selectedCategoryID = snapshot.activeCategoryID ?? snapshot.categories.first?.id
-        self.stories = snapshot.activeCategoryID.flatMap { snapshot.storiesByCategory[String($0)] } ?? []
+        self.keywords = snapshot.keywords
+        self.keywordMatches = snapshot.keywordMatches
+        if snapshot.activeCategoryID == FilteredCategoryID {
+            self.stories = snapshot.keywordMatches
+        } else {
+            self.stories = snapshot.activeCategoryID.flatMap { snapshot.storiesByCategory[String($0)] } ?? []
+        }
     }
 
     public var backendURLString: String {
@@ -55,6 +63,10 @@ public final class WidgetAppState: ObservableObject {
 
     public var selectedCategory: WidgetCategory? {
         categories.first(where: { $0.id == selectedCategoryID })
+    }
+
+    public var isFilteredSelected: Bool {
+        selectedCategoryID == FilteredCategoryID
     }
 
     public func bootstrapIfNeeded() async {
@@ -87,6 +99,8 @@ public final class WidgetAppState: ObservableObject {
         session = nil
         categories = []
         stories = []
+        keywords = []
+        keywordMatches = []
         usage = nil
         runtimeConfig = nil
         selectedCategoryID = nil
@@ -190,16 +204,27 @@ public final class WidgetAppState: ObservableObject {
         await loadStoriesForSelectedCategory()
     }
 
+    public func selectFilteredFeed() async {
+        selectedCategoryID = FilteredCategoryID
+        await loadStoriesForSelectedCategory()
+    }
+
     public func loadStoriesForSelectedCategory(limit: Int? = nil, suppressUnauthorizedAlert: Bool = false) async {
-        guard let category = selectedCategory else { return }
         do {
             refreshDiscoveredBackendURL()
             let api = try makeAPIClient()
-            let response = try await api.fetchStories(categoryID: category.id, limit: limit ?? category.activeCount)
-            stories = response.stories
+            if isFilteredSelected {
+                let matches = try await api.fetchKeywordMatches(limit: limit ?? 30)
+                stories = matches
+                keywordMatches = matches
+            } else {
+                guard let category = selectedCategory else { return }
+                let response = try await api.fetchStories(categoryID: category.id, limit: limit ?? category.activeCount)
+                stories = response.stories
+                updateCategory(response.category)
+            }
             // Signal floating widgets to refresh (picks up newly generated AI content).
             NotificationCenter.default.post(name: Notification.Name("AINewsWidgetShouldRefresh"), object: nil)
-            updateCategory(response.category)
             saveSnapshot()
         } catch {
             handleAsyncError(error, suppressUnauthorizedAlert: suppressUnauthorizedAlert)
@@ -207,7 +232,7 @@ public final class WidgetAppState: ObservableObject {
     }
 
     public func expandSelectedCategory() async {
-        guard let category = selectedCategory else { return }
+        guard !isFilteredSelected, let category = selectedCategory else { return }
         await runBusy("Showing more stories...") {
             let api = try self.makeAPIClient()
             let updated = try await api.expandCategory(categoryID: category.id)
@@ -218,7 +243,7 @@ public final class WidgetAppState: ObservableObject {
     }
 
     public func resetSelectedCategory() async {
-        guard let category = selectedCategory else { return }
+        guard !isFilteredSelected, let category = selectedCategory else { return }
         await runBusy("Resetting category...") {
             let api = try self.makeAPIClient()
             let updated = try await api.resetCategory(categoryID: category.id)
@@ -241,7 +266,7 @@ public final class WidgetAppState: ObservableObject {
     }
 
     public func togglePin(for story: WidgetStory) async {
-        guard let category = selectedCategory else { return }
+        guard !isFilteredSelected, let category = selectedCategory else { return }
         let shouldPin = !category.isPinned(story)
         await runBusy(shouldPin ? "Pinning story..." : "Unpinning story...") {
             let api = try self.makeAPIClient()
@@ -679,9 +704,14 @@ public final class WidgetAppState: ObservableObject {
             .flatMap(WidgetDeepLinkAction.init(rawValue:))
             ?? .open
 
-        if let categoryID, let category = categories.first(where: { $0.id == categoryID }) {
-            selectedCategoryID = category.id
-            await loadStoriesForSelectedCategory(limit: category.activeCount, suppressUnauthorizedAlert: true)
+        if let categoryID {
+            if categoryID == FilteredCategoryID {
+                selectedCategoryID = FilteredCategoryID
+                await loadStoriesForSelectedCategory(limit: 30, suppressUnauthorizedAlert: true)
+            } else if let category = categories.first(where: { $0.id == categoryID }) {
+                selectedCategoryID = category.id
+                await loadStoriesForSelectedCategory(limit: category.activeCount, suppressUnauthorizedAlert: true)
+            }
         }
 
         guard
@@ -724,8 +754,14 @@ public final class WidgetAppState: ObservableObject {
         snapshot.categories = categories
         snapshot.activeCategoryID = selectedCategoryID
         if let selectedCategoryID {
-            snapshot.storiesByCategory[String(selectedCategoryID)] = stories
+            if selectedCategoryID == FilteredCategoryID {
+                snapshot.keywordMatches = keywordMatches.isEmpty ? stories : keywordMatches
+            } else {
+                snapshot.storiesByCategory[String(selectedCategoryID)] = stories
+            }
         }
+        snapshot.keywords = keywords
+        snapshot.keywordMatches = keywordMatches
         snapshot.pendingByCategory = Dictionary(uniqueKeysWithValues: categories.map { (String($0.id), pendingCount(for: $0)) })
         snapshot.filteredPendingCount = aiProgress[FilteredFeedURL]?.pending ?? pendingOutputCount(in: snapshot.keywordMatches)
         snapshot.totalPendingCount = aiProgress.values.reduce(0) { $0 + $1.pending }
@@ -750,9 +786,14 @@ public final class WidgetAppState: ObservableObject {
         // abort the category snapshot that already succeeded above.
         if let keywords = try? await api.fetchKeywords() {
             snapshot.keywords = keywords
+            self.keywords = keywords
         }
         if let matches = try? await api.fetchKeywordMatches(limit: 30) {
             snapshot.keywordMatches = matches
+            self.keywordMatches = matches
+            if self.isFilteredSelected {
+                self.stories = matches
+            }
         }
         snapshot.pendingByCategory = Dictionary(uniqueKeysWithValues: snapshot.categories.map { (String($0.id), pendingCount(for: $0)) })
         snapshot.filteredPendingCount = aiProgress[FilteredFeedURL]?.pending ?? pendingOutputCount(in: snapshot.keywordMatches)
@@ -789,10 +830,14 @@ public final class WidgetAppState: ObservableObject {
     }
 
     private func execute(_ command: WidgetCommand) async {
-        if let categoryID = command.categoryID,
-           let category = categories.first(where: { $0.id == categoryID }) {
-            selectedCategoryID = category.id
-            await loadStoriesForSelectedCategory(limit: category.activeCount, suppressUnauthorizedAlert: true)
+        if let categoryID = command.categoryID {
+            if categoryID == FilteredCategoryID {
+                selectedCategoryID = FilteredCategoryID
+                await loadStoriesForSelectedCategory(limit: 30, suppressUnauthorizedAlert: true)
+            } else if let category = categories.first(where: { $0.id == categoryID }) {
+                selectedCategoryID = category.id
+                await loadStoriesForSelectedCategory(limit: category.activeCount, suppressUnauthorizedAlert: true)
+            }
         }
 
         switch command.kind {
