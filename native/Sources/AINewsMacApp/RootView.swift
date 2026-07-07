@@ -392,19 +392,19 @@ private struct DashboardView: View {
             }
             .buttonStyle(.bordered)
 
-            Button("Floating Widget") {
+            Button("Selected Feed Widget") {
                 NotificationCenter.default.post(name: .aiNewsToggleFloatingWidget, object: nil)
             }
             .buttonStyle(.borderedProminent)
             .tint(AINewsTheme.accentGold)
-            .help("Open an always-on-top, scrollable panel for the selected category. Select another category and click again to open more at once.")
+            .help("Open an always-on-top, scrollable widget for the currently selected feed/category.")
 
-            Button("Filtered Widget") {
+            Button("Filtered Feed Widget") {
                 NotificationCenter.default.post(name: .aiNewsOpenFilteredWidget, object: nil)
             }
             .buttonStyle(.bordered)
             .tint(AINewsTheme.accentCyan)
-            .help("Open an always-on-top floating panel of stories matching your keywords.")
+            .help("Open the separate filtered feed widget built from your keyword-matched stories.")
 
             Button("Sign out") {
                 state.signOut()

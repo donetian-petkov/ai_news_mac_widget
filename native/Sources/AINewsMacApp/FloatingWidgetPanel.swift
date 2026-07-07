@@ -29,7 +29,7 @@ final class FloatingWidgetManager: NSObject, NSWindowDelegate {
 
     /// Open (or focus) the Filtered floating widget (keyword/tracked-topic matches).
     func openFiltered() {
-        openWidget(categoryID: filteredKey, categoryName: "Filtered", isFiltered: true)
+        openWidget(categoryID: filteredKey, categoryName: "Filtered Feed", isFiltered: true)
     }
 
     /// Reopen the most recently closed widget (⌘⇧T, browser-style).
