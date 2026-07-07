@@ -304,30 +304,41 @@ private struct FloatingWidgetView: View {
     @AppStorage("ai_news_show_thumbnails") private var coversEnabled = true
 
     private func storyRow(_ story: WidgetStory) -> some View {
-        Button {
-            if let link = story.link, let url = URL(string: link) {
-                NSWorkspace.shared.open(url)
-            }
-        } label: {
+        VStack(alignment: .leading, spacing: 8) {
             HStack(alignment: .top, spacing: 12) {
                 if coversEnabled {
                     StoryThumbnail(url: story.coverUrl.flatMap { URL(string: $0) }, size: 66)
                 }
                 VStack(alignment: .leading, spacing: 6) {
-                    HStack(spacing: 6) {
-                        Text(story.source ?? story.feedUrl)
-                            .font(AINewsTheme.font(11, weight: .semibold))
-                            .foregroundStyle(AINewsTheme.accentCyan)
-                            .lineLimit(1)
-                        if let mood = story.mood, !mood.isEmpty {
-                            MoodChip(mood: mood)
+                    HStack(alignment: .top, spacing: 8) {
+                        VStack(alignment: .leading, spacing: 6) {
+                            HStack(spacing: 6) {
+                                Text(story.source ?? story.feedUrl)
+                                    .font(AINewsTheme.font(11, weight: .semibold))
+                                    .foregroundStyle(AINewsTheme.accentCyan)
+                                    .lineLimit(1)
+                                if let mood = story.mood, !mood.isEmpty {
+                                    MoodChip(mood: mood)
+                                }
+                            }
+                            if let date = story.publishedDate {
+                                Text(date.formatted(date: .abbreviated, time: .shortened))
+                                    .font(AINewsTheme.font(10))
+                                    .foregroundStyle(AINewsTheme.textMuted)
+                            }
                         }
+                        Spacer(minLength: 8)
+                        Button {
+                            Task { await state.shareStory(story) }
+                        } label: {
+                            Image(systemName: "square.and.arrow.up")
+                                .font(AINewsTheme.font(12, weight: .semibold))
+                        }
+                        .buttonStyle(.borderless)
+                        .foregroundStyle(AINewsTheme.textMuted)
+                        .help("Copy a share link for this story")
                     }
-                    if let date = story.publishedDate {
-                        Text(date.formatted(date: .abbreviated, time: .shortened))
-                            .font(AINewsTheme.font(10))
-                            .foregroundStyle(AINewsTheme.textMuted)
-                    }
+
                     Text(story.title)
                         .font(AINewsTheme.font(14, weight: .bold))
                         .foregroundStyle(AINewsTheme.accentBlue)
@@ -343,10 +354,18 @@ private struct FloatingWidgetView: View {
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
-            .padding(12)
-            .aiNewsCardStyle()
         }
-        .buttonStyle(.plain)
+        .padding(12)
+        .aiNewsCardStyle()
+        .contentShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .onTapGesture {
+            openStory(story)
+        }
+    }
+
+    private func openStory(_ story: WidgetStory) {
+        guard let link = story.link, let url = URL(string: link) else { return }
+        NSWorkspace.shared.open(url)
     }
 
     @ViewBuilder
