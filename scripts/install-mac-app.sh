@@ -79,6 +79,12 @@ fi
 /usr/bin/codesign --force --deep --sign - --entitlements "$NATIVE_DIR/Support/AINewsMacApp.entitlements" "$INSTALL_DIR"
 
 touch "$INSTALL_DIR"
+/usr/bin/touch "$(dirname "$INSTALL_DIR")" >/dev/null 2>&1 || true
+
+LSREGISTER="/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister"
+if [[ -x "$LSREGISTER" ]]; then
+  "$LSREGISTER" -f "$INSTALL_DIR" >/dev/null 2>&1 || true
+fi
 
 echo "Installed $APP_NAME to $INSTALL_DIR"
 if [[ "$HAD_STALE_COPY" -eq 1 ]]; then

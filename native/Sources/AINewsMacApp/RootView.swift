@@ -171,6 +171,14 @@ private struct DashboardView: View {
         return (done, total, pending, blocked, totalRelevant)
     }
 
+    private func runtimeFeed(for url: String) -> RuntimeFeed? {
+        state.runtimeConfig?.feeds.first(where: { $0.url == url })
+    }
+
+    private func selectedCategoryFeeds(_ category: WidgetCategory) -> [RuntimeFeed] {
+        category.feedUrls.compactMap { runtimeFeed(for: $0) }
+    }
+
     private var backendHealthSummary: String? {
         guard let health = state.backendOps?.health else { return nil }
         if !health.aiEnabled || !health.aiAvailable {
@@ -452,6 +460,32 @@ private struct DashboardView: View {
                             .font(.caption)
                             .foregroundStyle(AINewsTheme.textMuted)
                     }
+                }
+
+                let feeds = selectedCategoryFeeds(selected)
+                if !feeds.isEmpty {
+                    VStack(alignment: .leading, spacing: 10) {
+                        HStack {
+                            Text("Feed controls")
+                                .font(.headline)
+                                .foregroundStyle(AINewsTheme.textPrimary)
+                            Spacer()
+                            Text("\(feeds.count) feed\(feeds.count == 1 ? "" : "s")")
+                                .font(.caption)
+                                .foregroundStyle(AINewsTheme.textMuted)
+                        }
+
+                        ScrollView(.horizontal, showsIndicators: false) {
+                            HStack(spacing: 12) {
+                                ForEach(feeds, id: \.url) { feed in
+                                    FeedQuickControlCard(feed: feed)
+                                }
+                            }
+                            .padding(.vertical, 2)
+                        }
+                    }
+                    .padding(16)
+                    .aiNewsPanelStyle()
                 }
             }
 
@@ -2518,6 +2552,84 @@ private struct CategoryAiControls: View {
     }
 }
 
+private struct FeedQuickControlCard: View {
+    @EnvironmentObject private var state: WidgetAppState
+    let feed: RuntimeFeed
+
+    private var fetchLabel: String {
+        feed.settings.pollingEnabled ? "Fetching" : "Fetch off"
+    }
+
+    private var aiLabel: String {
+        feed.settings.aiEnabled ? "AI on" : "AI paused"
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text(feed.label)
+                .font(.headline)
+                .foregroundStyle(AINewsTheme.textPrimary)
+                .lineLimit(1)
+            Text(feed.url)
+                .font(.caption2)
+                .foregroundStyle(AINewsTheme.textMuted)
+                .lineLimit(1)
+
+            HStack(spacing: 8) {
+                statusPill(fetchLabel, active: feed.settings.pollingEnabled, accent: AINewsTheme.accentBlue)
+                statusPill(aiLabel, active: feed.settings.aiEnabled, accent: AINewsTheme.accentGold)
+            }
+
+            if let progress = state.aiProgress[feed.url], progress.total > 0 || progress.blocked > 0 {
+                Text(progress.pending > 0
+                     ? "\(progress.pending) pending · \(progress.done)/\(progress.total) ready"
+                     : "\(progress.done)/\(progress.total) ready")
+                    .font(.caption2)
+                    .foregroundStyle(AINewsTheme.textMuted)
+            }
+
+            HStack(spacing: 8) {
+                Button(feed.settings.pollingEnabled || feed.settings.aiEnabled ? "Turn off" : "Resume") {
+                    Task {
+                        await state.setFeedOperationalState(
+                            feedURL: feed.url,
+                            pollingEnabled: !(feed.settings.pollingEnabled || feed.settings.aiEnabled),
+                            aiEnabled: !(feed.settings.pollingEnabled || feed.settings.aiEnabled)
+                        )
+                    }
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(feed.settings.pollingEnabled || feed.settings.aiEnabled ? AINewsTheme.accentRose : AINewsTheme.accentBlue)
+
+                Button(feed.settings.aiEnabled ? "Pause AI" : "Resume AI") {
+                    Task { await state.setFeedAiEnabled(feedURL: feed.url, enabled: !feed.settings.aiEnabled) }
+                }
+                .buttonStyle(.bordered)
+            }
+        }
+        .frame(width: 260, alignment: .leading)
+        .padding(16)
+        .aiNewsPanelStyle()
+    }
+
+    @ViewBuilder
+    private func statusPill(_ title: String, active: Bool, accent: Color) -> some View {
+        Text(title)
+            .font(.caption.weight(.semibold))
+            .foregroundStyle(active ? accent : AINewsTheme.textMuted)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 5)
+            .background(
+                Capsule()
+                    .fill((active ? accent : Color.white.opacity(0.18)).opacity(0.16))
+            )
+            .overlay(
+                Capsule()
+                    .stroke((active ? accent : Color.white.opacity(0.18)).opacity(0.55), lineWidth: 1)
+            )
+    }
+}
+
 private struct FeedSettingsCard: View {
     @EnvironmentObject private var state: WidgetAppState
     @State private var draft: RuntimeFeed
@@ -2547,6 +2659,24 @@ private struct FeedSettingsCard: View {
             }
 
             HStack(spacing: 14) {
+                Toggle("Fetch", isOn: Binding(
+                    get: { draft.settings.pollingEnabled },
+                    set: { enabled in
+                        draft.settings.pollingEnabled = enabled
+                        persist()
+                    }
+                ))
+                Toggle("AI", isOn: Binding(
+                    get: { draft.settings.aiEnabled },
+                    set: { enabled in
+                        draft.settings.aiEnabled = enabled
+                        persist()
+                    }
+                ))
+            }
+            .toggleStyle(.switch)
+
+            HStack(spacing: 14) {
                 Toggle("Summary", isOn: Binding(
                     get: { draft.settings.summaryEnabled },
                     set: { enabled in
@@ -2570,6 +2700,8 @@ private struct FeedSettingsCard: View {
                 ))
             }
             .toggleStyle(.switch)
+            .disabled(!draft.settings.aiEnabled)
+            .opacity(draft.settings.aiEnabled ? 1 : 0.55)
 
             if let progress = state.aiProgress[draft.url], progress.total > 0 {
                 VStack(alignment: .leading, spacing: 3) {

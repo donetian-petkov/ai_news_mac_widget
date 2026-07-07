@@ -696,11 +696,13 @@ public struct RuntimeFeed: Codable, Equatable, Hashable, Sendable {
 }
 
 public struct RuntimeFeedSettings: Codable, Equatable, Hashable, Sendable {
+    public var aiEnabled: Bool
     public var summaryEnabled: Bool
     public var translationEnabled: Bool
     public var researchEnabled: Bool
     public var discordWebhookUrl: String?
     public var budget: String
+    public var pollingEnabled: Bool
     public var intervalSec: Int
     public var kind: String
     public var label: String?

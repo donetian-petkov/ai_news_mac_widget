@@ -268,6 +268,7 @@ type FeedRuntime = {
 };
 
 type FeedSettings = {
+  aiEnabled: boolean;
   summaryEnabled: boolean;
   translationEnabled: boolean;
   researchEnabled: boolean;
@@ -281,6 +282,7 @@ type FeedSettings = {
   filters: ColumnFilters;
 
   // polling
+  pollingEnabled: boolean;
   intervalSec: number; // persisted override
   kind: FeedKind;
   label?: string;
@@ -903,6 +905,7 @@ app.put('/api/runtime/feed-settings', async (req, res) => {
     const current = feedSettings.get(feedUrl) || defaultSettingsForFeed(feed);
     const next = normalizeFeedSettings({
       ...current,
+      aiEnabled: typeof body.aiEnabled === 'boolean' ? body.aiEnabled : current.aiEnabled,
       summaryEnabled: typeof body.summaryEnabled === 'boolean' ? body.summaryEnabled : current.summaryEnabled,
       translationEnabled: typeof body.translationEnabled === 'boolean' ? body.translationEnabled : current.translationEnabled,
       researchEnabled: typeof body.researchEnabled === 'boolean' ? body.researchEnabled : current.researchEnabled,
@@ -910,6 +913,7 @@ app.put('/api/runtime/feed-settings', async (req, res) => {
       budget: body.budget === 'low' || body.budget === 'standard' || body.budget === 'high'
         ? body.budget
         : current.budget,
+      pollingEnabled: typeof body.pollingEnabled === 'boolean' ? body.pollingEnabled : current.pollingEnabled,
       intervalSec: Number.isFinite(Number(body.intervalSec))
         ? Number(body.intervalSec)
         : current.intervalSec
@@ -962,7 +966,7 @@ app.get('/api/ai-progress', async (req, res) => {
     if (!cfg) continue;
     const budget = cfg.budget || 'standard';
     const entry = byFeed.get(item.feedUrl) || { done: 0, pending: 0, blocked: 0, totalRelevant: 0 };
-    if (cfg.summaryEnabled !== false) {
+    if (cfg.aiEnabled !== false && cfg.summaryEnabled !== false) {
       entry.totalRelevant += 1;
       if (String(item.summary || '').trim()) {
         entry.done += 1;
@@ -972,7 +976,7 @@ app.get('/api/ai-progress', async (req, res) => {
         entry.blocked += 1;
       }
     }
-    if (cfg.researchEnabled !== false) {
+    if (cfg.aiEnabled !== false && cfg.researchEnabled !== false) {
       entry.totalRelevant += 1;
       if (String(item.research || '').trim()) {
         entry.done += 1;
@@ -982,7 +986,7 @@ app.get('/api/ai-progress', async (req, res) => {
         entry.blocked += 1;
       }
     }
-    if (cfg.translationEnabled !== false && needsTitleTranslation(item.title, item.titleBg, item.titleEn)) {
+    if (cfg.aiEnabled !== false && cfg.translationEnabled !== false && needsTitleTranslation(item.title, item.titleBg, item.titleEn)) {
       entry.totalRelevant += 1;
       if (String(item.titleBg || '').trim() || String(item.titleEn || '').trim()) {
         entry.done += 1;
@@ -997,7 +1001,7 @@ app.get('/api/ai-progress', async (req, res) => {
     if (filteredCfg && item.isMatch && item.filteredOk !== false) {
       const filteredBudget = filteredCfg.budget || 'standard';
       const filteredEntry = byFeed.get(FILTERED_FEED_URL) || { done: 0, pending: 0, blocked: 0, totalRelevant: 0 };
-      if (filteredCfg.summaryEnabled !== false) {
+      if (filteredCfg.aiEnabled !== false && filteredCfg.summaryEnabled !== false) {
         filteredEntry.totalRelevant += 1;
         if (String(item.summary || '').trim()) {
           filteredEntry.done += 1;
@@ -1007,7 +1011,7 @@ app.get('/api/ai-progress', async (req, res) => {
           filteredEntry.blocked += 1;
         }
       }
-      if (filteredCfg.researchEnabled !== false) {
+      if (filteredCfg.aiEnabled !== false && filteredCfg.researchEnabled !== false) {
         filteredEntry.totalRelevant += 1;
         if (String(item.research || '').trim()) {
           filteredEntry.done += 1;
@@ -1017,7 +1021,7 @@ app.get('/api/ai-progress', async (req, res) => {
           filteredEntry.blocked += 1;
         }
       }
-      if (filteredCfg.translationEnabled !== false && needsTitleTranslation(item.title, item.titleBg, item.titleEn)) {
+      if (filteredCfg.aiEnabled !== false && filteredCfg.translationEnabled !== false && needsTitleTranslation(item.title, item.titleBg, item.titleEn)) {
         filteredEntry.totalRelevant += 1;
         if (String(item.titleBg || '').trim() || String(item.titleEn || '').trim()) {
           filteredEntry.done += 1;
@@ -1166,6 +1170,7 @@ productFeatures = registerProductFeatureApi({
   requestStoryAction: async (action, itemId, feedUrl) => {
     const item = recent.find(entry => entry.id === itemId && entry.feedUrl === feedUrl);
     if (!item) return false;
+    if (!isFeedAiEnabled(item.feedUrl)) return false;
     if (action === 'summary') {
       enqueueJob({ kind: 'summary', id: item.id, feedUrl: item.feedUrl, manual: true });
       return true;
@@ -1183,6 +1188,7 @@ productFeatures = registerProductFeatureApi({
   refreshFeed: async feedUrl => {
     const feed = currentFeeds().find(entry => entry.url === feedUrl);
     if (!feed) return false;
+    if (!isFeedPollingEnabled(feedUrl)) return false;
     await processFeed(feed);
     return true;
   }
@@ -2758,10 +2764,11 @@ function chooseDiscordTitle(item: NewsInternal, preferred: TitleDisplayLanguage,
 
 function buildDiscordEmbed(item: NewsInternal, feed: FeedInfo, feedConfig: FeedSettings) {
   const source = String(item.source || feed.label || feed.url).trim() || 'Unknown source';
-  const translationEnabled = feedConfig.translationEnabled !== false;
+  const aiEnabledForFeed = feedConfig.aiEnabled !== false;
+  const translationEnabled = aiEnabledForFeed && feedConfig.translationEnabled !== false;
   const preferredTitle = chooseDiscordTitle(item, normalizeDiscordTitleLanguage(titleDisplayLanguage), translationEnabled);
-  const summaryEnabled = feedConfig.summaryEnabled !== false;
-  const researchEnabled = feedConfig.researchEnabled !== false;
+  const summaryEnabled = aiEnabledForFeed && feedConfig.summaryEnabled !== false;
+  const researchEnabled = aiEnabledForFeed && feedConfig.researchEnabled !== false;
   const fields: Array<{ name: string; value: string; inline?: boolean }> = [];
 
   const summaryText = compactDiscordText(item.summary || '', 1800);
@@ -2927,9 +2934,10 @@ function clearDiscordPostTimer(key: string) {
 }
 
 function isDiscordPostReady(item: NewsInternal, feedConfig: FeedSettings): boolean {
-  const summaryEnabled = feedConfig.summaryEnabled !== false;
-  const researchEnabled = feedConfig.researchEnabled !== false;
-  const translationEnabled = feedConfig.translationEnabled !== false;
+  const aiEnabledForFeed = feedConfig.aiEnabled !== false;
+  const summaryEnabled = aiEnabledForFeed && feedConfig.summaryEnabled !== false;
+  const researchEnabled = aiEnabledForFeed && feedConfig.researchEnabled !== false;
+  const translationEnabled = aiEnabledForFeed && feedConfig.translationEnabled !== false;
   const summaryReady = !summaryEnabled
     || !!String(item.summary || '').trim()
     || activeModel('summary') === 'none';
@@ -2971,13 +2979,25 @@ function scheduleDiscordPostForTarget(item: NewsInternal, targetFeedUrl: string)
   if (!webhookUrl) return;
   const effectiveFeedConfig = feedConfig || defaultSettingsForFeed(feed);
 
-  if (effectiveFeedConfig.summaryEnabled !== false && !String(item.summary || '').trim() && activeModel('summary') !== 'none' && !hasSummaryJobQueuedOrRunning(item.id, item.feedUrl)) {
+  if (effectiveFeedConfig.aiEnabled !== false
+      && effectiveFeedConfig.summaryEnabled !== false
+      && !String(item.summary || '').trim()
+      && activeModel('summary') !== 'none'
+      && !hasSummaryJobQueuedOrRunning(item.id, item.feedUrl)) {
     enqueueJob({ kind: 'summary', id: item.id, feedUrl: item.feedUrl, manual: true });
   }
-  if (effectiveFeedConfig.researchEnabled !== false && !String(item.research || '').trim() && activeModel('research') !== 'none' && !hasResearchJobQueuedOrRunning(item.id, item.feedUrl)) {
+  if (effectiveFeedConfig.aiEnabled !== false
+      && effectiveFeedConfig.researchEnabled !== false
+      && !String(item.research || '').trim()
+      && activeModel('research') !== 'none'
+      && !hasResearchJobQueuedOrRunning(item.id, item.feedUrl)) {
     enqueueJob({ kind: 'research', id: item.id, feedUrl: item.feedUrl, manual: true });
   }
-  if (effectiveFeedConfig.translationEnabled !== false && needsTitleTranslation(item.title, item.titleBg, item.titleEn) && activeModel('summary') !== 'none' && !hasTitleTranslateJobQueuedOrRunning(item.id, item.feedUrl)) {
+  if (effectiveFeedConfig.aiEnabled !== false
+      && effectiveFeedConfig.translationEnabled !== false
+      && needsTitleTranslation(item.title, item.titleBg, item.titleEn)
+      && activeModel('summary') !== 'none'
+      && !hasTitleTranslateJobQueuedOrRunning(item.id, item.feedUrl)) {
     enqueueJob({ kind: 'title_translate', id: item.id, feedUrl: item.feedUrl, manual: true });
   }
 
@@ -3041,6 +3061,7 @@ function defaultSettingsForFeed(fi: FeedInfo): FeedSettings {
     fi.url === FILTERED_FEED_URL ? true : globalAiDefaults.translationEnabled;
 
   return {
+    aiEnabled: true,
     summaryEnabled,
     translationEnabled,
     researchEnabled,
@@ -3048,6 +3069,7 @@ function defaultSettingsForFeed(fi: FeedInfo): FeedSettings {
     budget: 'standard',
     sortMode: 'newest',
     filters: { onlyMatches: false, onlyResearched: false, onlySummaries: false },
+    pollingEnabled: true,
     intervalSec: fi.intervalSec,
     kind: fi.kind,
     label: fi.label
@@ -3058,6 +3080,7 @@ function normalizeFeedSettings(raw: Partial<FeedSettings> | undefined, fi: FeedI
   const base = defaultSettingsForFeed(fi);
   const filters = raw?.filters;
   return {
+    aiEnabled: typeof raw?.aiEnabled === 'boolean' ? raw.aiEnabled : base.aiEnabled,
     summaryEnabled: typeof raw?.summaryEnabled === 'boolean' ? raw.summaryEnabled : base.summaryEnabled,
     translationEnabled: raw?.translationEnabled !== false,
     researchEnabled: typeof raw?.researchEnabled === 'boolean' ? raw.researchEnabled : base.researchEnabled,
@@ -3073,6 +3096,7 @@ function normalizeFeedSettings(raw: Partial<FeedSettings> | undefined, fi: FeedI
       onlyResearched: !!filters?.onlyResearched,
       onlySummaries: !!filters?.onlySummaries
     },
+    pollingEnabled: typeof raw?.pollingEnabled === 'boolean' ? raw.pollingEnabled : base.pollingEnabled,
     intervalSec: Math.max(0, Math.min(3600, Math.floor(Number(raw?.intervalSec ?? base.intervalSec) || base.intervalSec))),
     kind: raw?.kind === 'reddit' || raw?.kind === 'youtube' || raw?.kind === 'rss'
       ? raw.kind
@@ -4658,7 +4682,16 @@ function summaryInstructionWithoutTranslation(title: string): string {
 }
 
 function isTranslationEnabledForFeed(feedUrl: string): boolean {
-  return feedSettings.get(feedUrl)?.translationEnabled !== false;
+  const cfg = feedSettings.get(feedUrl);
+  return cfg?.aiEnabled !== false && cfg?.translationEnabled !== false;
+}
+
+function isFeedAiEnabled(feedUrl: string): boolean {
+  return feedSettings.get(feedUrl)?.aiEnabled !== false;
+}
+
+function isFeedPollingEnabled(feedUrl: string): boolean {
+  return feedSettings.get(feedUrl)?.pollingEnabled !== false;
 }
 
 function summaryInstructionForFeed(feedUrl: string, title: string): string {
@@ -5566,8 +5599,9 @@ function eligibleForFeed(it: NewsInternal, feedUrl: string): boolean {
 }
 
 function shouldHaveSummary(it: NewsInternal): boolean {
-  const ownFeedSummary = !!feedSettings.get(it.feedUrl)?.summaryEnabled;
+  const ownFeedSummary = isFeedAiEnabled(it.feedUrl) && !!feedSettings.get(it.feedUrl)?.summaryEnabled;
   const filteredSummary =
+    isFeedAiEnabled(FILTERED_FEED_URL) &&
     !!feedSettings.get(FILTERED_FEED_URL)?.summaryEnabled &&
     !!it.isMatch &&
     it.filteredOk !== false;
@@ -5590,8 +5624,9 @@ function isAutoSummaryEligible(it: NewsInternal, nowMs = Date.now()): boolean {
 }
 
 function shouldHaveResearch(it: NewsInternal): boolean {
-  const ownFeedResearch = !!feedSettings.get(it.feedUrl)?.researchEnabled;
+  const ownFeedResearch = isFeedAiEnabled(it.feedUrl) && !!feedSettings.get(it.feedUrl)?.researchEnabled;
   const filteredResearch =
+    isFeedAiEnabled(FILTERED_FEED_URL) &&
     !!feedSettings.get(FILTERED_FEED_URL)?.researchEnabled &&
     !!it.isMatch &&
     it.filteredOk !== false;
@@ -6266,6 +6301,10 @@ async function runOneJob(job: AiJob) {
 
     const s = feedSettings.get(it.feedUrl) || defaultSettingsForFeed({ url: it.feedUrl, label: it.source, kind: 'rss', intervalSec: 120 });
     const budget = s.budget || 'standard';
+    if (s.aiEnabled === false) {
+      markSkip('ai_disabled_for_feed');
+      return;
+    }
 
     if (job.kind === 'summary') {
       if (it.summary && it.summary.trim()) {
@@ -6844,6 +6883,7 @@ async function enqueueAiForFetchedItem(item: NewsInternal) {
   if (!aiEnabled || !aiAvailable) return;
   const cfg = feedSettings.get(item.feedUrl);
   if (!cfg) return;
+  if (cfg.aiEnabled === false) return;
 
   if (cfg.summaryEnabled !== false && !String(item.summary || '').trim()
       && activeModel('summary') !== 'none' && !hasSummaryJobQueuedOrRunning(item.id, item.feedUrl)) {
@@ -6865,6 +6905,11 @@ async function processFeed(fi: FeedInfo) {
 
   const s = feedSettings.get(fi.url)!;
   const rt = feedRuntime.get(fi.url)!;
+
+  if (s.pollingEnabled === false) {
+    rt.nextPollAtMs = 0;
+    return;
+  }
 
   // compute interval (per-feed override)
   const baseIntervalSec = Math.max(20, Math.min(3600, Number(s.intervalSec || fi.intervalSec || defaultIntervalForKind(fi.kind))));
@@ -7909,8 +7954,9 @@ socketServer.on('connection', (ws: WebSocket) => {
       }
 
       if (msg.research && researchModelReady) {
-        const wantsFeedResearch = !!feedSettings.get(it.feedUrl)?.researchEnabled;
+        const wantsFeedResearch = isFeedAiEnabled(it.feedUrl) && !!feedSettings.get(it.feedUrl)?.researchEnabled;
         const wantsFilteredResearch =
+          isFeedAiEnabled(FILTERED_FEED_URL) &&
           !!feedSettings.get(FILTERED_FEED_URL)?.researchEnabled &&
           !!it.isMatch &&
           it.filteredOk !== false;

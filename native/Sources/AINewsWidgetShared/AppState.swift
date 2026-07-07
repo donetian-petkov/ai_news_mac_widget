@@ -555,6 +555,34 @@ public final class WidgetAppState: ObservableObject {
         }
     }
 
+    public func setFeedPolling(feedURL: String, enabled: Bool) async {
+        guard var feed = runtimeConfig?.feeds.first(where: { $0.url == feedURL }) else {
+            errorMessage = "Feed not found."
+            return
+        }
+        feed.settings.pollingEnabled = enabled
+        await saveFeedSettings(feed)
+    }
+
+    public func setFeedAiEnabled(feedURL: String, enabled: Bool) async {
+        guard var feed = runtimeConfig?.feeds.first(where: { $0.url == feedURL }) else {
+            errorMessage = "Feed not found."
+            return
+        }
+        feed.settings.aiEnabled = enabled
+        await saveFeedSettings(feed)
+    }
+
+    public func setFeedOperationalState(feedURL: String, pollingEnabled: Bool, aiEnabled: Bool) async {
+        guard var feed = runtimeConfig?.feeds.first(where: { $0.url == feedURL }) else {
+            errorMessage = "Feed not found."
+            return
+        }
+        feed.settings.pollingEnabled = pollingEnabled
+        feed.settings.aiEnabled = aiEnabled
+        await saveFeedSettings(feed)
+    }
+
     public func saveGlobalAiDefaults() async {
         await runBusy("Saving global AI settings...") {
             let api = try self.makeAPIClient()

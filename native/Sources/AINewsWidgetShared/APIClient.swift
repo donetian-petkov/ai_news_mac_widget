@@ -84,11 +84,13 @@ public struct APIClient: Sendable {
     public func saveFeedSettings(_ feed: RuntimeFeed) async throws -> RuntimeFeed {
         struct Body: Codable {
             var feedUrl: String
+            var aiEnabled: Bool
             var summaryEnabled: Bool
             var translationEnabled: Bool
             var researchEnabled: Bool
             var discordWebhookUrl: String?
             var budget: String
+            var pollingEnabled: Bool
             var intervalSec: Int
         }
         let response: RuntimeFeedMutationResponse = try await send(
@@ -96,11 +98,13 @@ public struct APIClient: Sendable {
             method: "PUT",
             body: Body(
                 feedUrl: feed.url,
+                aiEnabled: feed.settings.aiEnabled,
                 summaryEnabled: feed.settings.summaryEnabled,
                 translationEnabled: feed.settings.translationEnabled,
                 researchEnabled: feed.settings.researchEnabled,
                 discordWebhookUrl: feed.settings.discordWebhookUrl,
                 budget: feed.settings.budget,
+                pollingEnabled: feed.settings.pollingEnabled,
                 intervalSec: feed.settings.intervalSec
             )
         )
@@ -134,6 +138,7 @@ public struct APIClient: Sendable {
     ) async throws {
         struct Body: Codable {
             var feedUrl: String
+            var aiEnabled: Bool
             var summaryEnabled: Bool
             var researchEnabled: Bool
             var translationEnabled: Bool
@@ -143,6 +148,7 @@ public struct APIClient: Sendable {
             method: "PUT",
             body: Body(
                 feedUrl: feedUrl,
+                aiEnabled: summaryEnabled || researchEnabled || translationEnabled,
                 summaryEnabled: summaryEnabled,
                 researchEnabled: researchEnabled,
                 translationEnabled: translationEnabled
