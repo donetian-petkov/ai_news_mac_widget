@@ -6,7 +6,6 @@ import WidgetKit
 @MainActor
 public final class SnapshotStore {
     public static let shared = SnapshotStore()
-    public static let appGroupIdentifier = "group.com.donetianpetkov.ainewswidget"
 
     private let fm = FileManager.default
     private let encoder = JSONEncoder()
@@ -101,20 +100,10 @@ public final class SnapshotStore {
     private static func containerCandidates(fileManager: FileManager) -> [URL] {
         var urls: [URL] = []
 
-        if let appGroupURL = fileManager
-            .containerURL(forSecurityApplicationGroupIdentifier: appGroupIdentifier)?
-            .appendingPathComponent("AINewsMacWidget", isDirectory: true) {
-            urls.append(appGroupURL)
-        }
-
         if let appSupportURL = fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask).first?
             .appendingPathComponent("AINewsMacWidget", isDirectory: true) {
             urls.append(appSupportURL)
         }
-
-        let unsandboxedSupportURL = fileManager.homeDirectoryForCurrentUser
-            .appendingPathComponent("Library/Application Support/AINewsMacWidget", isDirectory: true)
-        urls.append(unsandboxedSupportURL)
 
         var seen = Set<String>()
         return urls.filter { url in

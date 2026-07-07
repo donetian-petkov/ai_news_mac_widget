@@ -25,6 +25,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         BackendSupervisor.shared.ensureBackendStarted()
         NSApp.setActivationPolicy(.regular)
+        if let bundledIcon = NSImage(named: "AppIcon") {
+            NSApp.applicationIconImage = bundledIcon
+        } else {
+            NSApp.applicationIconImage = NSWorkspace.shared.icon(forFile: Bundle.main.bundlePath)
+        }
         configureStatusItem()
         NotificationCenter.default.addObserver(
             self,

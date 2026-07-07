@@ -74,9 +74,9 @@ cat > "$RESOURCES_DIR/backend-launch.json" <<JSON
 JSON
 
 if [[ -d "$WIDGET_APPEX" ]]; then
-  /usr/bin/codesign --force --sign - --entitlements "$NATIVE_DIR/Support/AINewsWidgets.entitlements" "$WIDGET_APPEX"
+  /usr/bin/codesign --force --sign - "$WIDGET_APPEX"
 fi
-/usr/bin/codesign --force --deep --sign - --entitlements "$NATIVE_DIR/Support/AINewsMacApp.entitlements" "$INSTALL_DIR"
+/usr/bin/codesign --force --deep --sign - "$INSTALL_DIR"
 
 touch "$INSTALL_DIR"
 /usr/bin/touch "$(dirname "$INSTALL_DIR")" >/dev/null 2>&1 || true

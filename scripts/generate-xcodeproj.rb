@@ -58,7 +58,6 @@ set_build_settings(app_target, common_settings.merge(
   'PRODUCT_NAME' => 'AINewsMacApp',
   'PRODUCT_BUNDLE_IDENTIFIER' => 'com.donetianpetkov.ainewsmacwidget',
   'INFOPLIST_FILE' => 'Support/AINewsMacApp-Info.plist',
-  'CODE_SIGN_ENTITLEMENTS' => 'Support/AINewsMacApp.entitlements',
   'LD_RUNPATH_SEARCH_PATHS' => '$(inherited) @executable_path/../Frameworks @executable_path/../PlugIns',
   'ASSETCATALOG_COMPILER_APPICON_NAME' => 'AppIcon',
   'SKIP_INSTALL' => 'NO'
@@ -68,8 +67,8 @@ set_build_settings(widget_target, common_settings.merge(
   'PRODUCT_NAME' => 'AINewsWidgets',
   'PRODUCT_BUNDLE_IDENTIFIER' => 'com.donetianpetkov.ainewsmacwidget.widgets',
   'INFOPLIST_FILE' => 'Support/AINewsWidgets-Info.plist',
-  'CODE_SIGN_ENTITLEMENTS' => 'Support/AINewsWidgets.entitlements',
   'APPLICATION_EXTENSION_API_ONLY' => 'YES',
+  'ASSETCATALOG_COMPILER_APPICON_NAME' => 'AppIcon',
   'SKIP_INSTALL' => 'YES'
 ))
 
@@ -106,6 +105,7 @@ app_target.resources_build_phase.add_file_reference(support_group.files.find { |
 
 asset_catalog_ref = resources_group.new_file('Assets.xcassets')
 app_target.resources_build_phase.add_file_reference(asset_catalog_ref)
+widget_target.resources_build_phase.add_file_reference(asset_catalog_ref)
 
 app_target.add_dependency(shared_target)
 app_target.add_dependency(widget_target)
