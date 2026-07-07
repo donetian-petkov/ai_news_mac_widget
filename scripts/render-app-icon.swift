@@ -2,7 +2,7 @@ import AppKit
 import Foundation
 
 let arguments = CommandLine.arguments.dropFirst()
-let outputPath = arguments.first ?? "native/Assets.xcassets/AppIcon.appiconset"
+let outputPath = arguments.dropFirst().first ?? "native/Assets.xcassets/AppIcon.appiconset"
 let outputDirectory = URL(fileURLWithPath: outputPath)
 let fileManager = FileManager.default
 
@@ -14,12 +14,13 @@ func color(_ white: CGFloat, _ alpha: CGFloat = 1) -> NSColor {
     NSColor(calibratedWhite: white / 255, alpha: alpha)
 }
 
-func newspaperImage(size: CGFloat) -> NSImage {
+func iconImage(size: CGFloat) -> NSImage {
     let image = NSImage(size: NSSize(width: size, height: size))
     image.lockFocus()
     defer { image.unlockFocus() }
 
-    NSGraphicsContext.current?.imageInterpolation = .high
+    guard let context = NSGraphicsContext.current else { return image }
+    context.imageInterpolation = .high
 
     let canvas = NSRect(x: 0, y: 0, width: size, height: size)
     NSColor.clear.setFill()
@@ -33,87 +34,87 @@ func newspaperImage(size: CGFloat) -> NSImage {
     )
     let tilePath = NSBezierPath(
         roundedRect: tileRect,
-        xRadius: size * 0.15,
-        yRadius: size * 0.15
+        xRadius: size * 0.16,
+        yRadius: size * 0.16
     )
-    let tileGradient = NSGradient(colors: [color(6), color(12)])!
+    let tileGradient = NSGradient(colors: [color(5), color(14)])!
     tileGradient.draw(in: tilePath, angle: -90)
-    let tileHighlight = NSGradient(colors: [
-        NSColor(calibratedWhite: 1, alpha: 0.08),
-        NSColor(calibratedWhite: 1, alpha: 0.0)
-    ])!
-    tileHighlight.draw(in: tilePath, angle: -90)
+    NSColor(calibratedWhite: 1, alpha: 0.06).setStroke()
+    tilePath.lineWidth = max(1, size * 0.004)
+    tilePath.stroke()
 
-    let badgeRect = NSRect(
-        x: size * 0.34,
-        y: size * 0.21,
-        width: size * 0.42,
-        height: size * 0.50
-    )
-    let badgePath = NSBezierPath(
-        roundedRect: badgeRect,
-        xRadius: size * 0.06,
-        yRadius: size * 0.06
-    )
-    let badgeGradient = NSGradient(colors: [color(72), color(58)])!
-    badgeGradient.draw(in: badgePath, angle: -90)
-    NSColor(calibratedWhite: 1, alpha: 0.08).setStroke()
-    badgePath.lineWidth = max(1, size * 0.005)
-    badgePath.stroke()
-
-    let glyphFill = color(10)
-    let glyphDetail = color(240)
-    let accentColor = color(156)
+    let pageFill = color(228)
+    let pageStroke = color(182)
+    let ink = color(18)
+    let photo = color(120)
 
     let paperRect = NSRect(
         x: size * 0.42,
-        y: size * 0.25,
+        y: size * 0.24,
         width: size * 0.28,
-        height: size * 0.42
+        height: size * 0.44
     )
-    let paperPath = NSBezierPath(roundedRect: paperRect, xRadius: size * 0.04, yRadius: size * 0.04)
-    glyphFill.setFill()
+    let paperPath = NSBezierPath(
+        roundedRect: paperRect,
+        xRadius: size * 0.038,
+        yRadius: size * 0.038
+    )
+    pageFill.setFill()
     paperPath.fill()
+    pageStroke.setStroke()
+    paperPath.lineWidth = max(1, size * 0.005)
+    paperPath.stroke()
+
+    let foldPath = NSBezierPath()
+    foldPath.move(to: NSPoint(x: paperRect.maxX - size * 0.052, y: paperRect.maxY))
+    foldPath.line(to: NSPoint(x: paperRect.maxX, y: paperRect.maxY))
+    foldPath.line(to: NSPoint(x: paperRect.maxX, y: paperRect.maxY - size * 0.052))
+    foldPath.close()
+    color(205).setFill()
+    foldPath.fill()
 
     let spineRect = NSRect(
         x: size * 0.27,
-        y: size * 0.31,
-        width: size * 0.05,
-        height: size * 0.27
+        y: size * 0.30,
+        width: size * 0.045,
+        height: size * 0.28
     )
-    let spinePath = NSBezierPath(roundedRect: spineRect, xRadius: size * 0.03, yRadius: size * 0.03)
-    glyphFill.setFill()
+    let spinePath = NSBezierPath(
+        roundedRect: spineRect,
+        xRadius: size * 0.023,
+        yRadius: size * 0.023
+    )
+    pageFill.setFill()
     spinePath.fill()
+    pageStroke.setStroke()
+    spinePath.lineWidth = max(1, size * 0.004)
+    spinePath.stroke()
 
-    let lineHeight = size * 0.038
-    let longLineWidth = size * 0.17
-    let topLine1 = NSRect(x: size * 0.48, y: size * 0.56, width: longLineWidth, height: lineHeight)
-    let topLine2 = NSRect(x: size * 0.48, y: size * 0.48, width: longLineWidth * 0.88, height: lineHeight)
-    let bottomLine = NSRect(x: size * 0.48, y: size * 0.33, width: longLineWidth * 1.02, height: lineHeight)
-
-    [topLine1, topLine2, bottomLine].forEach { rect in
+    let lineHeight = size * 0.036
+    let topLine1 = NSRect(x: size * 0.47, y: size * 0.56, width: size * 0.15, height: lineHeight)
+    let topLine2 = NSRect(x: size * 0.47, y: size * 0.48, width: size * 0.14, height: lineHeight)
+    let bottomLine = NSRect(x: size * 0.47, y: size * 0.32, width: size * 0.17, height: lineHeight)
+    for rect in [topLine1, topLine2, bottomLine] {
         let path = NSBezierPath(roundedRect: rect, xRadius: lineHeight / 2, yRadius: lineHeight / 2)
-        glyphDetail.setFill()
+        ink.setFill()
         path.fill()
     }
 
-    let squareRect = NSRect(
-        x: size * 0.49,
+    let photoRect = NSRect(
+        x: size * 0.47,
         y: size * 0.39,
-        width: size * 0.072,
-        height: size * 0.072
+        width: size * 0.066,
+        height: size * 0.066
     )
-    let squarePath = NSBezierPath(roundedRect: squareRect, xRadius: size * 0.018, yRadius: size * 0.018)
-    accentColor.setFill()
-    squarePath.fill()
+    let photoPath = NSBezierPath(roundedRect: photoRect, xRadius: size * 0.012, yRadius: size * 0.012)
+    photo.setFill()
+    photoPath.fill()
 
-    let shortLineWidth = size * 0.075
-    let shortLine1 = NSRect(x: size * 0.60, y: size * 0.42, width: shortLineWidth, height: size * 0.032)
-    let shortLine2 = NSRect(x: size * 0.60, y: size * 0.36, width: shortLineWidth, height: size * 0.032)
-
-    [shortLine1, shortLine2].forEach { rect in
+    let shortLine1 = NSRect(x: size * 0.57, y: size * 0.42, width: size * 0.075, height: size * 0.03)
+    let shortLine2 = NSRect(x: size * 0.57, y: size * 0.35, width: size * 0.075, height: size * 0.03)
+    for rect in [shortLine1, shortLine2] {
         let path = NSBezierPath(roundedRect: rect, xRadius: rect.height / 2, yRadius: rect.height / 2)
-        glyphDetail.setFill()
+        ink.setFill()
         path.fill()
     }
 
@@ -152,7 +153,7 @@ func pngData(from image: NSImage, size: Int) -> Data? {
 }
 
 for size in sizes {
-    let image = newspaperImage(size: CGFloat(size))
+    let image = iconImage(size: CGFloat(size))
     guard let data = pngData(from: image, size: size) else {
         fputs("Failed to render size \(size)\n", stderr)
         exit(1)
