@@ -199,6 +199,17 @@ private struct FloatingWidgetView: View {
                 Task { await reload() }
             } label: {
                 Image(systemName: "arrow.clockwise")
+                    .font(AINewsTheme.font(14, weight: .semibold))
+                    .foregroundStyle(AINewsTheme.textPrimary)
+                    .frame(width: 30, height: 30)
+                    .background(
+                        Circle()
+                            .fill(AINewsTheme.backgroundAlt.opacity(0.96))
+                    )
+                    .overlay(
+                        Circle()
+                            .stroke(AINewsTheme.panelBorder.opacity(0.85), lineWidth: 1)
+                    )
             }
             .buttonStyle(.borderless)
             .help("Reload this category")
