@@ -18,6 +18,10 @@ if [[ ! -w "/Applications" ]]; then
 fi
 RESOURCES_DIR="$INSTALL_DIR/Contents/Resources"
 WIDGET_APPEX="$INSTALL_DIR/Contents/PlugIns/AINewsWidgets.appex"
+WIDGET_RESOURCES_DIR="$WIDGET_APPEX/Contents/Resources"
+ICONSET_DIR="$NATIVE_DIR/Assets.xcassets/AppIcon.appiconset"
+ICON_TEMP_DIR="/tmp/ai-news-icon.iconset"
+ICON_ICNS_PATH="/tmp/ai-news-icon.icns"
 LOG_DIR="${HOME}/Library/Logs/AINewsMacWidget"
 RUNTIME_INFO_PATH="/tmp/ai-news-mac-widget-runtime.json"
 NODE_PATH="$(command -v node || true)"
@@ -60,6 +64,16 @@ rm -rf "$STALE_INSTALL_DIR"
 rm -rf "$INSTALL_DIR"
 cp -R "$SOURCE_APP" "$INSTALL_DIR"
 mkdir -p "$RESOURCES_DIR"
+mkdir -p "$WIDGET_RESOURCES_DIR"
+
+rm -rf "$ICON_TEMP_DIR"
+rm -f "$ICON_ICNS_PATH"
+cp -R "$ICONSET_DIR" "$ICON_TEMP_DIR"
+/usr/bin/iconutil -c icns "$ICON_TEMP_DIR" -o "$ICON_ICNS_PATH"
+cp "$ICON_ICNS_PATH" "$RESOURCES_DIR/AppIcon.icns"
+if [[ -d "$WIDGET_RESOURCES_DIR" ]]; then
+  cp "$ICON_ICNS_PATH" "$WIDGET_RESOURCES_DIR/AppIcon.icns"
+fi
 
 cat > "$RESOURCES_DIR/backend-launch.json" <<JSON
 {
