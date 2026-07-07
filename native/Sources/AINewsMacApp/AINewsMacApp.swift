@@ -25,12 +25,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         BackendSupervisor.shared.ensureBackendStarted()
         NSApp.setActivationPolicy(.regular)
-        let icon = NSImage(
-            systemSymbolName: "newspaper.fill",
-            accessibilityDescription: "AI News"
-        )
-        NSApp.applicationIconImage = icon
-        configureStatusItem(icon: icon)
+        configureStatusItem()
         NotificationCenter.default.addObserver(
             self,
             selector: #selector(toggleFloatingWidget),
@@ -47,11 +42,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         showMainWindow()
     }
 
-    private func configureStatusItem(icon: NSImage?) {
+    private func configureStatusItem() {
         let statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         if let button = statusItem.button {
-            button.image = icon
-            button.image?.isTemplate = true
+            let statusIcon = NSImage(
+                systemSymbolName: "newspaper.fill",
+                accessibilityDescription: "AI News"
+            )
+            statusIcon?.isTemplate = true
+            button.image = statusIcon
             button.toolTip = "AI News Widget"
         }
 
