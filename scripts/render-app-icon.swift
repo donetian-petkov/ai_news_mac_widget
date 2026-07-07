@@ -25,35 +25,57 @@ func newspaperImage(size: CGFloat) -> NSImage {
     NSColor.clear.setFill()
     canvas.fill()
 
-    let glyphColor = color(8)
-    let accentColor = color(78)
-    let lineColor = color(229)
+    let tileRect = NSRect(
+        x: size * 0.12,
+        y: size * 0.12,
+        width: size * 0.76,
+        height: size * 0.76
+    )
+    let tilePath = NSBezierPath(
+        roundedRect: tileRect,
+        xRadius: size * 0.15,
+        yRadius: size * 0.15
+    )
+    let tileGradient = NSGradient(colors: [color(8), color(16)])!
+    tileGradient.draw(in: tilePath, angle: -90)
+    let tileHighlight = NSGradient(colors: [
+        NSColor(calibratedWhite: 1, alpha: 0.08),
+        NSColor(calibratedWhite: 1, alpha: 0.0)
+    ])!
+    tileHighlight.draw(in: tilePath, angle: -90)
+
+    let glyphColor = color(52)
+    let accentColor = color(148)
+    let lineColor = color(246)
 
     let paperRect = NSRect(
-        x: size * 0.36,
-        y: size * 0.14,
-        width: size * 0.44,
-        height: size * 0.64
+        x: size * 0.43,
+        y: size * 0.25,
+        width: size * 0.29,
+        height: size * 0.41
     )
-    let paperPath = NSBezierPath(roundedRect: paperRect, xRadius: size * 0.045, yRadius: size * 0.045)
+    let paperPath = NSBezierPath(roundedRect: paperRect, xRadius: size * 0.04, yRadius: size * 0.04)
     glyphColor.setFill()
     paperPath.fill()
+    NSColor(calibratedWhite: 1, alpha: 0.05).setStroke()
+    paperPath.lineWidth = max(1, size * 0.006)
+    paperPath.stroke()
 
     let spineRect = NSRect(
-        x: size * 0.23,
-        y: size * 0.22,
-        width: size * 0.105,
-        height: size * 0.48
+        x: size * 0.27,
+        y: size * 0.31,
+        width: size * 0.05,
+        height: size * 0.27
     )
-    let spinePath = NSBezierPath(roundedRect: spineRect, xRadius: size * 0.052, yRadius: size * 0.052)
+    let spinePath = NSBezierPath(roundedRect: spineRect, xRadius: size * 0.03, yRadius: size * 0.03)
     glyphColor.setFill()
     spinePath.fill()
 
-    let lineHeight = size * 0.06
-    let longLineWidth = size * 0.24
-    let topLine1 = NSRect(x: size * 0.45, y: size * 0.61, width: longLineWidth, height: lineHeight)
-    let topLine2 = NSRect(x: size * 0.45, y: size * 0.49, width: longLineWidth * 0.92, height: lineHeight)
-    let bottomLine = NSRect(x: size * 0.45, y: size * 0.24, width: longLineWidth * 1.1, height: lineHeight)
+    let lineHeight = size * 0.038
+    let longLineWidth = size * 0.17
+    let topLine1 = NSRect(x: size * 0.48, y: size * 0.56, width: longLineWidth, height: lineHeight)
+    let topLine2 = NSRect(x: size * 0.48, y: size * 0.48, width: longLineWidth * 0.88, height: lineHeight)
+    let bottomLine = NSRect(x: size * 0.48, y: size * 0.33, width: longLineWidth * 1.02, height: lineHeight)
 
     [topLine1, topLine2, bottomLine].forEach { rect in
         let path = NSBezierPath(roundedRect: rect, xRadius: lineHeight / 2, yRadius: lineHeight / 2)
@@ -62,18 +84,18 @@ func newspaperImage(size: CGFloat) -> NSImage {
     }
 
     let squareRect = NSRect(
-        x: size * 0.46,
-        y: size * 0.36,
-        width: size * 0.11,
-        height: size * 0.11
+        x: size * 0.49,
+        y: size * 0.39,
+        width: size * 0.072,
+        height: size * 0.072
     )
     let squarePath = NSBezierPath(roundedRect: squareRect, xRadius: size * 0.018, yRadius: size * 0.018)
     accentColor.setFill()
     squarePath.fill()
 
-    let shortLineWidth = size * 0.11
-    let shortLine1 = NSRect(x: size * 0.60, y: size * 0.40, width: shortLineWidth, height: size * 0.05)
-    let shortLine2 = NSRect(x: size * 0.60, y: size * 0.31, width: shortLineWidth, height: size * 0.05)
+    let shortLineWidth = size * 0.075
+    let shortLine1 = NSRect(x: size * 0.60, y: size * 0.42, width: shortLineWidth, height: size * 0.032)
+    let shortLine2 = NSRect(x: size * 0.60, y: size * 0.36, width: shortLineWidth, height: size * 0.032)
 
     [shortLine1, shortLine2].forEach { rect in
         let path = NSBezierPath(roundedRect: rect, xRadius: rect.height / 2, yRadius: rect.height / 2)
