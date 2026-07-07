@@ -212,6 +212,11 @@ struct CategoryWidgetView: View {
                                 }
                                 .buttonStyle(.plain)
 
+                                Button(intent: OpenShareIntent(categoryID: category.id, storyID: story.id, feedURL: story.feedUrl)) {
+                                    Image(systemName: "square.and.arrow.up")
+                                }
+                                .buttonStyle(.plain)
+
                                 Button(intent: PinStoryIntent(categoryID: category.id, storyID: story.id, feedURL: story.feedUrl)) {
                                     Image(systemName: category.isPinned(story) ? "pin.fill" : "pin")
                                 }
@@ -483,21 +488,32 @@ struct KeywordWidgetView: View {
                     .fixedSize(horizontal: false, vertical: true)
             } else {
                 ForEach(Array(entry.stories.prefix(storyLimit).enumerated()), id: \.element.storyKey) { index, story in
-                    Link(destination: storyURL(story)) {
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text(story.title)
-                                .font(.subheadline.weight(.semibold))
-                                .foregroundStyle(AINewsTheme.accentBlue)
-                                .lineLimit(2)
-                            if family != .systemSmall {
-                                Text(story.summary ?? story.source ?? story.feedUrl)
-                                    .font(.caption)
-                                    .foregroundStyle(AINewsTheme.textSecondary)
+                    HStack(alignment: .top, spacing: 8) {
+                        Link(destination: storyURL(story)) {
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text(story.title)
+                                    .font(.subheadline.weight(.semibold))
+                                    .foregroundStyle(AINewsTheme.accentBlue)
                                     .lineLimit(2)
+                                if family != .systemSmall {
+                                    Text(story.summary ?? story.source ?? story.feedUrl)
+                                        .font(.caption)
+                                        .foregroundStyle(AINewsTheme.textSecondary)
+                                        .lineLimit(2)
+                                }
                             }
                         }
+                        .buttonStyle(.plain)
+
+                        if family != .systemSmall {
+                            Button(intent: OpenShareIntent(categoryID: 0, storyID: story.id, feedURL: story.feedUrl)) {
+                                Image(systemName: "square.and.arrow.up")
+                            }
+                            .buttonStyle(.plain)
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(AINewsTheme.textMuted)
+                        }
                     }
-                    .buttonStyle(.plain)
 
                     if story.storyKey != entry.stories.prefix(storyLimit).last?.storyKey {
                         Divider()

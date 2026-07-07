@@ -46,6 +46,11 @@ struct RootView: View {
             guard let newValue else { return }
             NSWorkspace.shared.activateFileViewerSelecting([newValue])
         }
+        .onChange(of: state.pendingSharedURL) { _, newValue in
+            guard let newValue, !newValue.isEmpty else { return }
+            copyTextToPasteboard(newValue)
+            state.pendingSharedURL = nil
+        }
         .alert("Something needs attention", isPresented: Binding(
             get: { state.errorMessage != nil },
             set: { if !$0 { state.errorMessage = nil } }
@@ -718,7 +723,7 @@ private struct StoryCardView: View {
                     Button { openShare("https://www.facebook.com/sharer/sharer.php") } label: { Label("Facebook", systemImage: "person.2.fill") }
                     Button { openShare("https://www.reddit.com/submit") } label: { Label("Reddit", systemImage: "globe") }
                     Divider()
-                    Button { Task { await createStoryShareLink() } } label: { Label("Create share link", systemImage: "square.and.arrow.up") }
+                    Button { Task { await state.shareStory(story) } } label: { Label("Create share link", systemImage: "square.and.arrow.up") }
                 } label: {
                     Label("Share", systemImage: "square.and.arrow.up")
                 }
@@ -798,26 +803,6 @@ private struct StoryCardView: View {
             comps.queryItems = [URLQueryItem(name: "u", value: link)]
         }
         if let url = comps.url { NSWorkspace.shared.open(url) }
-    }
-
-    private func createStoryShareLink() async {
-        do {
-            let api = try state.authorizedAPIClient()
-            let response = try await api.createShare(kind: "story", title: story.title, payload: [
-                "itemId": .string(story.id),
-                "feedUrl": .string(story.feedUrl),
-                "title": .string(story.title),
-                "link": .string(story.link ?? ""),
-                "source": .string(story.source ?? ""),
-                "summary": .string(story.summary ?? ""),
-                "research": .string(story.research ?? "")
-            ])
-            let shareURL = response.url.hasPrefix("http") ? response.url : "\(state.backendURLString)\(response.url)"
-            copyTextToPasteboard(shareURL)
-            state.statusMessage = "Copied story share link."
-        } catch {
-            state.errorMessage = error.localizedDescription
-        }
     }
 }
 

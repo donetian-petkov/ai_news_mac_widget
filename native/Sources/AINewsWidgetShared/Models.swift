@@ -860,6 +860,7 @@ public struct WidgetCommand: Codable, Equatable, Hashable, Identifiable, Sendabl
         case openSummary
         case openResearch
         case openTranslation
+        case openShare
     }
 
     public var id: UUID

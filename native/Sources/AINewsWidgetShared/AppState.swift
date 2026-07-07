@@ -23,6 +23,7 @@ public final class WidgetAppState: ObservableObject {
     @Published public var showingWidgetHelp = false
     @Published public var showingWorkspace = false
     @Published public var exportedUsageURL: URL?
+    @Published public var pendingSharedURL: String?
 
     private let sessionStore: SessionStore
     private let snapshotStore: SnapshotStore
@@ -402,6 +403,33 @@ public final class WidgetAppState: ObservableObject {
         }
     }
 
+    public func shareStory(_ story: WidgetStory) async {
+        await runBusy("Preparing share link...") {
+            let api = try self.makeAPIClient()
+            do {
+                let response = try await api.createShare(kind: "story", title: story.title, payload: [
+                    "itemId": .string(story.id),
+                    "feedUrl": .string(story.feedUrl),
+                    "title": .string(story.title),
+                    "link": .string(story.link ?? ""),
+                    "source": .string(story.source ?? ""),
+                    "summary": .string(story.summary ?? ""),
+                    "research": .string(story.research ?? "")
+                ])
+                let shareURL = response.url.hasPrefix("http") ? response.url : "\(self.backendURLString)\(response.url)"
+                self.pendingSharedURL = shareURL
+                self.statusMessage = "Copied story share link for \(story.title)."
+            } catch {
+                if let sourceLink = story.link, !sourceLink.isEmpty {
+                    self.pendingSharedURL = sourceLink
+                    self.statusMessage = "Copied source link for \(story.title)."
+                } else {
+                    throw error
+                }
+            }
+        }
+    }
+
     public func authorizedAPIClient() throws -> APIClient {
         try makeAPIClient()
     }
@@ -778,11 +806,28 @@ public final class WidgetAppState: ObservableObject {
         case .openTranslation:
             guard let story = story(for: command) else { return }
             await triggerStoryAction(.translation, story: story, recordCommand: false)
+        case .openShare:
+            guard let story = story(for: command) else { return }
+            await shareStory(story)
         }
     }
 
     private func story(for command: WidgetCommand) -> WidgetStory? {
-        stories.first(where: { story in
+        if let current = stories.first(where: { story in
+            story.id == command.storyID && story.feedUrl == command.feedURL
+        }) {
+            return current
+        }
+
+        let snapshot = snapshotStore.loadSnapshot()
+        let cachedCategories = snapshot.storiesByCategory.values.lazy.flatMap { $0 }
+        if let cached = cachedCategories.first(where: { story in
+            story.id == command.storyID && story.feedUrl == command.feedURL
+        }) {
+            return cached
+        }
+
+        return snapshot.keywordMatches.first(where: { story in
             story.id == command.storyID && story.feedUrl == command.feedURL
         })
     }
