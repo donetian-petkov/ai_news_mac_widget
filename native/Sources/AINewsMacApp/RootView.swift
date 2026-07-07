@@ -355,6 +355,17 @@ private struct DashboardView: View {
                     .tag(category.id)
                     .padding(.vertical, 6)
                     .frame(maxWidth: .infinity, alignment: .leading)
+                    .contentShape(Rectangle())
+                    .onTapGesture(count: 2) {
+                        NotificationCenter.default.post(
+                            name: .aiNewsOpenCategoryWidget,
+                            object: nil,
+                            userInfo: [
+                                "categoryID": category.id,
+                                "categoryName": category.name
+                            ]
+                        )
+                    }
                 }
             }
             .scrollContentBackground(.hidden)

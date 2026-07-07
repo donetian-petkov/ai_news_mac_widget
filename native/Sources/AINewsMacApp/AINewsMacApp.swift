@@ -9,6 +9,7 @@ extension Notification.Name {
     static let aiNewsOpenWorkspace = Notification.Name("AINewsOpenWorkspace")
     static let aiNewsToggleFloatingWidget = Notification.Name("AINewsToggleFloatingWidget")
     static let aiNewsOpenFilteredWidget = Notification.Name("AINewsOpenFilteredWidget")
+    static let aiNewsOpenCategoryWidget = Notification.Name("AINewsOpenCategoryWidget")
 }
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
@@ -41,6 +42,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             self,
             selector: #selector(openFilteredWidget),
             name: .aiNewsOpenFilteredWidget,
+            object: nil
+        )
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(openCategoryWidget(_:)),
+            name: .aiNewsOpenCategoryWidget,
             object: nil
         )
         NSApp.activate(ignoringOtherApps: true)
@@ -129,6 +136,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             floatingWidgetManager = FloatingWidgetManager(state: appState)
         }
         floatingWidgetManager?.openFiltered()
+    }
+
+    @MainActor
+    @objc private func openCategoryWidget(_ notification: Notification) {
+        guard let appState else { return }
+        guard
+            let categoryID = notification.userInfo?["categoryID"] as? Int,
+            let categoryName = notification.userInfo?["categoryName"] as? String
+        else { return }
+
+        if floatingWidgetManager == nil {
+            floatingWidgetManager = FloatingWidgetManager(state: appState)
+        }
+        floatingWidgetManager?.openWidget(categoryID: categoryID, categoryName: categoryName)
     }
 
     @objc private func quitApp() {
