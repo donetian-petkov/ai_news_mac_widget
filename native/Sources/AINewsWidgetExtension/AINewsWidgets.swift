@@ -181,19 +181,30 @@ struct CategoryWidgetView: View {
 
                 ForEach(Array(entry.stories.prefix(category.activeCount).enumerated()), id: \.element.storyKey) { index, story in
                     VStack(alignment: .leading, spacing: 6) {
-                        Link(destination: storyURL(story) ?? URL(string: "ainewswidget://story")!) {
-                            VStack(alignment: .leading, spacing: 4) {
-                                Text(story.title)
-                                    .font(.subheadline.weight(.semibold))
-                                    .foregroundStyle(AINewsTheme.accentBlue)
-                                    .lineLimit(2)
-                                Text(story.summary ?? story.source ?? story.feedUrl)
-                                    .font(.caption)
-                                    .foregroundStyle(AINewsTheme.textSecondary)
-                                    .lineLimit(2)
+                        HStack(alignment: .top, spacing: 8) {
+                            Link(destination: storyURL(story) ?? URL(string: "ainewswidget://story")!) {
+                                VStack(alignment: .leading, spacing: 4) {
+                                    Text(story.title)
+                                        .font(.subheadline.weight(.semibold))
+                                        .foregroundStyle(AINewsTheme.accentBlue)
+                                        .lineLimit(2)
+                                    Text(story.summary ?? story.source ?? story.feedUrl)
+                                        .font(.caption)
+                                        .foregroundStyle(AINewsTheme.textSecondary)
+                                        .lineLimit(2)
+                                }
+                            }
+                            .buttonStyle(.plain)
+
+                            if family == .systemSmall {
+                                Button(intent: OpenShareIntent(categoryID: category.id, storyID: story.id, feedURL: story.feedUrl)) {
+                                    Image(systemName: "square.and.arrow.up")
+                                }
+                                .buttonStyle(.plain)
+                                .font(.caption.weight(.semibold))
+                                .foregroundStyle(AINewsTheme.textMuted)
                             }
                         }
-                        .buttonStyle(.plain)
 
                         if family != .systemSmall {
                             HStack(spacing: 12) {
@@ -505,7 +516,14 @@ struct KeywordWidgetView: View {
                         }
                         .buttonStyle(.plain)
 
-                        if family != .systemSmall {
+                        if family == .systemSmall {
+                            Button(intent: OpenShareIntent(categoryID: 0, storyID: story.id, feedURL: story.feedUrl)) {
+                                Image(systemName: "square.and.arrow.up")
+                            }
+                            .buttonStyle(.plain)
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(AINewsTheme.textMuted)
+                        } else {
                             Button(intent: OpenShareIntent(categoryID: 0, storyID: story.id, feedURL: story.feedUrl)) {
                                 Image(systemName: "square.and.arrow.up")
                             }
