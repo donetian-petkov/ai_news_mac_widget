@@ -24,6 +24,8 @@ public final class WidgetAppState: ObservableObject {
     @Published public var showingWorkspace = false
     @Published public var exportedUsageURL: URL?
     @Published public var pendingSharedURL: String?
+    @Published public var lastSharedStoryKey: String?
+    @Published public var lastShareMessage: String?
 
     private let sessionStore: SessionStore
     private let snapshotStore: SnapshotStore
@@ -90,6 +92,8 @@ public final class WidgetAppState: ObservableObject {
         selectedCategoryID = nil
         errorMessage = nil
         statusMessage = nil
+        lastSharedStoryKey = nil
+        lastShareMessage = nil
         try? snapshotStore.saveSnapshot(WidgetSnapshot())
     }
 
@@ -408,6 +412,8 @@ public final class WidgetAppState: ObservableObject {
             if let sourceLink = story.link, !sourceLink.isEmpty {
                 self.pendingSharedURL = sourceLink
                 self.statusMessage = "Copied article link for \(story.title)."
+                self.lastSharedStoryKey = story.storyKey
+                self.lastShareMessage = "Copied"
                 return
             }
 
@@ -430,6 +436,8 @@ public final class WidgetAppState: ObservableObject {
             let shareURL = response.url.hasPrefix("http") ? response.url : "\(self.backendURLString)\(response.url)"
             self.pendingSharedURL = shareURL
             self.statusMessage = "Copied local share link for \(story.title)."
+            self.lastSharedStoryKey = story.storyKey
+            self.lastShareMessage = "Copied local link"
         }
     }
 

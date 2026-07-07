@@ -127,6 +127,7 @@ private struct FloatingWidgetView: View {
 
     @State private var stories: [WidgetStory] = []
     @State private var loading = false
+    @State private var copiedStoryKey: String?
     /// How many stories to show. Grows by `pageStep` via "Show More", resets to
     /// `pageStep` via "Reset". Mirrors ai_news_deploy_ready's column behaviour.
     @State private var visibleCount = 10
@@ -164,6 +165,16 @@ private struct FloatingWidgetView: View {
         // Refresh immediately when the app signals new AI content (summary/research/translation done).
         .onReceive(NotificationCenter.default.publisher(for: Notification.Name("AINewsWidgetShouldRefresh"))) { _ in
             Task { await reload() }
+        }
+        .onChange(of: state.lastSharedStoryKey) { _, newValue in
+            guard let newValue else { return }
+            copiedStoryKey = newValue
+            Task {
+                try? await Task.sleep(nanoseconds: 1_600_000_000)
+                if copiedStoryKey == newValue {
+                    copiedStoryKey = nil
+                }
+            }
         }
     }
 
@@ -342,11 +353,17 @@ private struct FloatingWidgetView: View {
                         Button {
                             Task { await state.shareStory(story) }
                         } label: {
-                            Image(systemName: "square.and.arrow.up")
-                                .font(AINewsTheme.font(12, weight: .semibold))
+                            HStack(spacing: 6) {
+                                Image(systemName: copiedStoryKey == story.storyKey ? "checkmark" : "square.and.arrow.up")
+                                    .font(AINewsTheme.font(12, weight: .semibold))
+                                if copiedStoryKey == story.storyKey {
+                                    Text("Copied")
+                                        .font(AINewsTheme.font(10, weight: .semibold))
+                                }
+                            }
                         }
                         .buttonStyle(.borderless)
-                        .foregroundStyle(AINewsTheme.textMuted)
+                        .foregroundStyle(copiedStoryKey == story.storyKey ? AINewsTheme.accentCyan : AINewsTheme.textMuted)
                         .help("Copy a share link for this story")
                     }
 
