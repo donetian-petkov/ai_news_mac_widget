@@ -723,7 +723,7 @@ private struct StoryCardView: View {
                     Button { openShare("https://www.facebook.com/sharer/sharer.php") } label: { Label("Facebook", systemImage: "person.2.fill") }
                     Button { openShare("https://www.reddit.com/submit") } label: { Label("Reddit", systemImage: "globe") }
                     Divider()
-                    Button { Task { await state.shareStory(story) } } label: { Label("Create share link", systemImage: "square.and.arrow.up") }
+                    Button { Task { await state.createLocalStoryShareLink(story) } } label: { Label("Create local share link", systemImage: "square.and.arrow.up") }
                 } label: {
                     Label("Share", systemImage: "square.and.arrow.up")
                 }

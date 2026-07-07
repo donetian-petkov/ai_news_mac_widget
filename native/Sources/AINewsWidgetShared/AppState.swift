@@ -405,28 +405,31 @@ public final class WidgetAppState: ObservableObject {
 
     public func shareStory(_ story: WidgetStory) async {
         await runBusy("Preparing share link...") {
-            let api = try self.makeAPIClient()
-            do {
-                let response = try await api.createShare(kind: "story", title: story.title, payload: [
-                    "itemId": .string(story.id),
-                    "feedUrl": .string(story.feedUrl),
-                    "title": .string(story.title),
-                    "link": .string(story.link ?? ""),
-                    "source": .string(story.source ?? ""),
-                    "summary": .string(story.summary ?? ""),
-                    "research": .string(story.research ?? "")
-                ])
-                let shareURL = response.url.hasPrefix("http") ? response.url : "\(self.backendURLString)\(response.url)"
-                self.pendingSharedURL = shareURL
-                self.statusMessage = "Copied story share link for \(story.title)."
-            } catch {
-                if let sourceLink = story.link, !sourceLink.isEmpty {
-                    self.pendingSharedURL = sourceLink
-                    self.statusMessage = "Copied source link for \(story.title)."
-                } else {
-                    throw error
-                }
+            if let sourceLink = story.link, !sourceLink.isEmpty {
+                self.pendingSharedURL = sourceLink
+                self.statusMessage = "Copied article link for \(story.title)."
+                return
             }
+
+            throw APIClientError.server(message: "This story does not expose a shareable article URL.")
+        }
+    }
+
+    public func createLocalStoryShareLink(_ story: WidgetStory) async {
+        await runBusy("Preparing local share link...") {
+            let api = try self.makeAPIClient()
+            let response = try await api.createShare(kind: "story", title: story.title, payload: [
+                "itemId": .string(story.id),
+                "feedUrl": .string(story.feedUrl),
+                "title": .string(story.title),
+                "link": .string(story.link ?? ""),
+                "source": .string(story.source ?? ""),
+                "summary": .string(story.summary ?? ""),
+                "research": .string(story.research ?? "")
+            ])
+            let shareURL = response.url.hasPrefix("http") ? response.url : "\(self.backendURLString)\(response.url)"
+            self.pendingSharedURL = shareURL
+            self.statusMessage = "Copied local share link for \(story.title)."
         }
     }
 
