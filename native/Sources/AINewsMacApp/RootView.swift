@@ -463,14 +463,14 @@ private struct DashboardView: View {
             }
             .buttonStyle(.bordered)
 
-            Button("Open Selected Feed Widget") {
+            Button("Show Widget") {
                 NotificationCenter.default.post(name: .aiNewsToggleFloatingWidget, object: nil)
             }
             .buttonStyle(.borderedProminent)
             .tint(AINewsTheme.accentGold)
             .help("Open an always-on-top, scrollable widget for the currently selected feed/category.")
 
-            Button("Open Filtered Feed Widget") {
+            Button("Show Filtered Widget") {
                 NotificationCenter.default.post(name: .aiNewsOpenFilteredWidget, object: nil)
             }
             .buttonStyle(.bordered)

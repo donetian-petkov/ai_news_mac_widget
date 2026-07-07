@@ -72,8 +72,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         menu.addItem(NSMenuItem(title: "Refresh Categories", action: #selector(requestRefresh), keyEquivalent: "r"))
         menu.addItem(NSMenuItem(title: "Settings & AI", action: #selector(openSettings), keyEquivalent: ","))
         menu.addItem(NSMenuItem(title: "Widget Help", action: #selector(openWidgetHelp), keyEquivalent: "w"))
-        menu.addItem(NSMenuItem(title: "Open Selected Feed Widget", action: #selector(toggleFloatingWidget), keyEquivalent: "f"))
-        menu.addItem(NSMenuItem(title: "Open Filtered Feed Widget", action: #selector(openFilteredWidget), keyEquivalent: ""))
+        menu.addItem(NSMenuItem(title: "Show Widget", action: #selector(toggleFloatingWidget), keyEquivalent: "f"))
+        menu.addItem(NSMenuItem(title: "Show Filtered Widget", action: #selector(openFilteredWidget), keyEquivalent: ""))
         let reopenItem = NSMenuItem(title: "Reopen Closed Widget", action: #selector(reopenClosedWidget), keyEquivalent: "t")
         reopenItem.keyEquivalentModifierMask = [.command, .shift]
         menu.addItem(reopenItem)
