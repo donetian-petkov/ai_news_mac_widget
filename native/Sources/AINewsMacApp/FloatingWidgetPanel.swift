@@ -74,7 +74,7 @@ final class FloatingWidgetManager: NSObject, NSWindowDelegate {
             return
         }
 
-        let hosting = NSHostingView(
+        let hostingController = NSHostingController(
             rootView: FloatingWidgetView(categoryID: categoryID, categoryName: categoryName, isFiltered: isFiltered)
                 .environmentObject(state)
                 .environmentObject(ThemeSettings.shared)
@@ -82,17 +82,18 @@ final class FloatingWidgetManager: NSObject, NSWindowDelegate {
 
         let panel = NSPanel(
             contentRect: NSRect(x: 0, y: 0, width: 340, height: 480),
-            styleMask: [.titled, .closable, .resizable, .utilityWindow, .nonactivatingPanel],
+            styleMask: [.titled, .closable, .resizable],
             backing: .buffered,
             defer: false
         )
         panel.title = categoryName
-        panel.contentView = hosting
+        panel.contentViewController = hostingController
         // Float above other apps and follow the user across Spaces / full-screen.
         panel.level = .floating
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         panel.isFloatingPanel = true
         panel.hidesOnDeactivate = false
+        panel.becomesKeyOnlyIfNeeded = false
         // Keep the panel object around when closed so reopening the same category
         // just brings it back instead of leaking a new one.
         panel.isReleasedWhenClosed = false
