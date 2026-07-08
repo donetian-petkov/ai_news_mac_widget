@@ -327,62 +327,61 @@ private struct FloatingWidgetView: View {
     @AppStorage("ai_news_show_thumbnails") private var coversEnabled = true
 
     private func storyRow(_ story: WidgetStory) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
+        ZStack(alignment: .topTrailing) {
             HStack(alignment: .top, spacing: 12) {
                 if coversEnabled {
                     StoryThumbnail(url: story.coverUrl.flatMap { URL(string: $0) }, size: 66)
                 }
                 VStack(alignment: .leading, spacing: 6) {
-                    HStack(alignment: .top, spacing: 8) {
-                        VStack(alignment: .leading, spacing: 6) {
-                            HStack(spacing: 6) {
-                                Text(story.source ?? story.feedUrl)
-                                    .font(AINewsTheme.font(11, weight: .semibold))
-                                    .foregroundStyle(AINewsTheme.accentCyan)
-                                    .lineLimit(1)
-                                if let mood = story.mood, !mood.isEmpty {
-                                    MoodChip(mood: mood)
-                                }
-                            }
-                            if let date = story.publishedDate {
-                                Text(date.formatted(date: .abbreviated, time: .shortened))
-                                    .font(AINewsTheme.font(10))
-                                    .foregroundStyle(AINewsTheme.textMuted)
-                            }
+                    HStack(spacing: 6) {
+                        Text(story.source ?? story.feedUrl)
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(AINewsTheme.accentCyan)
+                            .lineLimit(1)
+                        if let mood = story.mood, !mood.isEmpty {
+                            MoodChip(mood: mood)
                         }
-                        Spacer(minLength: 8)
-                        Button {
-                            Task { await state.shareStory(story) }
-                        } label: {
-                            HStack(spacing: 6) {
-                                Image(systemName: copiedStoryKey == story.storyKey ? "checkmark" : "square.and.arrow.up")
-                                    .font(AINewsTheme.font(12, weight: .semibold))
-                                if copiedStoryKey == story.storyKey {
-                                    Text("Copied")
-                                        .font(AINewsTheme.font(10, weight: .semibold))
-                                }
-                            }
-                        }
-                        .buttonStyle(.borderless)
-                        .foregroundStyle(copiedStoryKey == story.storyKey ? AINewsTheme.accentCyan : AINewsTheme.textMuted)
-                        .help("Copy a share link for this story")
+                    }
+                    if let date = story.publishedDate {
+                        Text(date.formatted(date: .abbreviated, time: .shortened))
+                            .font(.caption2)
+                            .foregroundStyle(AINewsTheme.textMuted)
                     }
 
                     Text(story.title)
-                        .font(AINewsTheme.font(14, weight: .bold))
+                        .font(.subheadline.weight(.bold))
                         .foregroundStyle(AINewsTheme.accentBlue)
                         .fixedSize(horizontal: false, vertical: true)
+
                     if let translated = story.translatedTitle, !translated.isEmpty, translated != story.title {
                         Text(translated)
-                            .font(AINewsTheme.font(12))
+                            .font(.caption)
                             .foregroundStyle(AINewsTheme.accentGold)
                             .fixedSize(horizontal: false, vertical: true)
                     }
+
                     block("Summary", story.summary, pending: story.summaryPending, enabled: state.globalAiDefaults.summaryEnabled, accent: AINewsTheme.accentBlue)
                     block("Research", story.research, pending: story.researchPending, enabled: state.globalAiDefaults.researchEnabled, accent: AINewsTheme.accentCyan)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.trailing, 30)
             }
+
+            Button {
+                Task { await state.shareStory(story) }
+            } label: {
+                HStack(spacing: 6) {
+                    Image(systemName: copiedStoryKey == story.storyKey ? "checkmark" : "square.and.arrow.up")
+                        .font(.caption.weight(.semibold))
+                    if copiedStoryKey == story.storyKey {
+                        Text("Copied")
+                            .font(.caption2.weight(.semibold))
+                    }
+                }
+            }
+            .buttonStyle(.borderless)
+            .foregroundStyle(copiedStoryKey == story.storyKey ? AINewsTheme.accentCyan : AINewsTheme.textMuted)
+            .help("Copy a share link for this story")
         }
         .padding(12)
         .aiNewsCardStyle()
@@ -404,16 +403,16 @@ private struct FloatingWidgetView: View {
         if enabled {
             VStack(alignment: .leading, spacing: 2) {
                 Text(label.uppercased())
-                    .font(AINewsTheme.font(10, weight: .semibold))
+                    .font(.caption2.weight(.semibold))
                     .foregroundStyle(accent.opacity(0.9))
                 if let text, !text.isEmpty {
                     Text(text)
-                        .font(AINewsTheme.font(12))
+                        .font(.caption)
                         .foregroundStyle(AINewsTheme.textSecondary)
                         .fixedSize(horizontal: false, vertical: true)
                 } else {
                     Text(pending ? "Generating…" : "Not generated yet.")
-                        .font(AINewsTheme.font(12))
+                        .font(.caption)
                         .foregroundStyle(AINewsTheme.textMuted)
                 }
             }
