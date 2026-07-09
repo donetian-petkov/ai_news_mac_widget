@@ -300,8 +300,9 @@ private struct FloatingWidgetView: View {
         return min(max(406 + titleWeight + summaryWeight, 430), 468)
     }
 
-    private var stackStoryViewportHeight: CGFloat {
-        min(max(estimatedStackWindowHeight - 170, 214), 390)
+    private func stackStoryViewportHeight(for availableHeight: CGFloat) -> CGFloat {
+        let preferred = estimatedStackWindowHeight - 170
+        return max(min(availableHeight, preferred), min(availableHeight, 214))
     }
 
     private var estimatedColumnWindowWidth: CGFloat {
@@ -695,52 +696,57 @@ private struct FloatingWidgetView: View {
     }
 
     private var stackContent: some View {
-        VStack(spacing: 12) {
-            ZStack(alignment: .topLeading) {
-                if let tertiary = stackStory(offsetBy: 2) {
-                    stackBackdropCard(for: tertiary, scale: 0.92, xOffset: 52, yOffset: 8, opacity: 0.10)
-                }
-                if let secondary = stackStory(offsetBy: 1) {
-                    stackBackdropCard(for: secondary, scale: 0.96, xOffset: 28, yOffset: 4, opacity: 0.16)
-                }
-                if let current = currentStackStory {
-                    ScrollView {
-                        storyRow(current, draggable: false)
+        GeometryReader { proxy in
+            let availableViewportHeight = max(proxy.size.height - 94, 214)
+
+            VStack(spacing: 12) {
+                ZStack(alignment: .topLeading) {
+                    if let tertiary = stackStory(offsetBy: 2) {
+                        stackBackdropCard(for: tertiary, scale: 0.92, xOffset: 52, yOffset: 8, opacity: 0.10)
                     }
-                    .scrollIndicators(.hidden)
-                    .frame(maxWidth: .infinity, maxHeight: stackStoryViewportHeight, alignment: .top)
+                    if let secondary = stackStory(offsetBy: 1) {
+                        stackBackdropCard(for: secondary, scale: 0.96, xOffset: 28, yOffset: 4, opacity: 0.16)
+                    }
+                    if let current = currentStackStory {
+                        ScrollView {
+                            storyRow(current, draggable: false)
+                                .frame(maxWidth: .infinity, alignment: .topLeading)
+                        }
+                        .scrollIndicators(.hidden)
+                        .frame(maxWidth: .infinity, maxHeight: stackStoryViewportHeight(for: availableViewportHeight), alignment: .top)
+                    }
                 }
+                .frame(maxWidth: .infinity, minHeight: 214, maxHeight: availableViewportHeight, alignment: .top)
+                .padding(.horizontal, 14)
+                .padding(.top, 14)
+
+                HStack(spacing: 10) {
+                    Button {
+                        moveStack(by: -1)
+                    } label: {
+                        stackNavLabel(systemImage: "chevron.up", title: "Previous")
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(stackIndex <= 0)
+
+                    Text("\(stackIndex + 1) of \(stories.count)")
+                        .font(widgetFont(12, weight: .semibold))
+                        .foregroundStyle(AINewsTheme.textMuted)
+                        .frame(minWidth: 72)
+
+                    Button {
+                        moveStack(by: 1)
+                    } label: {
+                        stackNavLabel(systemImage: "chevron.down", title: "Next")
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(stackIndex >= stories.count - 1)
+                }
+                .padding(.horizontal, 14)
+                .padding(.bottom, 14)
             }
-            .frame(maxWidth: .infinity, alignment: .top)
-            .padding(.horizontal, 14)
-            .padding(.top, 14)
-
-            HStack(spacing: 10) {
-                Button {
-                    moveStack(by: -1)
-                } label: {
-                    stackNavLabel(systemImage: "chevron.up", title: "Previous")
-                }
-                .buttonStyle(.plain)
-                .disabled(stackIndex <= 0)
-
-                Text("\(stackIndex + 1) of \(stories.count)")
-                    .font(widgetFont(12, weight: .semibold))
-                    .foregroundStyle(AINewsTheme.textMuted)
-                    .frame(minWidth: 72)
-
-                Button {
-                    moveStack(by: 1)
-                } label: {
-                    stackNavLabel(systemImage: "chevron.down", title: "Next")
-                }
-                .buttonStyle(.plain)
-                .disabled(stackIndex >= stories.count - 1)
-            }
-            .padding(.horizontal, 14)
-            .padding(.bottom, 14)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         }
-        .frame(maxWidth: .infinity, alignment: .top)
     }
 
     private func stackBackdropCard(for _: WidgetStory, scale: CGFloat, xOffset: CGFloat, yOffset: CGFloat, opacity: Double) -> some View {
