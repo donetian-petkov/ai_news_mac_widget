@@ -136,13 +136,13 @@ final class FloatingWidgetManager: NSObject, NSWindowDelegate {
 
         let panel = NSPanel(
             contentRect: NSRect(x: 0, y: 0, width: 340, height: 480),
-            styleMask: [.titled, .closable, .resizable, .fullSizeContentView],
+            styleMask: [.titled, .closable, .resizable],
             backing: .buffered,
             defer: false
         )
         panel.title = categoryName
         panel.contentViewController = hostingController
-        panel.titlebarAppearsTransparent = true
+        panel.titlebarAppearsTransparent = false
         panel.titleVisibility = .hidden
         panel.isMovableByWindowBackground = false
         panel.isOpaque = false
@@ -256,6 +256,16 @@ private struct FloatingWidgetView: View {
         stories.map(\.storyKey)
     }
 
+    private var estimatedStackWindowHeight: CGFloat {
+        guard let story = currentStackStory else { return 640 }
+        let titleLines = ceil(Double(story.title.count) / 34.0)
+        let summaryLength = story.summary?.count ?? 0
+        let summaryLines = ceil(Double(summaryLength) / 38.0)
+        let baseHeight = 330.0
+        let dynamicHeight = (titleLines * 24.0) + (summaryLines * 18.0)
+        return CGFloat(min(max(baseHeight + dynamicHeight, 520.0), 760.0))
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             header
@@ -314,6 +324,10 @@ private struct FloatingWidgetView: View {
         .onChange(of: layoutMode) { _, newValue in
             FloatingWidgetPreferences.setLayoutMode(newValue, categoryID: categoryID, isFiltered: isFiltered)
             clampStackIndex()
+            resizeWindowForCurrentLayout()
+        }
+        .onAppear {
+            resizeWindowForCurrentLayout()
         }
     }
 
@@ -684,15 +698,28 @@ private struct FloatingWidgetView: View {
             draggedStoryKey = story.storyKey
             return NSItemProvider(object: story.storyKey as NSString)
         } preview: {
-            HStack(spacing: 8) {
-                Image(systemName: "line.3.horizontal")
-                Text("Move story")
-                    .lineLimit(1)
+            HStack(alignment: .top, spacing: 10) {
+                if coversEnabled {
+                    StoryThumbnail(url: story.coverUrl.flatMap { URL(string: $0) }, size: 46)
+                }
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(story.source ?? story.feedUrl)
+                        .font(widgetCaption(weight: .semibold))
+                        .foregroundStyle(AINewsTheme.accentCyan)
+                        .lineLimit(1)
+                    Text(story.title)
+                        .font(widgetHeadline(weight: .bold))
+                        .foregroundStyle(AINewsTheme.accentBlue)
+                        .lineLimit(3)
+                    if let summary = story.summary, !summary.isEmpty {
+                        Text(summary)
+                            .font(widgetCaption())
+                            .foregroundStyle(AINewsTheme.textSecondary)
+                            .lineLimit(2)
+                    }
+                }
             }
-            .font(widgetFont(12, weight: .semibold))
-            .foregroundStyle(AINewsTheme.textPrimary)
-            .padding(.horizontal, 12)
-            .padding(.vertical, 8)
+            .padding(12)
             .background(
                 RoundedRectangle(cornerRadius: 12, style: .continuous)
                     .fill(AINewsTheme.backgroundAlt.opacity(0.96))
@@ -701,6 +728,8 @@ private struct FloatingWidgetView: View {
                 RoundedRectangle(cornerRadius: 12, style: .continuous)
                     .stroke(AINewsTheme.panelBorder.opacity(0.8), lineWidth: 1)
             )
+            .opacity(0.9)
+            .frame(width: 300, alignment: .leading)
         }
         .onDrop(of: [UTType.plainText], delegate: StoryDropDelegate(
             targetStoryKey: story.storyKey,
@@ -776,6 +805,20 @@ private struct FloatingWidgetView: View {
 
     private func clampStackIndex() {
         stackIndex = max(0, min(stackIndex, max(stories.count - 1, 0)))
+    }
+
+    private func resizeWindowForCurrentLayout() {
+        DispatchQueue.main.async {
+            guard let window = NSApp.keyWindow ?? NSApp.mainWindow else { return }
+            var frame = window.frame
+            let targetHeight: CGFloat = layoutMode == .stack ? estimatedStackWindowHeight : max(frame.height, 560)
+            let targetWidth: CGFloat = layoutMode == .stack ? max(frame.width, 380) : frame.width
+            let deltaHeight = targetHeight - frame.height
+            frame.origin.y -= deltaHeight
+            frame.size.height = targetHeight
+            frame.size.width = targetWidth
+            window.setFrame(frame, display: true, animate: true)
+        }
     }
 }
 
