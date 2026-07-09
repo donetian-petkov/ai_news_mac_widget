@@ -170,6 +170,18 @@ private struct FloatingWidgetView: View {
         widgetFont(18, weight: weight)
     }
 
+    private func widgetHeaderTitle(weight: Font.Weight = .bold) -> Font {
+        widgetFont(20, weight: weight)
+    }
+
+    private func widgetHeaderMeta(weight: Font.Weight = .semibold) -> Font {
+        widgetFont(14, weight: weight)
+    }
+
+    private func widgetHeaderStat(weight: Font.Weight = .semibold) -> Font {
+        widgetFont(13, weight: weight)
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             header
@@ -206,9 +218,10 @@ private struct FloatingWidgetView: View {
     private var header: some View {
         HStack(spacing: 8) {
             Image(systemName: "newspaper.fill")
+                .font(widgetFont(17, weight: .bold))
                 .foregroundStyle(AINewsTheme.accentBlue)
             Text(categoryName)
-                .font(widgetFont(16, weight: .bold))
+                .font(widgetHeaderTitle())
                 .foregroundStyle(AINewsTheme.textPrimary)
                 .lineLimit(1)
             Spacer(minLength: 8)
@@ -216,13 +229,13 @@ private struct FloatingWidgetView: View {
             TimelineView(.periodic(from: Date(), by: 30)) { context in
                 VStack(spacing: 1) {
                     Text(context.date.formatted(date: .abbreviated, time: .shortened))
-                        .font(widgetFont(11, weight: .semibold))
+                        .font(widgetHeaderMeta())
                         .foregroundStyle(AINewsTheme.textSecondary)
                     Text("\(tokenText) tokens")
-                        .font(widgetFont(10))
+                        .font(widgetHeaderStat(weight: .bold))
                         .foregroundStyle(AINewsTheme.accentCyan)
                     Text("\(pendingCount) pending")
-                        .font(widgetFont(10, weight: .semibold))
+                        .font(widgetHeaderStat())
                         .foregroundStyle(pendingCount > 0 ? AINewsTheme.accentGold : AINewsTheme.textMuted)
                 }
                 .lineLimit(1)
