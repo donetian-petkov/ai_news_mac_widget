@@ -52,19 +52,23 @@ private enum FloatingWidgetPreferences {
 }
 
 private struct FloatingGlassBackground: NSViewRepresentable {
+    let enabled: Bool
+
     func makeNSView(context: Context) -> NSVisualEffectView {
         let view = NSVisualEffectView()
         view.state = .active
         view.material = .sidebar
         view.blendingMode = .behindWindow
         view.isEmphasized = false
-        view.alphaValue = 0.82
+        view.alphaValue = enabled ? 0.82 : 0
+        view.isHidden = !enabled
         return view
     }
 
     func updateNSView(_ nsView: NSVisualEffectView, context: Context) {
         nsView.state = .active
-        nsView.alphaValue = 0.82
+        nsView.alphaValue = enabled ? 0.82 : 0
+        nsView.isHidden = !enabled
     }
 }
 
@@ -297,6 +301,10 @@ private struct FloatingWidgetView: View {
         420
     }
 
+    private var usesTransparentWidgetBackground: Bool {
+        theme.widgetBackgroundMode == .transparent
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             header
@@ -306,27 +314,50 @@ private struct FloatingWidgetView: View {
         .frame(minWidth: 220, minHeight: 180)
         .background(
             ZStack {
-                FloatingGlassBackground()
-                LinearGradient(
-                    colors: [
-                        AINewsTheme.backgroundAlt.opacity(0.16),
-                        AINewsTheme.background.opacity(0.22)
-                    ],
-                    startPoint: .topLeading,
-                    endPoint: .bottomTrailing
-                )
-                RadialGradient(
-                    gradient: Gradient(colors: [AINewsTheme.panelBorder.opacity(0.08), .clear]),
-                    center: UnitPoint(x: 0.05, y: 0.0),
-                    startRadius: 0,
-                    endRadius: 520
-                )
-                RadialGradient(
-                    gradient: Gradient(colors: [AINewsTheme.accentCyan.opacity(0.05), .clear]),
-                    center: UnitPoint(x: 1.0, y: 0.02),
-                    startRadius: 0,
-                    endRadius: 520
-                )
+                FloatingGlassBackground(enabled: usesTransparentWidgetBackground)
+                if usesTransparentWidgetBackground {
+                    LinearGradient(
+                        colors: [
+                            AINewsTheme.backgroundAlt.opacity(0.16),
+                            AINewsTheme.background.opacity(0.22)
+                        ],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    )
+                    RadialGradient(
+                        gradient: Gradient(colors: [AINewsTheme.panelBorder.opacity(0.08), .clear]),
+                        center: UnitPoint(x: 0.05, y: 0.0),
+                        startRadius: 0,
+                        endRadius: 520
+                    )
+                    RadialGradient(
+                        gradient: Gradient(colors: [AINewsTheme.accentCyan.opacity(0.05), .clear]),
+                        center: UnitPoint(x: 1.0, y: 0.02),
+                        startRadius: 0,
+                        endRadius: 520
+                    )
+                } else {
+                    LinearGradient(
+                        colors: [
+                            AINewsTheme.backgroundAlt.opacity(0.96),
+                            AINewsTheme.background.opacity(0.98)
+                        ],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    )
+                    RadialGradient(
+                        gradient: Gradient(colors: [AINewsTheme.panelBorder.opacity(0.14), .clear]),
+                        center: UnitPoint(x: 0.05, y: 0.0),
+                        startRadius: 0,
+                        endRadius: 520
+                    )
+                    RadialGradient(
+                        gradient: Gradient(colors: [AINewsTheme.accentCyan.opacity(0.08), .clear]),
+                        center: UnitPoint(x: 1.0, y: 0.02),
+                        startRadius: 0,
+                        endRadius: 520
+                    )
+                }
             }
         )
         .dynamicTypeSize(theme.widgetFontSize.dynamicTypeSize)

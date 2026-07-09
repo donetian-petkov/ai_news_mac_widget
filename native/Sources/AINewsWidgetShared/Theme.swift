@@ -70,6 +70,18 @@ public enum AINewsVibe: String, CaseIterable, Sendable {
     }
 }
 
+public enum AINewsWidgetBackgroundMode: String, CaseIterable, Sendable {
+    case solid
+    case transparent
+
+    public var displayName: String {
+        switch self {
+        case .solid: return "Solid"
+        case .transparent: return "Transparent"
+        }
+    }
+}
+
 /// Live theme + font-size settings, persisted and shared across the app.
 @MainActor
 public final class ThemeSettings: ObservableObject {
@@ -82,6 +94,9 @@ public final class ThemeSettings: ObservableObject {
         didSet { applyAppAppearance() }
     }
     @AppStorage("ai_news_widget_font_size") public var widgetFontSizeRaw: String = AINewsFontSize.medium.rawValue {
+        didSet { notifyChanged() }
+    }
+    @AppStorage("ai_news_widget_background_mode") public var widgetBackgroundModeRaw: String = AINewsWidgetBackgroundMode.transparent.rawValue {
         didSet { notifyChanged() }
     }
 
@@ -99,6 +114,10 @@ public final class ThemeSettings: ObservableObject {
     public var widgetFontSize: AINewsFontSize {
         get { AINewsFontSize(rawValue: widgetFontSizeRaw) ?? .medium }
         set { widgetFontSizeRaw = newValue.rawValue }
+    }
+    public var widgetBackgroundMode: AINewsWidgetBackgroundMode {
+        get { AINewsWidgetBackgroundMode(rawValue: widgetBackgroundModeRaw) ?? .transparent }
+        set { widgetBackgroundModeRaw = newValue.rawValue }
     }
 
     public init() {

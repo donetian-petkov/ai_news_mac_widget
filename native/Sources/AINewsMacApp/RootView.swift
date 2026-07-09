@@ -1996,6 +1996,15 @@ private struct SettingsView: View {
                 }
             }
             .pickerStyle(.segmented)
+            Picker("Widget background", selection: Binding(
+                get: { theme.widgetBackgroundMode },
+                set: { theme.widgetBackgroundMode = $0 }
+            )) {
+                ForEach(AINewsWidgetBackgroundMode.allCases, id: \.self) { mode in
+                    Text(mode.displayName).tag(mode)
+                }
+            }
+            .pickerStyle(.segmented)
         }
         .padding(16)
         .aiNewsPanelStyle()
