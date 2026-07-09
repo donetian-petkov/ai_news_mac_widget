@@ -283,14 +283,14 @@ private struct FloatingWidgetView: View {
     }
 
     private var estimatedStackWindowWidth: CGFloat {
-        guard let story = currentStackStory else { return 408 }
-        let titleWeight = min(CGFloat(story.title.count) * 0.34, 34)
-        let summaryWeight = min(CGFloat(story.summary?.count ?? 0) * 0.08, 18)
-        return min(max(388 + titleWeight + summaryWeight, 396), 430)
+        guard let story = currentStackStory else { return 436 }
+        let titleWeight = min(CGFloat(story.title.count) * 0.38, 40)
+        let summaryWeight = min(CGFloat(story.summary?.count ?? 0) * 0.1, 22)
+        return min(max(406 + titleWeight + summaryWeight, 430), 468)
     }
 
     private var stackStoryViewportHeight: CGFloat {
-        min(max(estimatedStackWindowHeight - 208, 220), 360)
+        min(max(estimatedStackWindowHeight - 192, 236), 390)
     }
 
     private var estimatedColumnWindowWidth: CGFloat {
@@ -1041,7 +1041,7 @@ private struct FloatingWidgetView: View {
             frame.origin.x -= deltaWidth / 2
             frame.size.height = targetHeight
             frame.size.width = targetWidth
-            window.minSize = layoutMode == .stack ? NSSize(width: 396, height: 260) : NSSize(width: 400, height: 260)
+            window.minSize = layoutMode == .stack ? NSSize(width: 430, height: 260) : NSSize(width: 400, height: 260)
             window.setFrame(frame, display: true, animate: true)
         }
     }
