@@ -301,8 +301,7 @@ private struct FloatingWidgetView: View {
     }
 
     private func stackStoryViewportHeight(for availableHeight: CGFloat) -> CGFloat {
-        let preferred = estimatedStackWindowHeight - 170
-        return max(min(availableHeight, preferred), min(availableHeight, 214))
+        max(availableHeight, 214)
     }
 
     private var estimatedColumnWindowWidth: CGFloat {
@@ -708,12 +707,12 @@ private struct FloatingWidgetView: View {
                         stackBackdropCard(for: secondary, scale: 0.96, xOffset: 28, yOffset: 4, opacity: 0.16)
                     }
                     if let current = currentStackStory {
-                        ScrollView {
-                            storyRow(current, draggable: false)
-                                .frame(maxWidth: .infinity, alignment: .topLeading)
-                        }
-                        .scrollIndicators(.hidden)
-                        .frame(maxWidth: .infinity, maxHeight: stackStoryViewportHeight(for: availableViewportHeight), alignment: .top)
+                        storyRow(current, draggable: false, minCardHeight: stackStoryViewportHeight(for: availableViewportHeight))
+                            .frame(
+                                maxWidth: .infinity,
+                                minHeight: stackStoryViewportHeight(for: availableViewportHeight),
+                                alignment: .topLeading
+                            )
                     }
                 }
                 .frame(maxWidth: .infinity, minHeight: 214, maxHeight: availableViewportHeight, alignment: .top)
@@ -894,7 +893,7 @@ private struct FloatingWidgetView: View {
 
     @AppStorage("ai_news_show_thumbnails") private var coversEnabled = true
 
-    private func storyRow(_ story: WidgetStory, draggable: Bool = true) -> some View {
+    private func storyRow(_ story: WidgetStory, draggable: Bool = true, minCardHeight: CGFloat? = nil) -> some View {
         ZStack(alignment: .topTrailing) {
             HStack(alignment: .top, spacing: 12) {
                 if coversEnabled {
@@ -955,6 +954,7 @@ private struct FloatingWidgetView: View {
             .help("Copy a share link for this story")
         }
         .padding(12)
+        .frame(minHeight: minCardHeight, alignment: .top)
         .aiNewsCardStyle()
         .contentShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
         .opacity(draggedStoryKey == story.storyKey ? 0.72 : 1)
