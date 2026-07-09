@@ -470,10 +470,10 @@ private struct FloatingWidgetView: View {
             VStack(spacing: 12) {
                 ZStack {
                     if let tertiary = stackStory(offsetBy: 2) {
-                        stackBackdropCard(for: tertiary, scale: 0.92, xOffset: 34, yOffset: 10, opacity: 0.20)
+                        stackBackdropCard(for: tertiary, scale: 0.92, xOffset: 52, yOffset: 8, opacity: 0.10)
                     }
                     if let secondary = stackStory(offsetBy: 1) {
-                        stackBackdropCard(for: secondary, scale: 0.96, xOffset: 18, yOffset: 5, opacity: 0.32)
+                        stackBackdropCard(for: secondary, scale: 0.96, xOffset: 28, yOffset: 4, opacity: 0.16)
                     }
                     if let current = currentStackStory {
                         ScrollView {
@@ -518,7 +518,7 @@ private struct FloatingWidgetView: View {
         RoundedRectangle(cornerRadius: 18, style: .continuous)
             .fill(
                 LinearGradient(
-                    colors: [AINewsTheme.panel.opacity(0.32), AINewsTheme.background.opacity(0.42)],
+                    colors: [Color.white.opacity(0.035), Color.white.opacity(0.012)],
                     startPoint: .topLeading,
                     endPoint: .bottom
                 )
@@ -526,21 +526,21 @@ private struct FloatingWidgetView: View {
             .overlay(
                 HStack(alignment: .top, spacing: 12) {
                     RoundedRectangle(cornerRadius: 12, style: .continuous)
-                        .fill(Color.white.opacity(0.05))
+                        .fill(Color.white.opacity(0.018))
                         .frame(width: 64, height: 64)
 
                     VStack(alignment: .leading, spacing: 8) {
                         Capsule(style: .continuous)
-                            .fill(AINewsTheme.accentCyan.opacity(0.14))
+                            .fill(AINewsTheme.accentCyan.opacity(0.06))
                             .frame(width: 112, height: 12)
                         Capsule(style: .continuous)
-                            .fill(Color.white.opacity(0.07))
+                            .fill(Color.white.opacity(0.024))
                             .frame(height: 18)
                         Capsule(style: .continuous)
-                            .fill(Color.white.opacity(0.06))
+                            .fill(Color.white.opacity(0.02))
                             .frame(width: 190, height: 18)
                         Capsule(style: .continuous)
-                            .fill(Color.white.opacity(0.05))
+                            .fill(Color.white.opacity(0.018))
                             .frame(width: 146, height: 12)
                     }
                     Spacer(minLength: 0)
@@ -550,7 +550,7 @@ private struct FloatingWidgetView: View {
             )
             .overlay(
                 RoundedRectangle(cornerRadius: 18, style: .continuous)
-                    .stroke(AINewsTheme.panelBorder.opacity(0.22), lineWidth: 1)
+                    .stroke(AINewsTheme.panelBorder.opacity(0.12), lineWidth: 1)
             )
             .scaleEffect(scale)
             .offset(x: xOffset, y: yOffset)
