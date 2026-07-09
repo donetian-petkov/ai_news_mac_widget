@@ -514,32 +514,43 @@ private struct FloatingWidgetView: View {
         }
     }
 
-    private func stackBackdropCard(for story: WidgetStory, scale: CGFloat, yOffset: CGFloat, opacity: Double) -> some View {
+    private func stackBackdropCard(for _: WidgetStory, scale: CGFloat, yOffset: CGFloat, opacity: Double) -> some View {
         RoundedRectangle(cornerRadius: 18, style: .continuous)
             .fill(
                 LinearGradient(
-                    colors: [AINewsTheme.panel.opacity(0.65), AINewsTheme.background.opacity(0.82)],
-                    startPoint: .top,
+                    colors: [AINewsTheme.panel.opacity(0.32), AINewsTheme.background.opacity(0.42)],
+                    startPoint: .topLeading,
                     endPoint: .bottom
                 )
             )
             .overlay(
-                VStack(alignment: .leading, spacing: 5) {
-                    Text(story.source ?? story.feedUrl)
-                        .font(widgetCaption(weight: .semibold))
-                        .foregroundStyle(AINewsTheme.accentCyan.opacity(0.9))
-                        .lineLimit(1)
-                    Text(story.title)
-                        .font(widgetHeadline(weight: .bold))
-                        .foregroundStyle(AINewsTheme.accentBlue.opacity(0.85))
-                        .lineLimit(2)
+                HStack(alignment: .top, spacing: 12) {
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .fill(Color.white.opacity(0.05))
+                        .frame(width: 64, height: 64)
+
+                    VStack(alignment: .leading, spacing: 8) {
+                        Capsule(style: .continuous)
+                            .fill(AINewsTheme.accentCyan.opacity(0.14))
+                            .frame(width: 112, height: 12)
+                        Capsule(style: .continuous)
+                            .fill(Color.white.opacity(0.07))
+                            .frame(height: 18)
+                        Capsule(style: .continuous)
+                            .fill(Color.white.opacity(0.06))
+                            .frame(width: 190, height: 18)
+                        Capsule(style: .continuous)
+                            .fill(Color.white.opacity(0.05))
+                            .frame(width: 146, height: 12)
+                    }
+                    Spacer(minLength: 0)
                 }
                 .padding(14),
                 alignment: .topLeading
             )
             .overlay(
                 RoundedRectangle(cornerRadius: 18, style: .continuous)
-                    .stroke(AINewsTheme.panelBorder.opacity(0.45), lineWidth: 1)
+                    .stroke(AINewsTheme.panelBorder.opacity(0.22), lineWidth: 1)
             )
             .scaleEffect(scale)
             .offset(y: yOffset)
