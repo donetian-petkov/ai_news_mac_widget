@@ -744,10 +744,7 @@ private struct FloatingWidgetView: View {
                     .buttonStyle(.plain)
                     .disabled(stackIndex <= 0)
 
-                    Text("\(stackIndex + 1) of \(stories.count)")
-                        .font(widgetFont(12, weight: .semibold))
-                        .foregroundStyle(AINewsTheme.textMuted)
-                        .frame(minWidth: 72)
+                    stackPositionLabel
 
                     Button {
                         moveStack(by: 1)
@@ -827,6 +824,24 @@ private struct FloatingWidgetView: View {
             RoundedRectangle(cornerRadius: 12, style: .continuous)
                 .stroke(AINewsTheme.panelBorder.opacity(0.75), lineWidth: 1)
         )
+    }
+
+    private var stackPositionLabel: some View {
+        Text("\(stackIndex + 1) of \(stories.count)")
+            .font(widgetFont(12, weight: .bold))
+            .foregroundStyle(AINewsTheme.textPrimary)
+            .lineLimit(1)
+            .frame(minWidth: 72)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 7)
+            .background(
+                Capsule(style: .continuous)
+                    .fill(AINewsTheme.backgroundAlt.opacity(0.9))
+            )
+            .overlay(
+                Capsule(style: .continuous)
+                    .stroke(AINewsTheme.panelBorder.opacity(0.65), lineWidth: 1)
+            )
     }
 
     private var currentStackStory: WidgetStory? {
