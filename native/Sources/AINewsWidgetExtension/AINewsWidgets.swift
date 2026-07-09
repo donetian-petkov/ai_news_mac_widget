@@ -3,6 +3,8 @@ import WidgetKit
 import AppIntents
 import AINewsWidgetShared
 
+private let widgetDynamicTypeSize = AINewsFontPreferenceStore.storedWidgetFontSize().dynamicTypeSize
+
 @available(macOS 14.0, *)
 struct WidgetCategoryEntity: AppEntity, Identifiable {
     static var typeDisplayRepresentation = TypeDisplayRepresentation(name: "Category")
@@ -244,6 +246,7 @@ struct CategoryWidgetView: View {
                 }
             }
             .padding(16)
+            .dynamicTypeSize(widgetDynamicTypeSize)
             .containerBackground(for: .widget) {
                 AINewsTheme.background
             }
@@ -258,6 +261,7 @@ struct CategoryWidgetView: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
             .padding(16)
+            .dynamicTypeSize(widgetDynamicTypeSize)
             .containerBackground(for: .widget) {
                 AINewsTheme.background
             }
@@ -369,6 +373,7 @@ struct MasterWidgetView: View {
             }
         }
         .padding(16)
+        .dynamicTypeSize(widgetDynamicTypeSize)
         .containerBackground(for: .widget) {
             AINewsTheme.background
         }
@@ -541,6 +546,7 @@ struct KeywordWidgetView: View {
             }
         }
         .padding(16)
+        .dynamicTypeSize(widgetDynamicTypeSize)
         .containerBackground(for: .widget) {
             AINewsTheme.background
         }

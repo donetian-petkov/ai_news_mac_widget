@@ -177,7 +177,7 @@ struct AINewsMacApp: App {
             RootView()
                 .environmentObject(state)
                 .environmentObject(theme)
-                .dynamicTypeSize(theme.fontSize.dynamicTypeSize)
+                .dynamicTypeSize(theme.appFontSize.dynamicTypeSize)
                 .preferredColorScheme(theme.vibe == .light ? .light : .dark)
                 .frame(minWidth: 1180, minHeight: 760)
                 .task {

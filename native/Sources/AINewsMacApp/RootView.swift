@@ -1978,9 +1978,18 @@ private struct SettingsView: View {
                 }
             }
             .pickerStyle(.menu)
-            Picker("Text size", selection: Binding(
-                get: { theme.fontSize },
-                set: { theme.fontSize = $0 }
+            Picker("App text size", selection: Binding(
+                get: { theme.appFontSize },
+                set: { theme.appFontSize = $0 }
+            )) {
+                ForEach(AINewsFontSize.allCases, id: \.self) { size in
+                    Text(size.displayName).tag(size)
+                }
+            }
+            .pickerStyle(.segmented)
+            Picker("Widget text size", selection: Binding(
+                get: { theme.widgetFontSize },
+                set: { theme.widgetFontSize = $0 }
             )) {
                 ForEach(AINewsFontSize.allCases, id: \.self) { size in
                     Text(size.displayName).tag(size)

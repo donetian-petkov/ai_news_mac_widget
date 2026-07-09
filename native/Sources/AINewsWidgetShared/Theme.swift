@@ -76,10 +76,13 @@ public final class ThemeSettings: ObservableObject {
     public static let shared = ThemeSettings()
 
     @AppStorage("ai_news_vibe") public var vibeRaw: String = AINewsVibe.dark.rawValue {
-        didSet { apply() }
+        didSet { applyAppAppearance() }
     }
-    @AppStorage("ai_news_font_size") public var fontSizeRaw: String = AINewsFontSize.medium.rawValue {
-        didSet { apply() }
+    @AppStorage("ai_news_app_font_size") public var appFontSizeRaw: String = AINewsFontSize.medium.rawValue {
+        didSet { applyAppAppearance() }
+    }
+    @AppStorage("ai_news_widget_font_size") public var widgetFontSizeRaw: String = AINewsFontSize.medium.rawValue {
+        didSet { notifyChanged() }
     }
 
     /// Bumped on every change so views can key on it and fully re-render.
@@ -89,21 +92,63 @@ public final class ThemeSettings: ObservableObject {
         get { AINewsVibe(rawValue: vibeRaw) ?? .dark }
         set { vibeRaw = newValue.rawValue }
     }
-    public var fontSize: AINewsFontSize {
-        get { AINewsFontSize(rawValue: fontSizeRaw) ?? .medium }
-        set { fontSizeRaw = newValue.rawValue }
+    public var appFontSize: AINewsFontSize {
+        get { AINewsFontSize(rawValue: appFontSizeRaw) ?? .medium }
+        set { appFontSizeRaw = newValue.rawValue }
+    }
+    public var widgetFontSize: AINewsFontSize {
+        get { AINewsFontSize(rawValue: widgetFontSizeRaw) ?? .medium }
+        set { widgetFontSizeRaw = newValue.rawValue }
     }
 
     public init() {
-        AINewsTheme.palette = (AINewsVibe(rawValue: vibeRaw) ?? .dark).palette
-        AINewsTheme.fontScale = (AINewsFontSize(rawValue: fontSizeRaw) ?? .medium).scale
+        migrateLegacyFontSizeIfNeeded()
+        AINewsTheme.palette = vibe.palette
+        AINewsTheme.fontScale = appFontSize.scale
     }
 
-    private func apply() {
+    private func migrateLegacyFontSizeIfNeeded() {
+        let defaults = UserDefaults.standard
+        guard let legacy = defaults.string(forKey: AINewsFontPreferenceStore.legacyFontSizeKey) else { return }
+        if defaults.string(forKey: AINewsFontPreferenceStore.appFontSizeKey) == nil {
+            defaults.set(legacy, forKey: AINewsFontPreferenceStore.appFontSizeKey)
+        }
+        if defaults.string(forKey: AINewsFontPreferenceStore.widgetFontSizeKey) == nil {
+            defaults.set(legacy, forKey: AINewsFontPreferenceStore.widgetFontSizeKey)
+        }
+        appFontSizeRaw = defaults.string(forKey: AINewsFontPreferenceStore.appFontSizeKey) ?? legacy
+        widgetFontSizeRaw = defaults.string(forKey: AINewsFontPreferenceStore.widgetFontSizeKey) ?? legacy
+    }
+
+    private func applyAppAppearance() {
         AINewsTheme.palette = vibe.palette
-        AINewsTheme.fontScale = fontSize.scale
+        AINewsTheme.fontScale = appFontSize.scale
+        notifyChanged()
+    }
+
+    private func notifyChanged() {
         revision += 1
         objectWillChange.send()
+    }
+}
+
+public enum AINewsFontPreferenceStore {
+    public static let legacyFontSizeKey = "ai_news_font_size"
+    public static let appFontSizeKey = "ai_news_app_font_size"
+    public static let widgetFontSizeKey = "ai_news_widget_font_size"
+
+    public static func storedAppFontSize(defaultingTo fallback: AINewsFontSize = .medium) -> AINewsFontSize {
+        storedFontSize(for: appFontSizeKey, fallbackKey: legacyFontSizeKey, defaultingTo: fallback)
+    }
+
+    public static func storedWidgetFontSize(defaultingTo fallback: AINewsFontSize = .medium) -> AINewsFontSize {
+        storedFontSize(for: widgetFontSizeKey, fallbackKey: legacyFontSizeKey, defaultingTo: fallback)
+    }
+
+    private static func storedFontSize(for key: String, fallbackKey: String, defaultingTo fallback: AINewsFontSize) -> AINewsFontSize {
+        let defaults = UserDefaults.standard
+        let raw = defaults.string(forKey: key) ?? defaults.string(forKey: fallbackKey)
+        return raw.flatMap(AINewsFontSize.init(rawValue:)) ?? fallback
     }
 }
 
@@ -121,19 +166,19 @@ public enum AINewsFontSize: String, CaseIterable, Sendable {
     /// Multiplier applied to explicit font sizes.
     public var scale: CGFloat {
         switch self {
-        case .small: return 0.85
+        case .small: return 0.8
         case .medium: return 1.0
-        case .large: return 1.3
-        case .xlarge: return 1.6
+        case .large: return 1.55
+        case .xlarge: return 2.15
         }
     }
     /// Matching Dynamic Type size so semantic fonts (.headline/.body/.caption) scale too.
     public var dynamicTypeSize: DynamicTypeSize {
         switch self {
-        case .small: return .small
+        case .small: return .xSmall
         case .medium: return .large
-        case .large: return .xxLarge
-        case .xlarge: return .accessibility2
+        case .large: return .accessibility1
+        case .xlarge: return .accessibility4
         }
     }
 }
@@ -163,6 +208,34 @@ public enum AINewsTheme {
     /// A size-scaled system font, so explicit sizes honor the font-size setting.
     public static func font(_ size: CGFloat, weight: Font.Weight = .regular) -> Font {
         .system(size: size * fontScale, weight: weight)
+    }
+
+    public static func caption2(weight: Font.Weight = .regular) -> Font {
+        font(11, weight: weight)
+    }
+
+    public static func caption(weight: Font.Weight = .regular) -> Font {
+        font(12.5, weight: weight)
+    }
+
+    public static func body(weight: Font.Weight = .regular) -> Font {
+        font(15.5, weight: weight)
+    }
+
+    public static func subheadline(weight: Font.Weight = .regular) -> Font {
+        font(16.5, weight: weight)
+    }
+
+    public static func headline(weight: Font.Weight = .semibold) -> Font {
+        font(18, weight: weight)
+    }
+
+    public static func title3(weight: Font.Weight = .semibold) -> Font {
+        font(24, weight: weight)
+    }
+
+    public static func title2(weight: Font.Weight = .bold) -> Font {
+        font(29, weight: weight)
     }
 }
 
