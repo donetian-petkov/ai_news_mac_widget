@@ -296,7 +296,8 @@ public struct StoryThumbnail: View {
     private let corners: CGFloat
     #if canImport(AppKit)
     @State private var image: NSImage?
-    @State private var failed = false
+    @State private var loadedURL: URL?
+    @State private var failedURL: URL?
     #endif
 
     /// Square thumbnail. A nil URL renders the placeholder.
@@ -339,9 +340,9 @@ public struct StoryThumbnail: View {
         #if canImport(AppKit)
         if let url {
             // Read the cache synchronously so a loaded image survives re-renders.
-            if let resolved = image ?? ThumbnailCache.shared.object(forKey: url as NSURL) {
+            if let resolved = (loadedURL == url ? image : nil) ?? ThumbnailCache.shared.object(forKey: url as NSURL) {
                 Image(nsImage: resolved).resizable().aspectRatio(contentMode: .fill)
-            } else if failed {
+            } else if failedURL == url {
                 placeholder
             } else {
                 placeholder.overlay(ProgressView().controlSize(.small))
@@ -359,16 +360,23 @@ public struct StoryThumbnail: View {
     @MainActor
     private func load(_ url: URL) async {
         if let cached = ThumbnailCache.shared.object(forKey: url as NSURL) {
+            loadedURL = url
+            failedURL = nil
             image = cached
             return
         }
         do {
             let (data, _) = try await URLSession.shared.data(from: url)
-            guard let nsImage = NSImage(data: data) else { failed = true; return }
+            guard let nsImage = NSImage(data: data) else {
+                failedURL = url
+                return
+            }
             ThumbnailCache.shared.setObject(nsImage, forKey: url as NSURL)
+            loadedURL = url
+            failedURL = nil
             image = nsImage
         } catch {
-            failed = true
+            failedURL = url
         }
     }
     #endif
