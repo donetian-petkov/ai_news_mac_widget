@@ -283,7 +283,14 @@ private struct FloatingWidgetView: View {
     }
 
     private var estimatedStackWindowWidth: CGFloat {
-        470
+        guard let story = currentStackStory else { return 408 }
+        let titleWeight = min(CGFloat(story.title.count) * 0.34, 34)
+        let summaryWeight = min(CGFloat(story.summary?.count ?? 0) * 0.08, 18)
+        return min(max(388 + titleWeight + summaryWeight, 396), 430)
+    }
+
+    private var stackStoryViewportHeight: CGFloat {
+        min(max(estimatedStackWindowHeight - 208, 220), 360)
     }
 
     private var estimatedColumnWindowWidth: CGFloat {
@@ -621,52 +628,53 @@ private struct FloatingWidgetView: View {
     }
 
     private var stackContent: some View {
-        GeometryReader { proxy in
-            VStack(spacing: 12) {
-                ZStack {
-                    if let tertiary = stackStory(offsetBy: 2) {
-                        stackBackdropCard(for: tertiary, scale: 0.92, xOffset: 52, yOffset: 8, opacity: 0.10)
-                    }
-                    if let secondary = stackStory(offsetBy: 1) {
-                        stackBackdropCard(for: secondary, scale: 0.96, xOffset: 28, yOffset: 4, opacity: 0.16)
-                    }
-                    if let current = currentStackStory {
-                        ScrollView {
-                            storyRow(current, draggable: false)
-                        }
-                        .scrollIndicators(.hidden)
-                    }
+        VStack(spacing: 12) {
+            ZStack(alignment: .topLeading) {
+                if let tertiary = stackStory(offsetBy: 2) {
+                    stackBackdropCard(for: tertiary, scale: 0.92, xOffset: 52, yOffset: 8, opacity: 0.10)
                 }
-                .frame(maxWidth: .infinity, maxHeight: max(220, proxy.size.height - 84))
-                .padding(.horizontal, 14)
-                .padding(.top, 14)
-
-                HStack(spacing: 10) {
-                    Button {
-                        moveStack(by: -1)
-                    } label: {
-                        stackNavLabel(systemImage: "chevron.up", title: "Previous")
-                    }
-                    .buttonStyle(.plain)
-                    .disabled(stackIndex <= 0)
-
-                    Text("\(stackIndex + 1) of \(stories.count)")
-                        .font(widgetFont(12, weight: .semibold))
-                        .foregroundStyle(AINewsTheme.textMuted)
-                        .frame(minWidth: 72)
-
-                    Button {
-                        moveStack(by: 1)
-                    } label: {
-                        stackNavLabel(systemImage: "chevron.down", title: "Next")
-                    }
-                    .buttonStyle(.plain)
-                    .disabled(stackIndex >= stories.count - 1)
+                if let secondary = stackStory(offsetBy: 1) {
+                    stackBackdropCard(for: secondary, scale: 0.96, xOffset: 28, yOffset: 4, opacity: 0.16)
                 }
-                .padding(.horizontal, 14)
-                .padding(.bottom, 14)
+                if let current = currentStackStory {
+                    ScrollView {
+                        storyRow(current, draggable: false)
+                    }
+                    .scrollIndicators(.hidden)
+                    .frame(maxWidth: .infinity, maxHeight: stackStoryViewportHeight, alignment: .top)
+                }
             }
+            .frame(maxWidth: .infinity, alignment: .top)
+            .padding(.horizontal, 14)
+            .padding(.top, 14)
+
+            HStack(spacing: 10) {
+                Button {
+                    moveStack(by: -1)
+                } label: {
+                    stackNavLabel(systemImage: "chevron.up", title: "Previous")
+                }
+                .buttonStyle(.plain)
+                .disabled(stackIndex <= 0)
+
+                Text("\(stackIndex + 1) of \(stories.count)")
+                    .font(widgetFont(12, weight: .semibold))
+                    .foregroundStyle(AINewsTheme.textMuted)
+                    .frame(minWidth: 72)
+
+                Button {
+                    moveStack(by: 1)
+                } label: {
+                    stackNavLabel(systemImage: "chevron.down", title: "Next")
+                }
+                .buttonStyle(.plain)
+                .disabled(stackIndex >= stories.count - 1)
+            }
+            .padding(.horizontal, 14)
+            .padding(.bottom, 14)
+            Spacer(minLength: 0)
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
     }
 
     private func stackBackdropCard(for _: WidgetStory, scale: CGFloat, xOffset: CGFloat, yOffset: CGFloat, opacity: Double) -> some View {
@@ -1033,7 +1041,7 @@ private struct FloatingWidgetView: View {
             frame.origin.x -= deltaWidth / 2
             frame.size.height = targetHeight
             frame.size.width = targetWidth
-            window.minSize = layoutMode == .stack ? NSSize(width: 430, height: 260) : NSSize(width: 400, height: 260)
+            window.minSize = layoutMode == .stack ? NSSize(width: 396, height: 260) : NSSize(width: 400, height: 260)
             window.setFrame(frame, display: true, animate: true)
         }
     }
