@@ -553,7 +553,6 @@ private struct FloatingWidgetView: View {
                     .stroke(AINewsTheme.panelBorder.opacity(0.22), lineWidth: 1)
             )
             .scaleEffect(scale)
-            .shadow(color: Color.black.opacity(0.16), radius: 12, x: 6, y: 4)
             .offset(x: xOffset, y: yOffset)
             .opacity(opacity)
             .allowsHitTesting(false)
