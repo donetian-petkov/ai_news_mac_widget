@@ -273,13 +273,17 @@ private struct FloatingWidgetView: View {
     }
 
     private var estimatedStackWindowHeight: CGFloat {
-        guard let story = currentStackStory else { return 640 }
+        guard let story = currentStackStory else { return 460 }
         let titleLines = ceil(Double(story.title.count) / 34.0)
         let summaryLength = story.summary?.count ?? 0
         let summaryLines = ceil(Double(summaryLength) / 38.0)
-        let baseHeight = 330.0
-        let dynamicHeight = (titleLines * 24.0) + (summaryLines * 18.0)
-        return CGFloat(min(max(baseHeight + dynamicHeight, 520.0), 760.0))
+        let baseHeight = 230.0
+        let dynamicHeight = (titleLines * 22.0) + (summaryLines * 16.0)
+        return CGFloat(min(max(baseHeight + dynamicHeight, 430.0), 580.0))
+    }
+
+    private var estimatedStackWindowWidth: CGFloat {
+        470
     }
 
     var body: some View {
@@ -455,7 +459,11 @@ private struct FloatingWidgetView: View {
             }
             .lineLimit(1)
             .multilineTextAlignment(.center)
-            .frame(minWidth: 108)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 3)
+            .background(compactHeaderMetaFill)
+            .overlay(compactHeaderMetaStroke)
+            .frame(minWidth: 104)
         }
     }
 
@@ -535,6 +543,16 @@ private struct FloatingWidgetView: View {
     private var compactHeaderCapsuleStroke: some View {
         RoundedRectangle(cornerRadius: 14, style: .continuous)
             .stroke(AINewsTheme.panelBorder.opacity(0.14), lineWidth: 1)
+    }
+
+    private var compactHeaderMetaFill: some View {
+        RoundedRectangle(cornerRadius: 10, style: .continuous)
+            .fill(AINewsTheme.panel.opacity(0.56))
+    }
+
+    private var compactHeaderMetaStroke: some View {
+        RoundedRectangle(cornerRadius: 10, style: .continuous)
+            .stroke(AINewsTheme.panelBorder.opacity(0.16), lineWidth: 1)
     }
 
     private func headerModeButton(_ mode: FloatingWidgetLayoutMode, systemImage: String, size: CGFloat = 28) -> some View {
@@ -1001,16 +1019,25 @@ private struct FloatingWidgetView: View {
 
     private func resizeWindowForCurrentLayout() {
         DispatchQueue.main.async {
-            guard let window = NSApp.keyWindow ?? NSApp.mainWindow else { return }
+            guard let window = currentWidgetWindow() else { return }
             var frame = window.frame
             let targetHeight: CGFloat = layoutMode == .stack ? estimatedStackWindowHeight : max(frame.height, 560)
-            let targetWidth: CGFloat = layoutMode == .stack ? max(frame.width, 540) : frame.width
+            let targetWidth: CGFloat = layoutMode == .stack ? estimatedStackWindowWidth : frame.width
             let deltaHeight = targetHeight - frame.height
+            let deltaWidth = targetWidth - frame.width
             frame.origin.y -= deltaHeight
+            frame.origin.x -= deltaWidth / 2
             frame.size.height = targetHeight
             frame.size.width = targetWidth
             window.setFrame(frame, display: true, animate: true)
         }
+    }
+
+    private func currentWidgetWindow() -> NSWindow? {
+        if let exact = NSApp.windows.first(where: { $0.title == categoryName && $0.isVisible }) {
+            return exact
+        }
+        return NSApp.keyWindow ?? NSApp.mainWindow
     }
 }
 
