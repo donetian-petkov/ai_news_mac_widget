@@ -149,7 +149,7 @@ final class FloatingWidgetManager: NSObject, NSWindowDelegate {
         hostingController.view.layer?.backgroundColor = NSColor.clear.cgColor
 
         let panel = NSPanel(
-            contentRect: NSRect(x: 0, y: 0, width: 340, height: 480),
+            contentRect: NSRect(x: 0, y: 0, width: 420, height: 560),
             styleMask: [.titled, .closable, .resizable],
             backing: .buffered,
             defer: false
@@ -171,7 +171,7 @@ final class FloatingWidgetManager: NSObject, NSWindowDelegate {
         // Keep the panel object around when closed so reopening the same category
         // just brings it back instead of leaking a new one.
         panel.isReleasedWhenClosed = false
-        panel.minSize = NSSize(width: 220, height: 180)
+        panel.minSize = NSSize(width: 400, height: 260)
         // Remember each widget's size/position across launches, per category.
         // We persist the frame ourselves (windowDidMove/Resize/WillClose) rather
         // than relying on AppKit's autosave, which is unreliable for panels.
@@ -284,6 +284,10 @@ private struct FloatingWidgetView: View {
 
     private var estimatedStackWindowWidth: CGFloat {
         470
+    }
+
+    private var estimatedColumnWindowWidth: CGFloat {
+        420
     }
 
     var body: some View {
@@ -1022,13 +1026,14 @@ private struct FloatingWidgetView: View {
             guard let window = currentWidgetWindow() else { return }
             var frame = window.frame
             let targetHeight: CGFloat = layoutMode == .stack ? estimatedStackWindowHeight : max(frame.height, 560)
-            let targetWidth: CGFloat = layoutMode == .stack ? estimatedStackWindowWidth : frame.width
+            let targetWidth: CGFloat = layoutMode == .stack ? estimatedStackWindowWidth : max(frame.width, estimatedColumnWindowWidth)
             let deltaHeight = targetHeight - frame.height
             let deltaWidth = targetWidth - frame.width
             frame.origin.y -= deltaHeight
             frame.origin.x -= deltaWidth / 2
             frame.size.height = targetHeight
             frame.size.width = targetWidth
+            window.minSize = layoutMode == .stack ? NSSize(width: 430, height: 260) : NSSize(width: 400, height: 260)
             window.setFrame(frame, display: true, animate: true)
         }
     }
