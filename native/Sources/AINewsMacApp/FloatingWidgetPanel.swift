@@ -143,8 +143,8 @@ final class FloatingWidgetManager: NSObject, NSWindowDelegate {
         panel.title = categoryName
         panel.contentViewController = hostingController
         panel.titlebarAppearsTransparent = true
-        panel.titleVisibility = .visible
-        panel.isMovableByWindowBackground = true
+        panel.titleVisibility = .hidden
+        panel.isMovableByWindowBackground = false
         panel.isOpaque = false
         panel.backgroundColor = .clear
         panel.hasShadow = true
@@ -268,20 +268,20 @@ private struct FloatingWidgetView: View {
                 FloatingGlassBackground()
                 LinearGradient(
                     colors: [
-                        AINewsTheme.backgroundAlt.opacity(0.68),
-                        AINewsTheme.background.opacity(0.78)
+                        AINewsTheme.backgroundAlt.opacity(0.34),
+                        AINewsTheme.background.opacity(0.42)
                     ],
                     startPoint: .topLeading,
                     endPoint: .bottomTrailing
                 )
                 RadialGradient(
-                    gradient: Gradient(colors: [AINewsTheme.panelBorder.opacity(0.22), .clear]),
+                    gradient: Gradient(colors: [AINewsTheme.panelBorder.opacity(0.16), .clear]),
                     center: UnitPoint(x: 0.05, y: 0.0),
                     startRadius: 0,
                     endRadius: 520
                 )
                 RadialGradient(
-                    gradient: Gradient(colors: [AINewsTheme.accentCyan.opacity(0.12), .clear]),
+                    gradient: Gradient(colors: [AINewsTheme.accentCyan.opacity(0.10), .clear]),
                     center: UnitPoint(x: 1.0, y: 0.02),
                     startRadius: 0,
                     endRadius: 520
@@ -436,45 +436,51 @@ private struct FloatingWidgetView: View {
     }
 
     private var stackContent: some View {
-        VStack(spacing: 12) {
-            ZStack {
-                if let tertiary = stackStory(offsetBy: 2) {
-                    stackBackdropCard(for: tertiary, scale: 0.92, yOffset: 26, opacity: 0.22)
+        GeometryReader { proxy in
+            VStack(spacing: 12) {
+                ZStack {
+                    if let tertiary = stackStory(offsetBy: 2) {
+                        stackBackdropCard(for: tertiary, scale: 0.92, yOffset: 26, opacity: 0.22)
+                    }
+                    if let secondary = stackStory(offsetBy: 1) {
+                        stackBackdropCard(for: secondary, scale: 0.96, yOffset: 14, opacity: 0.36)
+                    }
+                    if let current = currentStackStory {
+                        ScrollView {
+                            storyRow(current, draggable: false)
+                        }
+                        .scrollIndicators(.hidden)
+                    }
                 }
-                if let secondary = stackStory(offsetBy: 1) {
-                    stackBackdropCard(for: secondary, scale: 0.96, yOffset: 14, opacity: 0.36)
+                .frame(maxWidth: .infinity, maxHeight: max(220, proxy.size.height - 84))
+                .padding(.horizontal, 14)
+                .padding(.top, 14)
+
+                HStack(spacing: 10) {
+                    Button {
+                        moveStack(by: -1)
+                    } label: {
+                        stackNavLabel(systemImage: "chevron.up", title: "Previous")
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(stackIndex <= 0)
+
+                    Text("\(stackIndex + 1) of \(stories.count)")
+                        .font(widgetFont(12, weight: .semibold))
+                        .foregroundStyle(AINewsTheme.textMuted)
+                        .frame(minWidth: 72)
+
+                    Button {
+                        moveStack(by: 1)
+                    } label: {
+                        stackNavLabel(systemImage: "chevron.down", title: "Next")
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(stackIndex >= stories.count - 1)
                 }
-                if let current = currentStackStory {
-                    storyRow(current, draggable: false)
-                }
+                .padding(.horizontal, 14)
+                .padding(.bottom, 14)
             }
-            .padding(.horizontal, 14)
-            .padding(.top, 14)
-
-            HStack(spacing: 10) {
-                Button {
-                    moveStack(by: -1)
-                } label: {
-                    stackNavLabel(systemImage: "chevron.up", title: "Previous")
-                }
-                .buttonStyle(.plain)
-                .disabled(stackIndex <= 0)
-
-                Text("\(stackIndex + 1) of \(stories.count)")
-                    .font(widgetFont(12, weight: .semibold))
-                    .foregroundStyle(AINewsTheme.textMuted)
-                    .frame(minWidth: 72)
-
-                Button {
-                    moveStack(by: 1)
-                } label: {
-                    stackNavLabel(systemImage: "chevron.down", title: "Next")
-                }
-                .buttonStyle(.plain)
-                .disabled(stackIndex >= stories.count - 1)
-            }
-            .padding(.horizontal, 14)
-            .padding(.bottom, 14)
         }
     }
 
@@ -677,6 +683,24 @@ private struct FloatingWidgetView: View {
             guard draggable else { return NSItemProvider() }
             draggedStoryKey = story.storyKey
             return NSItemProvider(object: story.storyKey as NSString)
+        } preview: {
+            HStack(spacing: 8) {
+                Image(systemName: "line.3.horizontal")
+                Text("Move story")
+                    .lineLimit(1)
+            }
+            .font(widgetFont(12, weight: .semibold))
+            .foregroundStyle(AINewsTheme.textPrimary)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+            .background(
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .fill(AINewsTheme.backgroundAlt.opacity(0.96))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .stroke(AINewsTheme.panelBorder.opacity(0.8), lineWidth: 1)
+            )
         }
         .onDrop(of: [UTType.plainText], delegate: StoryDropDelegate(
             targetStoryKey: story.storyKey,
@@ -766,8 +790,9 @@ private struct StoryDropDelegate: DropDelegate {
         guard let draggedStoryKey, draggedStoryKey != targetStoryKey else { return }
         guard let fromIndex = stories.firstIndex(where: { $0.storyKey == draggedStoryKey }),
               let toIndex = stories.firstIndex(where: { $0.storyKey == targetStoryKey }) else { return }
-        withAnimation(.easeInOut(duration: 0.16)) {
-            stories.move(fromOffsets: IndexSet(integer: fromIndex), toOffset: toIndex > fromIndex ? toIndex + 1 : toIndex)
+        let adjustedTarget = fromIndex < toIndex ? toIndex : toIndex
+        if fromIndex != adjustedTarget {
+            stories.move(fromOffsets: IndexSet(integer: fromIndex), toOffset: adjustedTarget)
         }
     }
 
@@ -780,5 +805,9 @@ private struct StoryDropDelegate: DropDelegate {
         onReordered()
         onStackNeedsClamp()
         return true
+    }
+
+    func dropExited(info: DropInfo) {
+        onReordered()
     }
 }
