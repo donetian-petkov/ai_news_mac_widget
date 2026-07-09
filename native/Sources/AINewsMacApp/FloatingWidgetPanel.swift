@@ -435,10 +435,10 @@ private struct FloatingWidgetView: View {
             resizeWindowForCurrentLayout(force: true)
         }
         .onChange(of: stackIndex) { _, _ in
-            resizeWindowForCurrentLayout(allowShrink: false)
+            resizeWindowForCurrentLayout(force: true)
         }
         .onChange(of: currentStackStory?.storyKey) { _, _ in
-            resizeWindowForCurrentLayout(allowShrink: false)
+            resizeWindowForCurrentLayout(force: true)
         }
         .onAppear {
             resizeWindowForCurrentLayout(force: true)
