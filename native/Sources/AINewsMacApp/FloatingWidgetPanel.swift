@@ -431,7 +431,11 @@ private struct FloatingWidgetView: View {
         }
         .onChange(of: layoutMode) { _, newValue in
             FloatingWidgetPreferences.setLayoutMode(newValue, categoryID: categoryID, isFiltered: isFiltered)
-            clampStackIndex()
+            if newValue == .stack {
+                stackIndex = 0
+            } else {
+                clampStackIndex()
+            }
             resizeWindowForCurrentLayout(force: true)
         }
         .onChange(of: stackIndex) { _, _ in
