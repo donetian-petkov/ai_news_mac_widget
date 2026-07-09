@@ -348,9 +348,15 @@ private struct FloatingWidgetView: View {
     }
 
     private var header: some View {
-        ViewThatFits(in: .horizontal) {
-            headerExpandedLayout
-            headerCompactLayout
+        Group {
+            if layoutMode == .stack {
+                headerCompactLayout
+            } else {
+                ViewThatFits(in: .horizontal) {
+                    headerExpandedLayout
+                    headerCompactLayout
+                }
+            }
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 10)
@@ -928,7 +934,7 @@ private struct FloatingWidgetView: View {
             guard let window = NSApp.keyWindow ?? NSApp.mainWindow else { return }
             var frame = window.frame
             let targetHeight: CGFloat = layoutMode == .stack ? estimatedStackWindowHeight : max(frame.height, 560)
-            let targetWidth: CGFloat = layoutMode == .stack ? max(frame.width, 380) : frame.width
+            let targetWidth: CGFloat = layoutMode == .stack ? max(frame.width, 540) : frame.width
             let deltaHeight = targetHeight - frame.height
             frame.origin.y -= deltaHeight
             frame.size.height = targetHeight
