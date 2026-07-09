@@ -280,17 +280,33 @@ private struct FloatingWidgetView: View {
 
     private var estimatedStackWindowHeight: CGFloat {
         guard let story = currentStackStory else { return 460 }
-        let titleLines = ceil(Double(story.title.count) / 34.0)
+        let scale = Double(widgetFontScale)
+        let lineWidth = estimatedStackWindowWidth > 450 ? 34.0 : 30.0
+        let titleLines = ceil(Double(story.title.count) / lineWidth)
         let translatedLength = story.translatedTitle?.isEmpty == false && story.translatedTitle != story.title
             ? Double(story.translatedTitle?.count ?? 0)
             : 0
-        let translatedLines = ceil(translatedLength / 38.0)
+        let translatedLines = ceil(translatedLength / (lineWidth + 4.0))
         let summaryLength = story.summary?.count ?? 0
-        let summaryLines = ceil(Double(summaryLength) / 38.0)
+        let summaryLines = max(1.0, ceil(Double(summaryLength) / (lineWidth + 4.0)))
+        let researchLength = story.research?.count ?? 0
+        let researchLines = max(1.0, ceil(Double(researchLength) / (lineWidth + 4.0)))
         let sourceLines = ceil(Double((story.source ?? story.feedUrl).count) / 28.0)
-        let baseHeight = 198.0
-        let dynamicHeight = (titleLines * 22.0) + (translatedLines * 14.0) + (summaryLines * 18.0) + (sourceLines * 8.0)
-        return CGFloat(min(max(baseHeight + dynamicHeight, 352.0), 560.0))
+        let translatedHeight = translatedLines > 0 ? translatedLines * 19.0 * scale + 8.0 : 0
+        let summaryHeight = state.globalAiDefaults.summaryEnabled ? (summaryLines * 21.0 * scale + 28.0) : 0
+        let researchHeight = state.globalAiDefaults.researchEnabled ? (researchLines * 21.0 * scale + 28.0) : 0
+        let cardHeight = max(
+            214.0,
+            42.0
+            + (sourceLines * 18.0 * scale)
+            + (titleLines * 27.0 * scale)
+            + translatedHeight
+            + summaryHeight
+            + researchHeight
+        )
+        let windowChrome = 178.0
+        let screenLimit = Double(NSScreen.main?.visibleFrame.height ?? 900) * 0.86
+        return CGFloat(min(max(cardHeight + windowChrome, 420.0), screenLimit))
     }
 
     private var estimatedStackWindowWidth: CGFloat {
@@ -419,10 +435,10 @@ private struct FloatingWidgetView: View {
             resizeWindowForCurrentLayout(force: true)
         }
         .onChange(of: stackIndex) { _, _ in
-            resizeWindowForCurrentLayout()
+            resizeWindowForCurrentLayout(allowShrink: false)
         }
         .onChange(of: currentStackStory?.storyKey) { _, _ in
-            resizeWindowForCurrentLayout()
+            resizeWindowForCurrentLayout(allowShrink: false)
         }
         .onAppear {
             resizeWindowForCurrentLayout(force: true)
@@ -1102,7 +1118,7 @@ private struct FloatingWidgetView: View {
             )
     }
 
-    private func resizeWindowForCurrentLayout(force: Bool = false) {
+    private func resizeWindowForCurrentLayout(force: Bool = false, allowShrink: Bool = true) {
         DispatchQueue.main.async {
             guard let window = currentWidgetWindow() else { return }
             var frame = window.frame
@@ -1116,7 +1132,7 @@ private struct FloatingWidgetView: View {
                     abs(frame.width - lastAutoSizedStackSize.width) < 14 &&
                     abs(frame.height - lastAutoSizedStackSize.height) < 14
 
-                if force || lastAutoSizedStackSize == .zero || isNearLastAutoSize {
+                if force || lastAutoSizedStackSize == .zero || (allowShrink && isNearLastAutoSize) {
                     targetWidth = estimatedWidth
                     targetHeight = estimatedHeight
                 } else {
