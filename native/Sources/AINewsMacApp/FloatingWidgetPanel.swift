@@ -377,14 +377,14 @@ private struct FloatingWidgetView: View {
     private var headerCompactLayout: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(alignment: .center, spacing: 8) {
-                headerTitleChip
+                compactHeaderTitleChip
                 Spacer(minLength: 8)
                 headerActions
             }
 
             HStack {
                 Spacer(minLength: 0)
-                headerMetaChip
+                compactHeaderMetaChip
                 Spacer(minLength: 0)
             }
         }
@@ -428,6 +428,44 @@ private struct FloatingWidgetView: View {
         }
     }
 
+    private var compactHeaderTitleChip: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "newspaper.fill")
+                .font(widgetFont(15, weight: .bold))
+                .foregroundStyle(AINewsTheme.accentBlue)
+            Text(categoryName)
+                .font(widgetFont(16.5, weight: .bold))
+                .foregroundStyle(AINewsTheme.textPrimary)
+                .lineLimit(1)
+                .minimumScaleFactor(0.88)
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 6)
+        .background(compactHeaderCapsuleFill)
+        .overlay(compactHeaderCapsuleStroke)
+    }
+
+    private var compactHeaderMetaChip: some View {
+        TimelineView(.periodic(from: Date(), by: 30)) { context in
+            VStack(spacing: 0) {
+                Text(context.date.formatted(date: .abbreviated, time: .shortened))
+                    .font(widgetFont(12.5, weight: .semibold))
+                    .foregroundStyle(AINewsTheme.textSecondary)
+                Text("\(tokenText) tokens")
+                    .font(widgetFont(11.5, weight: .bold))
+                    .foregroundStyle(AINewsTheme.accentCyan)
+                Text("\(pendingCount) pending")
+                    .font(widgetFont(11.5, weight: .semibold))
+                    .foregroundStyle(pendingCount > 0 ? AINewsTheme.accentGold : AINewsTheme.textMuted)
+            }
+            .lineLimit(1)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 5)
+            .background(compactHeaderCapsuleFill)
+            .overlay(compactHeaderCapsuleStroke)
+        }
+    }
+
     private var headerActions: some View {
         HStack(spacing: 6) {
             headerModeButton(.column, systemImage: "rectangle.grid.1x2")
@@ -465,6 +503,16 @@ private struct FloatingWidgetView: View {
     private var headerCapsuleStroke: some View {
         RoundedRectangle(cornerRadius: 16, style: .continuous)
             .stroke(AINewsTheme.panelBorder.opacity(0.18), lineWidth: 1)
+    }
+
+    private var compactHeaderCapsuleFill: some View {
+        RoundedRectangle(cornerRadius: 14, style: .continuous)
+            .fill(AINewsTheme.panel.opacity(0.44))
+    }
+
+    private var compactHeaderCapsuleStroke: some View {
+        RoundedRectangle(cornerRadius: 14, style: .continuous)
+            .stroke(AINewsTheme.panelBorder.opacity(0.14), lineWidth: 1)
     }
 
     private func headerModeButton(_ mode: FloatingWidgetLayoutMode, systemImage: String) -> some View {
