@@ -211,6 +211,8 @@ private struct FloatingWidgetView: View {
     @State private var layoutMode: FloatingWidgetLayoutMode
     @State private var seenStoryKeys: Set<String>
     @State private var stackIndex = 0
+    @State private var lastAutoSizedStackSize: CGSize = .zero
+    @State private var lastAutoSizedColumnSize: CGSize = .zero
     /// How many stories to show. Grows by `pageStep` via "Show More", resets to
     /// `pageStep` via "Reset". Mirrors ai_news_deploy_ready's column behaviour.
     @State private var visibleCount = 10
@@ -279,11 +281,16 @@ private struct FloatingWidgetView: View {
     private var estimatedStackWindowHeight: CGFloat {
         guard let story = currentStackStory else { return 460 }
         let titleLines = ceil(Double(story.title.count) / 34.0)
+        let translatedLength = story.translatedTitle?.isEmpty == false && story.translatedTitle != story.title
+            ? Double(story.translatedTitle?.count ?? 0)
+            : 0
+        let translatedLines = ceil(translatedLength / 38.0)
         let summaryLength = story.summary?.count ?? 0
         let summaryLines = ceil(Double(summaryLength) / 38.0)
-        let baseHeight = 230.0
-        let dynamicHeight = (titleLines * 22.0) + (summaryLines * 16.0)
-        return CGFloat(min(max(baseHeight + dynamicHeight, 430.0), 580.0))
+        let sourceLines = ceil(Double((story.source ?? story.feedUrl).count) / 28.0)
+        let baseHeight = 198.0
+        let dynamicHeight = (titleLines * 22.0) + (translatedLines * 14.0) + (summaryLines * 18.0) + (sourceLines * 8.0)
+        return CGFloat(min(max(baseHeight + dynamicHeight, 352.0), 560.0))
     }
 
     private var estimatedStackWindowWidth: CGFloat {
@@ -294,11 +301,34 @@ private struct FloatingWidgetView: View {
     }
 
     private var stackStoryViewportHeight: CGFloat {
-        min(max(estimatedStackWindowHeight - 192, 236), 390)
+        min(max(estimatedStackWindowHeight - 170, 214), 390)
     }
 
     private var estimatedColumnWindowWidth: CGFloat {
         420
+    }
+
+    private func estimatedColumnCardHeight(for story: WidgetStory) -> CGFloat {
+        let titleLines = ceil(Double(story.title.count) / 30.0)
+        let translatedLength = story.translatedTitle?.isEmpty == false && story.translatedTitle != story.title
+            ? Double(story.translatedTitle?.count ?? 0)
+            : 0
+        let translatedLines = ceil(translatedLength / 34.0)
+        let summaryLines = ceil(Double((story.summary ?? "").count) / 34.0)
+        let sourceLines = ceil(Double((story.source ?? story.feedUrl).count) / 26.0)
+        let baseHeight = coversEnabled ? 138.0 : 118.0
+        let dynamicHeight = (titleLines * 20.0) + (translatedLines * 14.0) + (summaryLines * 16.0) + (sourceLines * 8.0)
+        return min(max(baseHeight + dynamicHeight, 150.0), 300.0)
+    }
+
+    private var estimatedColumnWindowHeight: CGFloat {
+        let visibleStories = Array(stories.prefix(4))
+        let cardsHeight = visibleStories.reduce(0.0) { $0 + estimatedColumnCardHeight(for: $1) }
+        let spacingHeight = max(Double(max(visibleStories.count - 1, 0)) * 12.0, 0)
+        let paginationHeight = (!reachedEnd ? 58.0 : 0) + (visibleCount > pageStep ? 58.0 : 0)
+        let baseChrome = 140.0
+        let total = baseChrome + cardsHeight + spacingHeight + paginationHeight
+        return CGFloat(min(max(total, 420.0), 980.0))
     }
 
     private var usesTransparentWidgetBackground: Bool {
@@ -386,10 +416,16 @@ private struct FloatingWidgetView: View {
         .onChange(of: layoutMode) { _, newValue in
             FloatingWidgetPreferences.setLayoutMode(newValue, categoryID: categoryID, isFiltered: isFiltered)
             clampStackIndex()
+            resizeWindowForCurrentLayout(force: true)
+        }
+        .onChange(of: stackIndex) { _, _ in
+            resizeWindowForCurrentLayout()
+        }
+        .onChange(of: currentStackStory?.storyKey) { _, _ in
             resizeWindowForCurrentLayout()
         }
         .onAppear {
-            resizeWindowForCurrentLayout()
+            resizeWindowForCurrentLayout(force: true)
         }
     }
 
@@ -703,9 +739,8 @@ private struct FloatingWidgetView: View {
             }
             .padding(.horizontal, 14)
             .padding(.bottom, 14)
-            Spacer(minLength: 0)
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        .frame(maxWidth: .infinity, alignment: .top)
     }
 
     private func stackBackdropCard(for _: WidgetStory, scale: CGFloat, xOffset: CGFloat, yOffset: CGFloat, opacity: Double) -> some View {
@@ -1014,6 +1049,7 @@ private struct FloatingWidgetView: View {
         stories = applyLocalOrder(to: fetchedStories)
         clampStackIndex()
         persistStoryOrder()
+        resizeWindowForCurrentLayout()
     }
 
     private func applyLocalOrder(to fetchedStories: [WidgetStory]) -> [WidgetStory] {
@@ -1060,19 +1096,51 @@ private struct FloatingWidgetView: View {
             )
     }
 
-    private func resizeWindowForCurrentLayout() {
+    private func resizeWindowForCurrentLayout(force: Bool = false) {
         DispatchQueue.main.async {
             guard let window = currentWidgetWindow() else { return }
             var frame = window.frame
-            let targetHeight: CGFloat = layoutMode == .stack ? estimatedStackWindowHeight : max(frame.height, 560)
-            let targetWidth: CGFloat = layoutMode == .stack ? estimatedStackWindowWidth : max(frame.width, estimatedColumnWindowWidth)
+            let targetWidth: CGFloat
+            let targetHeight: CGFloat
+
+            if layoutMode == .stack {
+                let estimatedWidth = estimatedStackWindowWidth
+                let estimatedHeight = estimatedStackWindowHeight
+                let isNearLastAutoSize =
+                    abs(frame.width - lastAutoSizedStackSize.width) < 14 &&
+                    abs(frame.height - lastAutoSizedStackSize.height) < 14
+
+                if force || lastAutoSizedStackSize == .zero || isNearLastAutoSize {
+                    targetWidth = estimatedWidth
+                    targetHeight = estimatedHeight
+                } else {
+                    targetWidth = max(frame.width, estimatedWidth)
+                    targetHeight = max(frame.height, estimatedHeight)
+                }
+                lastAutoSizedStackSize = CGSize(width: targetWidth, height: targetHeight)
+            } else {
+                let estimatedWidth = estimatedColumnWindowWidth
+                let estimatedHeight = estimatedColumnWindowHeight
+                let isNearLastAutoSize =
+                    abs(frame.width - lastAutoSizedColumnSize.width) < 14 &&
+                    abs(frame.height - lastAutoSizedColumnSize.height) < 14
+
+                if force || lastAutoSizedColumnSize == .zero || isNearLastAutoSize {
+                    targetWidth = estimatedWidth
+                    targetHeight = estimatedHeight
+                } else {
+                    targetWidth = max(frame.width, estimatedWidth)
+                    targetHeight = max(frame.height, estimatedHeight)
+                }
+                lastAutoSizedColumnSize = CGSize(width: targetWidth, height: targetHeight)
+            }
             let deltaHeight = targetHeight - frame.height
             let deltaWidth = targetWidth - frame.width
             frame.origin.y -= deltaHeight
             frame.origin.x -= deltaWidth / 2
             frame.size.height = targetHeight
             frame.size.width = targetWidth
-            window.minSize = layoutMode == .stack ? NSSize(width: 430, height: 260) : NSSize(width: 400, height: 260)
+            window.minSize = layoutMode == .stack ? NSSize(width: 430, height: 220) : NSSize(width: 400, height: 260)
             window.setFrame(frame, display: true, animate: true)
         }
     }
