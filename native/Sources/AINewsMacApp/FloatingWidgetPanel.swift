@@ -348,46 +348,84 @@ private struct FloatingWidgetView: View {
     }
 
     private var header: some View {
+        ViewThatFits(in: .horizontal) {
+            headerExpandedLayout
+            headerCompactLayout
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 10)
+    }
+
+    private var headerExpandedLayout: some View {
         HStack(spacing: 8) {
-            HStack(spacing: 10) {
-                Image(systemName: "newspaper.fill")
-                    .font(widgetFont(17, weight: .bold))
-                    .foregroundStyle(AINewsTheme.accentBlue)
-                Text(categoryName)
-                    .font(widgetHeaderTitle())
-                    .foregroundStyle(AINewsTheme.textPrimary)
-                    .lineLimit(1)
+            headerTitleChip
+                .fixedSize(horizontal: true, vertical: false)
+            Spacer(minLength: 8)
+            headerMetaChip
+                .fixedSize(horizontal: true, vertical: false)
+            Spacer(minLength: 8)
+            headerActions
+        }
+    }
+
+    private var headerCompactLayout: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(alignment: .center, spacing: 8) {
+                headerTitleChip
+                Spacer(minLength: 8)
+                headerActions
             }
-            .padding(.horizontal, 12)
+
+            HStack {
+                Spacer(minLength: 0)
+                headerMetaChip
+                Spacer(minLength: 0)
+            }
+        }
+    }
+
+    private var headerTitleChip: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "newspaper.fill")
+                .font(widgetFont(17, weight: .bold))
+                .foregroundStyle(AINewsTheme.accentBlue)
+            Text(categoryName)
+                .font(widgetHeaderTitle())
+                .foregroundStyle(AINewsTheme.textPrimary)
+                .lineLimit(1)
+                .minimumScaleFactor(0.9)
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+        .background(headerCapsuleFill)
+        .overlay(headerCapsuleStroke)
+    }
+
+    private var headerMetaChip: some View {
+        TimelineView(.periodic(from: Date(), by: 30)) { context in
+            VStack(spacing: 1) {
+                Text(context.date.formatted(date: .abbreviated, time: .shortened))
+                    .font(widgetHeaderMeta())
+                    .foregroundStyle(AINewsTheme.textSecondary)
+                Text("\(tokenText) tokens")
+                    .font(widgetHeaderStat(weight: .bold))
+                    .foregroundStyle(AINewsTheme.accentCyan)
+                Text("\(pendingCount) pending")
+                    .font(widgetHeaderStat())
+                    .foregroundStyle(pendingCount > 0 ? AINewsTheme.accentGold : AINewsTheme.textMuted)
+            }
+            .lineLimit(1)
+            .padding(.horizontal, 14)
             .padding(.vertical, 8)
             .background(headerCapsuleFill)
             .overlay(headerCapsuleStroke)
-            Spacer(minLength: 8)
-            // Centered: live time/date + total AI token usage.
-            TimelineView(.periodic(from: Date(), by: 30)) { context in
-                VStack(spacing: 1) {
-                    Text(context.date.formatted(date: .abbreviated, time: .shortened))
-                        .font(widgetHeaderMeta())
-                        .foregroundStyle(AINewsTheme.textSecondary)
-                    Text("\(tokenText) tokens")
-                        .font(widgetHeaderStat(weight: .bold))
-                        .foregroundStyle(AINewsTheme.accentCyan)
-                    Text("\(pendingCount) pending")
-                        .font(widgetHeaderStat())
-                        .foregroundStyle(pendingCount > 0 ? AINewsTheme.accentGold : AINewsTheme.textMuted)
-                }
-                .lineLimit(1)
-                .padding(.horizontal, 14)
-                .padding(.vertical, 8)
-                .background(headerCapsuleFill)
-                .overlay(headerCapsuleStroke)
-            }
-            Spacer(minLength: 8)
-            HStack(spacing: 6) {
-                headerModeButton(.column, systemImage: "rectangle.grid.1x2")
-                headerModeButton(.stack, systemImage: "square.stack.3d.up")
-            }
-            Spacer(minLength: 8)
+        }
+    }
+
+    private var headerActions: some View {
+        HStack(spacing: 6) {
+            headerModeButton(.column, systemImage: "rectangle.grid.1x2")
+            headerModeButton(.stack, systemImage: "square.stack.3d.up")
             if loading {
                 ProgressView().controlSize(.small)
             }
@@ -410,8 +448,7 @@ private struct FloatingWidgetView: View {
             .buttonStyle(.borderless)
             .help("Reload this category")
         }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 10)
+        .fixedSize(horizontal: true, vertical: false)
     }
 
     private var headerCapsuleFill: some View {
