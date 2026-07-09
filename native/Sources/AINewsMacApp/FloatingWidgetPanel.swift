@@ -21,6 +21,10 @@ private enum FloatingWidgetPreferences {
         "AINewsFloatingWidgetStoryOrder-\(widgetKey(categoryID: categoryID, isFiltered: isFiltered))"
     }
 
+    private static func seenStoriesKey(categoryID: Int, isFiltered: Bool) -> String {
+        "AINewsFloatingWidgetSeenStories-\(widgetKey(categoryID: categoryID, isFiltered: isFiltered))"
+    }
+
     static func layoutMode(categoryID: Int, isFiltered: Bool) -> FloatingWidgetLayoutMode {
         let raw = UserDefaults.standard.string(forKey: layoutModeKey(categoryID: categoryID, isFiltered: isFiltered)) ?? FloatingWidgetLayoutMode.column.rawValue
         return FloatingWidgetLayoutMode(rawValue: raw) ?? .column
@@ -36,6 +40,14 @@ private enum FloatingWidgetPreferences {
 
     static func setStoryOrder(_ order: [String], categoryID: Int, isFiltered: Bool) {
         UserDefaults.standard.set(order, forKey: storyOrderKey(categoryID: categoryID, isFiltered: isFiltered))
+    }
+
+    static func seenStories(categoryID: Int, isFiltered: Bool) -> Set<String> {
+        Set(UserDefaults.standard.stringArray(forKey: seenStoriesKey(categoryID: categoryID, isFiltered: isFiltered)) ?? [])
+    }
+
+    static func setSeenStories(_ storyKeys: Set<String>, categoryID: Int, isFiltered: Bool) {
+        UserDefaults.standard.set(Array(storyKeys).sorted(), forKey: seenStoriesKey(categoryID: categoryID, isFiltered: isFiltered))
     }
 }
 
@@ -191,6 +203,7 @@ private struct FloatingWidgetView: View {
     @State private var copiedStoryKey: String?
     @State private var draggedStoryKey: String?
     @State private var layoutMode: FloatingWidgetLayoutMode
+    @State private var seenStoryKeys: Set<String>
     @State private var stackIndex = 0
     /// How many stories to show. Grows by `pageStep` via "Show More", resets to
     /// `pageStep` via "Reset". Mirrors ai_news_deploy_ready's column behaviour.
@@ -204,6 +217,7 @@ private struct FloatingWidgetView: View {
         self.categoryName = categoryName
         self.isFiltered = isFiltered
         _layoutMode = State(initialValue: FloatingWidgetPreferences.layoutMode(categoryID: categoryID, isFiltered: isFiltered))
+        _seenStoryKeys = State(initialValue: FloatingWidgetPreferences.seenStories(categoryID: categoryID, isFiltered: isFiltered))
     }
 
     private var pendingCount: Int {
@@ -565,6 +579,9 @@ private struct FloatingWidgetView: View {
 
     private func moveStack(by delta: Int) {
         guard !stories.isEmpty else { return }
+        if let current = currentStackStory {
+            markStorySeen(current.storyKey)
+        }
         stackIndex = max(0, min(stories.count - 1, stackIndex + delta))
     }
 
@@ -641,6 +658,9 @@ private struct FloatingWidgetView: View {
                             .font(widgetCaption(weight: .semibold))
                             .foregroundStyle(AINewsTheme.accentCyan)
                             .lineLimit(1)
+                        if showsNewBadge(for: story) {
+                            newBadge
+                        }
                         if let mood = story.mood, !mood.isEmpty {
                             MoodChip(mood: mood)
                         }
@@ -803,8 +823,34 @@ private struct FloatingWidgetView: View {
         FloatingWidgetPreferences.setStoryOrder(orderedStoryKeys, categoryID: categoryID, isFiltered: isFiltered)
     }
 
+    private func persistSeenStories() {
+        FloatingWidgetPreferences.setSeenStories(seenStoryKeys, categoryID: categoryID, isFiltered: isFiltered)
+    }
+
     private func clampStackIndex() {
         stackIndex = max(0, min(stackIndex, max(stories.count - 1, 0)))
+    }
+
+    private func markStorySeen(_ storyKey: String) {
+        guard !storyKey.isEmpty, !seenStoryKeys.contains(storyKey) else { return }
+        seenStoryKeys.insert(storyKey)
+        persistSeenStories()
+    }
+
+    private func showsNewBadge(for story: WidgetStory) -> Bool {
+        layoutMode == .stack && currentStackStory?.storyKey == story.storyKey && !seenStoryKeys.contains(story.storyKey)
+    }
+
+    private var newBadge: some View {
+        Text("NEW")
+            .font(widgetCaption2(weight: .bold))
+            .foregroundStyle(Color.black)
+            .padding(.horizontal, 7)
+            .padding(.vertical, 2)
+            .background(
+                Capsule(style: .continuous)
+                    .fill(AINewsTheme.accentGold.opacity(0.98))
+            )
     }
 
     private func resizeWindowForCurrentLayout() {
