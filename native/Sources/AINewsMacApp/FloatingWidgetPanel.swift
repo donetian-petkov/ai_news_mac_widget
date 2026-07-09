@@ -349,13 +349,19 @@ private struct FloatingWidgetView: View {
 
     private var header: some View {
         HStack(spacing: 8) {
-            Image(systemName: "newspaper.fill")
-                .font(widgetFont(17, weight: .bold))
-                .foregroundStyle(AINewsTheme.accentBlue)
-            Text(categoryName)
-                .font(widgetHeaderTitle())
-                .foregroundStyle(AINewsTheme.textPrimary)
-                .lineLimit(1)
+            HStack(spacing: 10) {
+                Image(systemName: "newspaper.fill")
+                    .font(widgetFont(17, weight: .bold))
+                    .foregroundStyle(AINewsTheme.accentBlue)
+                Text(categoryName)
+                    .font(widgetHeaderTitle())
+                    .foregroundStyle(AINewsTheme.textPrimary)
+                    .lineLimit(1)
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+            .background(headerCapsuleFill)
+            .overlay(headerCapsuleStroke)
             Spacer(minLength: 8)
             // Centered: live time/date + total AI token usage.
             TimelineView(.periodic(from: Date(), by: 30)) { context in
@@ -371,6 +377,10 @@ private struct FloatingWidgetView: View {
                         .foregroundStyle(pendingCount > 0 ? AINewsTheme.accentGold : AINewsTheme.textMuted)
                 }
                 .lineLimit(1)
+                .padding(.horizontal, 14)
+                .padding(.vertical, 8)
+                .background(headerCapsuleFill)
+                .overlay(headerCapsuleStroke)
             }
             Spacer(minLength: 8)
             HStack(spacing: 6) {
@@ -402,6 +412,16 @@ private struct FloatingWidgetView: View {
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 10)
+    }
+
+    private var headerCapsuleFill: some View {
+        RoundedRectangle(cornerRadius: 16, style: .continuous)
+            .fill(AINewsTheme.panel.opacity(0.58))
+    }
+
+    private var headerCapsuleStroke: some View {
+        RoundedRectangle(cornerRadius: 16, style: .continuous)
+            .stroke(AINewsTheme.panelBorder.opacity(0.18), lineWidth: 1)
     }
 
     private func headerModeButton(_ mode: FloatingWidgetLayoutMode, systemImage: String) -> some View {
