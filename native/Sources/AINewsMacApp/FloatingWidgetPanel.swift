@@ -55,14 +55,16 @@ private struct FloatingGlassBackground: NSViewRepresentable {
     func makeNSView(context: Context) -> NSVisualEffectView {
         let view = NSVisualEffectView()
         view.state = .active
-        view.material = .hudWindow
+        view.material = .sidebar
         view.blendingMode = .behindWindow
-        view.isEmphasized = true
+        view.isEmphasized = false
+        view.alphaValue = 0.82
         return view
     }
 
     func updateNSView(_ nsView: NSVisualEffectView, context: Context) {
         nsView.state = .active
+        nsView.alphaValue = 0.82
     }
 }
 
@@ -292,20 +294,20 @@ private struct FloatingWidgetView: View {
                 FloatingGlassBackground()
                 LinearGradient(
                     colors: [
-                        AINewsTheme.backgroundAlt.opacity(0.34),
-                        AINewsTheme.background.opacity(0.42)
+                        AINewsTheme.backgroundAlt.opacity(0.16),
+                        AINewsTheme.background.opacity(0.22)
                     ],
                     startPoint: .topLeading,
                     endPoint: .bottomTrailing
                 )
                 RadialGradient(
-                    gradient: Gradient(colors: [AINewsTheme.panelBorder.opacity(0.16), .clear]),
+                    gradient: Gradient(colors: [AINewsTheme.panelBorder.opacity(0.08), .clear]),
                     center: UnitPoint(x: 0.05, y: 0.0),
                     startRadius: 0,
                     endRadius: 520
                 )
                 RadialGradient(
-                    gradient: Gradient(colors: [AINewsTheme.accentCyan.opacity(0.10), .clear]),
+                    gradient: Gradient(colors: [AINewsTheme.accentCyan.opacity(0.05), .clear]),
                     center: UnitPoint(x: 1.0, y: 0.02),
                     startRadius: 0,
                     endRadius: 520
