@@ -470,10 +470,10 @@ private struct FloatingWidgetView: View {
             VStack(spacing: 12) {
                 ZStack {
                     if let tertiary = stackStory(offsetBy: 2) {
-                        stackBackdropCard(for: tertiary, scale: 0.92, yOffset: 26, opacity: 0.22)
+                        stackBackdropCard(for: tertiary, scale: 0.92, xOffset: 34, yOffset: 10, opacity: 0.20)
                     }
                     if let secondary = stackStory(offsetBy: 1) {
-                        stackBackdropCard(for: secondary, scale: 0.96, yOffset: 14, opacity: 0.36)
+                        stackBackdropCard(for: secondary, scale: 0.96, xOffset: 18, yOffset: 5, opacity: 0.32)
                     }
                     if let current = currentStackStory {
                         ScrollView {
@@ -514,7 +514,7 @@ private struct FloatingWidgetView: View {
         }
     }
 
-    private func stackBackdropCard(for _: WidgetStory, scale: CGFloat, yOffset: CGFloat, opacity: Double) -> some View {
+    private func stackBackdropCard(for _: WidgetStory, scale: CGFloat, xOffset: CGFloat, yOffset: CGFloat, opacity: Double) -> some View {
         RoundedRectangle(cornerRadius: 18, style: .continuous)
             .fill(
                 LinearGradient(
@@ -553,7 +553,8 @@ private struct FloatingWidgetView: View {
                     .stroke(AINewsTheme.panelBorder.opacity(0.22), lineWidth: 1)
             )
             .scaleEffect(scale)
-            .offset(y: yOffset)
+            .shadow(color: Color.black.opacity(0.16), radius: 12, x: 6, y: 4)
+            .offset(x: xOffset, y: yOffset)
             .opacity(opacity)
             .allowsHitTesting(false)
             .frame(height: 168)
