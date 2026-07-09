@@ -1,6 +1,58 @@
 import AppKit
 import SwiftUI
+import UniformTypeIdentifiers
 import AINewsWidgetShared
+
+private enum FloatingWidgetLayoutMode: String, CaseIterable {
+    case column
+    case stack
+}
+
+private enum FloatingWidgetPreferences {
+    private static func widgetKey(categoryID: Int, isFiltered: Bool) -> String {
+        isFiltered ? "filtered" : "category-\(categoryID)"
+    }
+
+    private static func layoutModeKey(categoryID: Int, isFiltered: Bool) -> String {
+        "AINewsFloatingWidgetLayout-\(widgetKey(categoryID: categoryID, isFiltered: isFiltered))"
+    }
+
+    private static func storyOrderKey(categoryID: Int, isFiltered: Bool) -> String {
+        "AINewsFloatingWidgetStoryOrder-\(widgetKey(categoryID: categoryID, isFiltered: isFiltered))"
+    }
+
+    static func layoutMode(categoryID: Int, isFiltered: Bool) -> FloatingWidgetLayoutMode {
+        let raw = UserDefaults.standard.string(forKey: layoutModeKey(categoryID: categoryID, isFiltered: isFiltered)) ?? FloatingWidgetLayoutMode.column.rawValue
+        return FloatingWidgetLayoutMode(rawValue: raw) ?? .column
+    }
+
+    static func setLayoutMode(_ mode: FloatingWidgetLayoutMode, categoryID: Int, isFiltered: Bool) {
+        UserDefaults.standard.set(mode.rawValue, forKey: layoutModeKey(categoryID: categoryID, isFiltered: isFiltered))
+    }
+
+    static func storyOrder(categoryID: Int, isFiltered: Bool) -> [String] {
+        UserDefaults.standard.stringArray(forKey: storyOrderKey(categoryID: categoryID, isFiltered: isFiltered)) ?? []
+    }
+
+    static func setStoryOrder(_ order: [String], categoryID: Int, isFiltered: Bool) {
+        UserDefaults.standard.set(order, forKey: storyOrderKey(categoryID: categoryID, isFiltered: isFiltered))
+    }
+}
+
+private struct FloatingGlassBackground: NSViewRepresentable {
+    func makeNSView(context: Context) -> NSVisualEffectView {
+        let view = NSVisualEffectView()
+        view.state = .active
+        view.material = .hudWindow
+        view.blendingMode = .behindWindow
+        view.isEmphasized = true
+        return view
+    }
+
+    func updateNSView(_ nsView: NSVisualEffectView, context: Context) {
+        nsView.state = .active
+    }
+}
 
 /// Owns always-on-top `NSPanel`s that mirror categories. Each category gets its
 /// own panel, so several can float at once. Unlike a WidgetKit widget, these are
@@ -79,15 +131,23 @@ final class FloatingWidgetManager: NSObject, NSWindowDelegate {
                 .environmentObject(state)
                 .environmentObject(ThemeSettings.shared)
         )
+        hostingController.view.wantsLayer = true
+        hostingController.view.layer?.backgroundColor = NSColor.clear.cgColor
 
         let panel = NSPanel(
             contentRect: NSRect(x: 0, y: 0, width: 340, height: 480),
-            styleMask: [.titled, .closable, .resizable],
+            styleMask: [.titled, .closable, .resizable, .fullSizeContentView],
             backing: .buffered,
             defer: false
         )
         panel.title = categoryName
         panel.contentViewController = hostingController
+        panel.titlebarAppearsTransparent = true
+        panel.titleVisibility = .visible
+        panel.isMovableByWindowBackground = true
+        panel.isOpaque = false
+        panel.backgroundColor = .clear
+        panel.hasShadow = true
         // Float above other apps and follow the user across Spaces / full-screen.
         panel.level = .floating
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
@@ -129,12 +189,22 @@ private struct FloatingWidgetView: View {
     @State private var stories: [WidgetStory] = []
     @State private var loading = false
     @State private var copiedStoryKey: String?
+    @State private var draggedStoryKey: String?
+    @State private var layoutMode: FloatingWidgetLayoutMode
+    @State private var stackIndex = 0
     /// How many stories to show. Grows by `pageStep` via "Show More", resets to
     /// `pageStep` via "Reset". Mirrors ai_news_deploy_ready's column behaviour.
     @State private var visibleCount = 10
     /// True once the backend returns fewer stories than requested (no more left).
     @State private var reachedEnd = false
     private let pageStep = 10
+
+    init(categoryID: Int, categoryName: String, isFiltered: Bool = false) {
+        self.categoryID = categoryID
+        self.categoryName = categoryName
+        self.isFiltered = isFiltered
+        _layoutMode = State(initialValue: FloatingWidgetPreferences.layoutMode(categoryID: categoryID, isFiltered: isFiltered))
+    }
 
     private var pendingCount: Int {
         if isFiltered {
@@ -182,6 +252,10 @@ private struct FloatingWidgetView: View {
         widgetFont(13, weight: weight)
     }
 
+    private var orderedStoryKeys: [String] {
+        stories.map(\.storyKey)
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             header
@@ -189,7 +263,31 @@ private struct FloatingWidgetView: View {
             content
         }
         .frame(minWidth: 220, minHeight: 180)
-        .background(AINewsBackground())
+        .background(
+            ZStack {
+                FloatingGlassBackground()
+                LinearGradient(
+                    colors: [
+                        AINewsTheme.backgroundAlt.opacity(0.68),
+                        AINewsTheme.background.opacity(0.78)
+                    ],
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                )
+                RadialGradient(
+                    gradient: Gradient(colors: [AINewsTheme.panelBorder.opacity(0.22), .clear]),
+                    center: UnitPoint(x: 0.05, y: 0.0),
+                    startRadius: 0,
+                    endRadius: 520
+                )
+                RadialGradient(
+                    gradient: Gradient(colors: [AINewsTheme.accentCyan.opacity(0.12), .clear]),
+                    center: UnitPoint(x: 1.0, y: 0.02),
+                    startRadius: 0,
+                    endRadius: 520
+                )
+            }
+        )
         .dynamicTypeSize(theme.widgetFontSize.dynamicTypeSize)
         .task {
             // Load now, then auto-refresh so the widget picks up new stories and
@@ -212,6 +310,10 @@ private struct FloatingWidgetView: View {
                     copiedStoryKey = nil
                 }
             }
+        }
+        .onChange(of: layoutMode) { _, newValue in
+            FloatingWidgetPreferences.setLayoutMode(newValue, categoryID: categoryID, isFiltered: isFiltered)
+            clampStackIndex()
         }
     }
 
@@ -241,6 +343,11 @@ private struct FloatingWidgetView: View {
                 .lineLimit(1)
             }
             Spacer(minLength: 8)
+            HStack(spacing: 6) {
+                headerModeButton(.column, systemImage: "rectangle.grid.1x2")
+                headerModeButton(.stack, systemImage: "square.stack.3d.up")
+            }
+            Spacer(minLength: 8)
             if loading {
                 ProgressView().controlSize(.small)
             }
@@ -267,6 +374,30 @@ private struct FloatingWidgetView: View {
         .padding(.vertical, 10)
     }
 
+    private func headerModeButton(_ mode: FloatingWidgetLayoutMode, systemImage: String) -> some View {
+        Button {
+            layoutMode = mode
+        } label: {
+            Image(systemName: systemImage)
+                .font(widgetFont(12, weight: .semibold))
+                .foregroundStyle(layoutMode == mode ? Color.black : AINewsTheme.textPrimary)
+                .frame(width: 28, height: 28)
+                .background(
+                    RoundedRectangle(cornerRadius: 9, style: .continuous)
+                        .fill(layoutMode == mode ? AINewsTheme.accentCyan.opacity(0.95) : AINewsTheme.backgroundAlt.opacity(0.9))
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 9, style: .continuous)
+                        .stroke(
+                            layoutMode == mode ? AINewsTheme.accentCyan.opacity(0.98) : AINewsTheme.panelBorder.opacity(0.75),
+                            lineWidth: 1
+                        )
+                )
+        }
+        .buttonStyle(.borderless)
+        .help(mode == .column ? "Column view" : "Stack view")
+    }
+
     private var tokenText: String {
         let n = state.usage?.totalTokens ?? 0
         if n >= 1_000_000 { return String(format: "%.1fM", Double(n) / 1_000_000) }
@@ -289,6 +420,8 @@ private struct FloatingWidgetView: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             .padding(14)
+        } else if layoutMode == .stack {
+            stackContent
         } else {
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 12) {
@@ -300,6 +433,119 @@ private struct FloatingWidgetView: View {
                 .padding(14)
             }
         }
+    }
+
+    private var stackContent: some View {
+        VStack(spacing: 12) {
+            ZStack {
+                if let tertiary = stackStory(offsetBy: 2) {
+                    stackBackdropCard(for: tertiary, scale: 0.92, yOffset: 26, opacity: 0.22)
+                }
+                if let secondary = stackStory(offsetBy: 1) {
+                    stackBackdropCard(for: secondary, scale: 0.96, yOffset: 14, opacity: 0.36)
+                }
+                if let current = currentStackStory {
+                    storyRow(current, draggable: false)
+                }
+            }
+            .padding(.horizontal, 14)
+            .padding(.top, 14)
+
+            HStack(spacing: 10) {
+                Button {
+                    moveStack(by: -1)
+                } label: {
+                    stackNavLabel(systemImage: "chevron.up", title: "Previous")
+                }
+                .buttonStyle(.plain)
+                .disabled(stackIndex <= 0)
+
+                Text("\(stackIndex + 1) of \(stories.count)")
+                    .font(widgetFont(12, weight: .semibold))
+                    .foregroundStyle(AINewsTheme.textMuted)
+                    .frame(minWidth: 72)
+
+                Button {
+                    moveStack(by: 1)
+                } label: {
+                    stackNavLabel(systemImage: "chevron.down", title: "Next")
+                }
+                .buttonStyle(.plain)
+                .disabled(stackIndex >= stories.count - 1)
+            }
+            .padding(.horizontal, 14)
+            .padding(.bottom, 14)
+        }
+    }
+
+    private func stackBackdropCard(for story: WidgetStory, scale: CGFloat, yOffset: CGFloat, opacity: Double) -> some View {
+        RoundedRectangle(cornerRadius: 18, style: .continuous)
+            .fill(
+                LinearGradient(
+                    colors: [AINewsTheme.panel.opacity(0.65), AINewsTheme.background.opacity(0.82)],
+                    startPoint: .top,
+                    endPoint: .bottom
+                )
+            )
+            .overlay(
+                VStack(alignment: .leading, spacing: 5) {
+                    Text(story.source ?? story.feedUrl)
+                        .font(widgetCaption(weight: .semibold))
+                        .foregroundStyle(AINewsTheme.accentCyan.opacity(0.9))
+                        .lineLimit(1)
+                    Text(story.title)
+                        .font(widgetHeadline(weight: .bold))
+                        .foregroundStyle(AINewsTheme.accentBlue.opacity(0.85))
+                        .lineLimit(2)
+                }
+                .padding(14),
+                alignment: .topLeading
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 18, style: .continuous)
+                    .stroke(AINewsTheme.panelBorder.opacity(0.45), lineWidth: 1)
+            )
+            .scaleEffect(scale)
+            .offset(y: yOffset)
+            .opacity(opacity)
+            .allowsHitTesting(false)
+            .frame(height: 168)
+    }
+
+    private func stackNavLabel(systemImage: String, title: String) -> some View {
+        HStack(spacing: 8) {
+            Image(systemName: systemImage)
+                .font(widgetFont(12, weight: .semibold))
+            Text(title)
+                .font(widgetFont(12, weight: .semibold))
+        }
+        .foregroundStyle(AINewsTheme.textPrimary)
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 8)
+        .background(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .fill(AINewsTheme.backgroundAlt.opacity(0.92))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .stroke(AINewsTheme.panelBorder.opacity(0.75), lineWidth: 1)
+        )
+    }
+
+    private var currentStackStory: WidgetStory? {
+        guard stories.indices.contains(stackIndex) else { return stories.first }
+        return stories[stackIndex]
+    }
+
+    private func stackStory(offsetBy offset: Int) -> WidgetStory? {
+        let target = stackIndex + offset
+        guard stories.indices.contains(target) else { return nil }
+        return stories[target]
+    }
+
+    private func moveStack(by delta: Int) {
+        guard !stories.isEmpty else { return }
+        stackIndex = max(0, min(stories.count - 1, stackIndex + delta))
     }
 
     @ViewBuilder
@@ -363,7 +609,7 @@ private struct FloatingWidgetView: View {
 
     @AppStorage("ai_news_show_thumbnails") private var coversEnabled = true
 
-    private func storyRow(_ story: WidgetStory) -> some View {
+    private func storyRow(_ story: WidgetStory, draggable: Bool = true) -> some View {
         ZStack(alignment: .topTrailing) {
             HStack(alignment: .top, spacing: 12) {
                 if coversEnabled {
@@ -423,9 +669,22 @@ private struct FloatingWidgetView: View {
         .padding(12)
         .aiNewsCardStyle()
         .contentShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .opacity(draggedStoryKey == story.storyKey ? 0.72 : 1)
         .onTapGesture {
             openStory(story)
         }
+        .onDrag {
+            guard draggable else { return NSItemProvider() }
+            draggedStoryKey = story.storyKey
+            return NSItemProvider(object: story.storyKey as NSString)
+        }
+        .onDrop(of: [UTType.plainText], delegate: StoryDropDelegate(
+            targetStoryKey: story.storyKey,
+            stories: $stories,
+            draggedStoryKey: $draggedStoryKey,
+            onReordered: persistStoryOrder,
+            onStackNeedsClamp: clampStackIndex
+        ))
     }
 
     private func openStory(_ story: WidgetStory) {
@@ -463,12 +722,63 @@ private struct FloatingWidgetView: View {
         guard let api = try? state.authorizedAPIClient() else { return }
         if isFiltered {
             if let matches = try? await api.fetchKeywordMatches(limit: visibleCount) {
-                stories = matches
-                reachedEnd = matches.count < visibleCount
+                updateStories(matches)
             }
         } else if let response = try? await api.fetchStories(categoryID: categoryID, limit: visibleCount) {
-            stories = response.stories
-            reachedEnd = response.stories.count < visibleCount
+            updateStories(response.stories)
         }
+    }
+
+    private func updateStories(_ fetchedStories: [WidgetStory]) {
+        reachedEnd = fetchedStories.count < visibleCount
+        stories = applyLocalOrder(to: fetchedStories)
+        clampStackIndex()
+        persistStoryOrder()
+    }
+
+    private func applyLocalOrder(to fetchedStories: [WidgetStory]) -> [WidgetStory] {
+        let storedOrder = FloatingWidgetPreferences.storyOrder(categoryID: categoryID, isFiltered: isFiltered)
+        guard !storedOrder.isEmpty else { return fetchedStories }
+        let byKey = Dictionary(uniqueKeysWithValues: fetchedStories.map { ($0.storyKey, $0) })
+        var ordered = storedOrder.compactMap { byKey[$0] }
+        let seen = Set(ordered.map(\.storyKey))
+        ordered.append(contentsOf: fetchedStories.filter { !seen.contains($0.storyKey) })
+        return ordered
+    }
+
+    private func persistStoryOrder() {
+        FloatingWidgetPreferences.setStoryOrder(orderedStoryKeys, categoryID: categoryID, isFiltered: isFiltered)
+    }
+
+    private func clampStackIndex() {
+        stackIndex = max(0, min(stackIndex, max(stories.count - 1, 0)))
+    }
+}
+
+private struct StoryDropDelegate: DropDelegate {
+    let targetStoryKey: String
+    @Binding var stories: [WidgetStory]
+    @Binding var draggedStoryKey: String?
+    let onReordered: () -> Void
+    let onStackNeedsClamp: () -> Void
+
+    func dropEntered(info: DropInfo) {
+        guard let draggedStoryKey, draggedStoryKey != targetStoryKey else { return }
+        guard let fromIndex = stories.firstIndex(where: { $0.storyKey == draggedStoryKey }),
+              let toIndex = stories.firstIndex(where: { $0.storyKey == targetStoryKey }) else { return }
+        withAnimation(.easeInOut(duration: 0.16)) {
+            stories.move(fromOffsets: IndexSet(integer: fromIndex), toOffset: toIndex > fromIndex ? toIndex + 1 : toIndex)
+        }
+    }
+
+    func dropUpdated(info: DropInfo) -> DropProposal? {
+        DropProposal(operation: .move)
+    }
+
+    func performDrop(info: DropInfo) -> Bool {
+        draggedStoryKey = nil
+        onReordered()
+        onStackNeedsClamp()
+        return true
     }
 }
