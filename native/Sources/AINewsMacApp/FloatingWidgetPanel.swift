@@ -329,6 +329,43 @@ final class FloatingWidgetManager: NSObject, NSWindowDelegate {
         isSnappingMergedWidget = false
     }
 
+    private func unmergeWidget(categoryID: Int) {
+        guard
+            categoryID != filteredKey,
+            let mergedIDs = mergedCategoryIDsByBase[categoryID],
+            !mergedIDs.isEmpty,
+            let basePanel = panels[categoryID]
+        else { return }
+
+        isSnappingMergedWidget = true
+        let baseName = names[categoryID] ?? categoryName(for: categoryID) ?? basePanel.title
+        mergedCategoryIDsByBase.removeValue(forKey: categoryID)
+        configurePanelContent(
+            basePanel,
+            categoryID: categoryID,
+            categoryName: baseName,
+            isFiltered: false,
+            mergedCategoryIDs: []
+        )
+        basePanel.title = baseName
+
+        let baseFrame = basePanel.frame
+        for (index, id) in mergedIDs.enumerated() {
+            let name = names[id] ?? categoryName(for: id) ?? "Feed \(id)"
+            openWidget(
+                categoryID: id,
+                categoryName: name,
+                isFiltered: false,
+                frameOverride: splitFrame(from: baseFrame, index: index),
+                mergedCategoryIDs: []
+            )
+        }
+
+        basePanel.makeKeyAndOrderFront(nil)
+        persistFrame(for: basePanel)
+        isSnappingMergedWidget = false
+    }
+
     private func panelID(for window: NSWindow) -> Int? {
         panels.first(where: { $0.value === window })?.key
     }
@@ -338,6 +375,27 @@ final class FloatingWidgetManager: NSObject, NSWindowDelegate {
         let offset = CGFloat((index + 1) * 34)
         frame.origin.x += offset
         frame.origin.y -= offset
+        return frame
+    }
+
+    private func splitFrame(from baseFrame: NSRect, index: Int) -> NSRect {
+        var frame = baseFrame
+        let gap: CGFloat = 28
+        let stepX = baseFrame.width + gap
+        let stepY = min(baseFrame.height + gap, 520)
+        frame.origin.x += CGFloat(index + 1) * stepX
+
+        let screenFrame = (NSScreen.screens.first { $0.visibleFrame.intersects(baseFrame) } ?? NSScreen.main)?.visibleFrame
+        if let screenFrame, frame.maxX > screenFrame.maxX {
+            frame.origin.x = baseFrame.origin.x - CGFloat(index + 1) * stepX
+        }
+        if let screenFrame, frame.minX < screenFrame.minX {
+            frame.origin.x = min(max(baseFrame.origin.x, screenFrame.minX), screenFrame.maxX - frame.width)
+            frame.origin.y -= CGFloat(index + 1) * stepY
+        }
+        if let screenFrame {
+            frame.origin.y = min(max(frame.origin.y, screenFrame.minY), screenFrame.maxY - frame.height)
+        }
         return frame
     }
 
@@ -356,6 +414,10 @@ final class FloatingWidgetManager: NSObject, NSWindowDelegate {
 
     private func rectArea(_ rect: NSRect) -> CGFloat {
         max(rect.width, 0) * max(rect.height, 0)
+    }
+
+    private func categoryName(for id: Int) -> String? {
+        state.categories.first(where: { $0.id == id })?.name
     }
 
     func openWidget(
@@ -449,7 +511,10 @@ final class FloatingWidgetManager: NSObject, NSWindowDelegate {
                     categoryID: categoryID,
                     categoryName: categoryName,
                     isFiltered: isFiltered,
-                    mergedCategoryIDs: mergedCategoryIDs
+                    mergedCategoryIDs: mergedCategoryIDs,
+                    onUnmerge: { [weak self] in
+                        self?.unmergeWidget(categoryID: categoryID)
+                    }
                 )
                 .environmentObject(state)
                 .environmentObject(ThemeSettings.shared)
@@ -489,6 +554,7 @@ private struct FloatingWidgetView: View {
     let categoryName: String
     var isFiltered: Bool = false
     var mergedCategoryIDs: [Int] = []
+    var onUnmerge: () -> Void = {}
 
     @State private var stories: [WidgetStory] = []
     @State private var loading = false
@@ -507,11 +573,18 @@ private struct FloatingWidgetView: View {
     @State private var reachedEnd = false
     private let pageStep = 10
 
-    init(categoryID: Int, categoryName: String, isFiltered: Bool = false, mergedCategoryIDs: [Int] = []) {
+    init(
+        categoryID: Int,
+        categoryName: String,
+        isFiltered: Bool = false,
+        mergedCategoryIDs: [Int] = [],
+        onUnmerge: @escaping () -> Void = {}
+    ) {
         self.categoryID = categoryID
         self.categoryName = categoryName
         self.isFiltered = isFiltered
         self.mergedCategoryIDs = mergedCategoryIDs
+        self.onUnmerge = onUnmerge
         _layoutMode = State(initialValue: FloatingWidgetPreferences.layoutMode(categoryID: categoryID, isFiltered: isFiltered))
         _seenStoryKeys = State(initialValue: FloatingWidgetPreferences.seenStories(categoryID: categoryID, isFiltered: isFiltered))
     }
@@ -796,16 +869,24 @@ private struct FloatingWidgetView: View {
     }
 
     private var headerTitleChip: some View {
-        HStack(spacing: 10) {
-            Image(systemName: "newspaper.fill")
-                .font(widgetFont(17, weight: .bold))
-                .foregroundStyle(AINewsTheme.accentBlue)
-            Text(displayCategoryName)
-                .font(widgetHeaderTitle())
-                .foregroundStyle(AINewsTheme.textPrimary)
-                .lineLimit(1)
-                .minimumScaleFactor(0.9)
+        Button {
+            if !mergedCategoryIDs.isEmpty {
+                onUnmerge()
+            }
+        } label: {
+            HStack(spacing: 10) {
+                Image(systemName: "newspaper.fill")
+                    .font(widgetFont(17, weight: .bold))
+                    .foregroundStyle(AINewsTheme.accentBlue)
+                Text(displayCategoryName)
+                    .font(widgetHeaderTitle())
+                    .foregroundStyle(AINewsTheme.textPrimary)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.9)
+            }
         }
+        .buttonStyle(.plain)
+        .help(mergedCategoryIDs.isEmpty ? displayCategoryName : "Unmerge feeds")
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
         .background(headerCapsuleFill)
@@ -834,16 +915,24 @@ private struct FloatingWidgetView: View {
     }
 
     private var compactHeaderTitleChip: some View {
-        HStack(spacing: 7) {
-            Image(systemName: "newspaper.fill")
-                .font(widgetFont(14, weight: .bold))
-                .foregroundStyle(AINewsTheme.accentBlue)
-            Text(displayCategoryName)
-                .font(widgetFont(15, weight: .bold))
-                .foregroundStyle(AINewsTheme.textPrimary)
-                .lineLimit(1)
-                .minimumScaleFactor(0.84)
+        Button {
+            if !mergedCategoryIDs.isEmpty {
+                onUnmerge()
+            }
+        } label: {
+            HStack(spacing: 7) {
+                Image(systemName: "newspaper.fill")
+                    .font(widgetFont(14, weight: .bold))
+                    .foregroundStyle(AINewsTheme.accentBlue)
+                Text(displayCategoryName)
+                    .font(widgetFont(15, weight: .bold))
+                    .foregroundStyle(AINewsTheme.textPrimary)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.84)
+            }
         }
+        .buttonStyle(.plain)
+        .help(mergedCategoryIDs.isEmpty ? displayCategoryName : "Unmerge feeds")
         .padding(.horizontal, 9)
         .padding(.vertical, 5)
         .background(compactHeaderCapsuleFill)
