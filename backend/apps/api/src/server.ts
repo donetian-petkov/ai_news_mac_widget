@@ -3409,18 +3409,23 @@ function matchTerms(): string[] {
   return Array.from(set);
 }
 
-function substringHit(title: string): boolean {
+function matchSearchText(title: string, contextText?: string): string {
+  return [title, contextText].filter(part => typeof part === 'string' && part.trim()).join('\n');
+}
+
+function substringHit(searchText: string): boolean {
   const terms = matchTerms();
   if (!terms.length) return false;
-  const t = normalizeText(title);
+  const t = normalizeText(searchText);
   if (!t) return false;
   return terms.some(k => t.includes(normalizeText(k)));
 }
 
 async function hybridMatch(
-  title: string
+  title: string,
+  contextText = ''
 ): Promise<{ isMatch: boolean; score: number; vec: number[] | null }> {
-  const hit = substringHit(title);
+  const hit = substringHit(matchSearchText(title, contextText));
 
   // Explicit keyword/tracked-topic hits should enter the Filtered feed
   // immediately. Semantic matching is still used for non-substring matches,
@@ -3457,7 +3462,7 @@ async function refreshMatchStateForRecent() {
   // limits after a keyword/tracked-topic change. New items still get semantic
   // (embedding) matching via hybridMatch at fetch time.
   for (const it of sorted) {
-    const hit = substringHit(it.title);
+    const hit = substringHit(matchSearchText(it.title, it.__ctx));
     it.isMatch = hit;
     it.matchScore = hit ? 1 : 0;
     it.filteredOk = hit;
@@ -6914,7 +6919,7 @@ async function fetchFeedXml(fi: FeedInfo): Promise<{ xml: string | null; notModi
 // previously gated all of this so items only generated when a webhook was set.
 async function enqueueAiForFetchedItem(item: NewsInternal) {
   try {
-    const m = await hybridMatch(item.title);
+    const m = await hybridMatch(item.title, item.__ctx);
     item.isMatch = m.isMatch;
     item.matchScore = m.score;
     item.filteredOk = m.isMatch;
@@ -7057,14 +7062,15 @@ async function processFeed(fi: FeedInfo) {
       let isMatch = false;
       let matchScore = 0;
       let titleVec: number[] | null = null;
+      const ctx = pickRssContextCombined(item, 1500);
 
       try {
-        const m = await hybridMatch(title);
+        const m = await hybridMatch(title, ctx);
         isMatch = m.isMatch;
         matchScore = m.score;
         titleVec = m.vec;
       } catch {
-        const hit = substringHit(title);
+        const hit = substringHit(matchSearchText(title, ctx));
         isMatch = hit;
         matchScore = hit ? 1 : 0;
         titleVec = null;
@@ -7082,7 +7088,6 @@ async function processFeed(fi: FeedInfo) {
         if (isFilteredDuplicate(titleVec)) filteredOk = false;
         else addToFilteredDedupe(titleVec);
       }
-      const ctx = pickRssContextCombined(item, 1500);
 
       const pkt: NewsInternal = {
         type: 'news',

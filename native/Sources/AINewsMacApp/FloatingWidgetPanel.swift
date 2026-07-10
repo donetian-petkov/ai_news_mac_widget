@@ -575,12 +575,14 @@ private struct FloatingWidgetView: View {
     @State private var lastAutoSizedStackSize: CGSize = .zero
     @State private var lastAutoSizedColumnSize: CGSize = .zero
     @State private var suppressResizeDuringRefresh = false
+    @State private var lastSourceRefreshAt: Date?
     /// How many stories to show. Grows by `pageStep` via "Show More", resets to
     /// `pageStep` via "Reset". Mirrors ai_news_deploy_ready's column behaviour.
     @State private var visibleCount = 10
     /// True once the backend returns fewer stories than requested (no more left).
     @State private var reachedEnd = false
     private let pageStep = 10
+    private let sourceRefreshInterval: TimeInterval = 60
 
     init(
         categoryID: Int,
@@ -1515,11 +1517,13 @@ private struct FloatingWidgetView: View {
                 suppressResizeDuringRefresh = false
             }
         }
-        await state.refreshUsage()
         guard let api = try? state.authorizedAPIClient() else { return }
+        AINewsDebugLog.log("floating reload start filtered=\(isFiltered) categories=\(allCategoryIDs) limit=\(visibleCount)")
+        await refreshSourceFeedsIfDue(api: api)
         if isFiltered {
             if let matches = try? await api.fetchKeywordMatches(limit: visibleCount) {
                 updateStories(matches, resizeAfterUpdate: false)
+                logTopStory(matches, scope: "filtered")
             }
         } else {
             var mergedStories: [WidgetStory] = []
@@ -1535,8 +1539,47 @@ private struct FloatingWidgetView: View {
                 .compactMap { $0.value.first }
                 .sorted { lhs, rhs in lhs.publishedMs > rhs.publishedMs }
             reachedEnd = exhaustedCategories == allCategoryIDs.count
-            updateStories(Array(deduplicated.prefix(visibleCount)), resizeAfterUpdate: false, reachedEndOverride: reachedEnd)
+            let limitedStories = Array(deduplicated.prefix(visibleCount))
+            updateStories(limitedStories, resizeAfterUpdate: false, reachedEndOverride: reachedEnd)
+            logTopStory(limitedStories, scope: displayCategoryName)
         }
+        Task { await state.refreshUsage() }
+    }
+
+    private func refreshSourceFeedsIfDue(api: APIClient) async {
+        let now = Date()
+        if let lastSourceRefreshAt, now.timeIntervalSince(lastSourceRefreshAt) < sourceRefreshInterval {
+            return
+        }
+        lastSourceRefreshAt = now
+
+        let categoriesToRefresh: [WidgetCategory]
+        if isFiltered {
+            categoriesToRefresh = state.categories.filter { !$0.hidden && !$0.feedUrls.isEmpty }
+        } else {
+            categoriesToRefresh = allCategoryIDs.compactMap { id in
+                state.categories.first(where: { $0.id == id && !$0.feedUrls.isEmpty })
+            }
+        }
+
+        AINewsDebugLog.log("floating source refresh start filtered=\(isFiltered) categories=\(categoriesToRefresh.map(\.id))")
+        for category in categoriesToRefresh {
+            do {
+                try await api.refreshCategory(category)
+                AINewsDebugLog.log("floating source refresh ok category=\(category.id) feeds=\(category.feedUrls.count)")
+            } catch {
+                AINewsDebugLog.log("floating source refresh failed category=\(category.id) error=\(error.localizedDescription)")
+            }
+        }
+    }
+
+    private func logTopStory(_ stories: [WidgetStory], scope: String) {
+        guard let first = stories.first else {
+            AINewsDebugLog.log("floating reload empty scope=\(scope)")
+            return
+        }
+        let published = first.publishedDate.map { ISO8601DateFormatter().string(from: $0) } ?? "unknown"
+        AINewsDebugLog.log("floating reload top scope=\(scope) published=\(published) title=\(first.title)")
     }
 
     private func updateStories(_ fetchedStories: [WidgetStory], resizeAfterUpdate: Bool, reachedEndOverride: Bool? = nil) {
