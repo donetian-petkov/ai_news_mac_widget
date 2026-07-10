@@ -1544,10 +1544,10 @@ private struct FloatingWidgetView: View {
         let storedOrder = FloatingWidgetPreferences.storyOrder(categoryID: categoryID, isFiltered: isFiltered)
         guard !storedOrder.isEmpty else { return fetchedStories }
         let byKey = Dictionary(uniqueKeysWithValues: fetchedStories.map { ($0.storyKey, $0) })
-        var ordered = storedOrder.compactMap { byKey[$0] }
-        let seen = Set(ordered.map(\.storyKey))
-        ordered.append(contentsOf: fetchedStories.filter { !seen.contains($0.storyKey) })
-        return ordered
+        let storedKeySet = Set(storedOrder)
+        let freshStories = fetchedStories.filter { !storedKeySet.contains($0.storyKey) }
+        let manuallyOrderedStories = storedOrder.compactMap { byKey[$0] }
+        return freshStories + manuallyOrderedStories
     }
 
     private func persistStoryOrder() {
