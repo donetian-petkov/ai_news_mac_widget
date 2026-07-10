@@ -43,6 +43,24 @@ type ProductNews = {
   coverUrl?: string;
 };
 
+type PersistedProductNews = {
+  itemId: string;
+  feedUrl: string;
+  title: string;
+  titleBg: string | null;
+  titleEn: string | null;
+  link: string;
+  source: string;
+  publishedMs: bigint | number;
+  summary: string | null;
+  research: string | null;
+  mood: string | null;
+  newsType: string | null;
+  isMatch: boolean;
+  filteredOk: boolean;
+  coverUrl: string | null;
+};
+
 type AiUsagePayload = {
   aiUsageInputTokens: number;
   aiUsageOutputTokens: number;
@@ -137,6 +155,54 @@ function parseJsonObject(raw: unknown): Record<string, unknown> {
 function normalizeLimit(raw: unknown, fallback = 80, max = 500) {
   const value = Number(raw);
   return Number.isFinite(value) ? Math.max(1, Math.min(max, Math.floor(value))) : fallback;
+}
+
+function persistedNewsToProductNews(row: PersistedProductNews): ProductNews {
+  return {
+    id: row.itemId,
+    feedUrl: row.feedUrl,
+    title: row.title,
+    titleBg: row.titleBg || undefined,
+    titleEn: row.titleEn || undefined,
+    link: row.link,
+    source: row.source,
+    publishedMs: Number(row.publishedMs),
+    summary: row.summary || undefined,
+    research: row.research || undefined,
+    mood: row.mood || undefined,
+    newsType: row.newsType || undefined,
+    isMatch: row.isMatch,
+    filteredOk: row.filteredOk,
+    coverUrl: row.coverUrl || undefined
+  };
+}
+
+async function listPersistedWidgetNews(
+  prisma: PrismaClient,
+  options: { limit?: number; feedUrls?: string[]; filteredOnly?: boolean } = {}
+) {
+  const feedUrls = (options.feedUrls || []).map(url => url.trim()).filter(Boolean);
+  const where: Record<string, unknown> = {};
+  if (feedUrls.length > 0) where.feedUrl = { in: feedUrls };
+  if (options.filteredOnly) {
+    where.isMatch = true;
+    where.filteredOk = true;
+  }
+  const rows = await prisma.newsItemRecord.findMany({
+    where,
+    orderBy: [{ publishedMs: 'desc' }, { itemId: 'desc' }],
+    take: Math.max(1, Math.min(1000, options.limit || 300))
+  });
+  return rows.map(persistedNewsToProductNews);
+}
+
+async function widgetNewsOrFallback(
+  prisma: PrismaClient,
+  fallback: ProductNews[],
+  options: { limit?: number; feedUrls?: string[]; filteredOnly?: boolean } = {}
+) {
+  const persisted = await listPersistedWidgetNews(prisma, options);
+  return persisted.length > 0 ? persisted : fallback;
 }
 
 function safeTitle(raw: unknown, fallback: string) {
@@ -781,7 +847,8 @@ export function registerProductFeatureApi({
     if (!user) return;
     const limitRaw = Number(req.query.limit);
     const limit = Number.isFinite(limitRaw) ? Math.max(1, Math.min(100, Math.floor(limitRaw))) : 30;
-    const stories = getRecentNews()
+    const news = await widgetNewsOrFallback(prisma, getRecentNews(), { limit, filteredOnly: true });
+    const stories = news
       .filter(item => item.isMatch === true && item.filteredOk !== false)
       .sort((a, b) => Number(b.publishedMs || 0) - Number(a.publishedMs || 0))
       .slice(0, limit)
@@ -795,7 +862,7 @@ export function registerProductFeatureApi({
     await ensureProductFeatureTables(prisma);
     await ensureDefaultCollectionsForUser(prisma, user.id, getFeeds());
     const rows = await listFeatureRows(prisma, user.id, 'collection', 200, true);
-    const news = getRecentNews();
+    const news = await widgetNewsOrFallback(prisma, getRecentNews(), { limit: 1000 });
     const categories = rows
       .map(mapCollectionRow)
       .sort((left, right) => left.sortOrder - right.sortOrder || left.id - right.id)
@@ -826,7 +893,11 @@ export function registerProductFeatureApi({
     }
     const category = mapCollectionRow(row);
     const limit = normalizeLimit(req.query.limit, category.activeCount, Math.max(category.expandedCount, 20));
-    const stories = selectCategoryStories(category, getRecentNews()).slice(0, limit).map(toWidgetStory);
+    const news = await widgetNewsOrFallback(prisma, getRecentNews(), {
+      limit: Math.max(limit * Math.max(category.feedUrls.length, 1), 100),
+      feedUrls: category.feedUrls
+    });
+    const stories = selectCategoryStories(category, news).slice(0, limit).map(toWidgetStory);
     res.json({
       ok: true,
       category,
