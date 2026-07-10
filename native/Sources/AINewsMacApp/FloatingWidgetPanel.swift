@@ -1059,12 +1059,19 @@ private struct FloatingWidgetView: View {
                     stackPositionLabel
 
                     Button {
-                        moveStack(by: 1)
+                        if canMoveStackForward {
+                            moveStack(by: 1)
+                        } else {
+                            loadMoreStackStories()
+                        }
                     } label: {
-                        stackNavLabel(systemImage: "chevron.down", title: "Next")
+                        stackNavLabel(
+                            systemImage: canMoveStackForward ? "chevron.down" : "plus",
+                            title: canMoveStackForward ? "Next" : "Load \(pageStep)"
+                        )
                     }
                     .buttonStyle(.plain)
-                    .disabled(stackIndex >= stories.count - 1)
+                    .disabled(!canMoveStackForward && (!canLoadMoreStackStories || loading))
                 }
                 .padding(.horizontal, 14)
                 .padding(.bottom, 14)
@@ -1161,6 +1168,14 @@ private struct FloatingWidgetView: View {
         return stories[stackIndex]
     }
 
+    private var canMoveStackForward: Bool {
+        stackIndex < stories.count - 1
+    }
+
+    private var canLoadMoreStackStories: Bool {
+        !reachedEnd && !stories.isEmpty && stackIndex >= stories.count - 1
+    }
+
     private func stackStory(offsetBy offset: Int) -> WidgetStory? {
         let target = stackIndex + offset
         guard stories.indices.contains(target) else { return nil }
@@ -1173,6 +1188,20 @@ private struct FloatingWidgetView: View {
             markStorySeen(current.storyKey)
         }
         stackIndex = max(0, min(stories.count - 1, stackIndex + delta))
+    }
+
+    private func loadMoreStackStories() {
+        guard canLoadMoreStackStories, !loading else { return }
+        if let current = currentStackStory {
+            markStorySeen(current.storyKey)
+        }
+        let nextIndex = stories.count
+        visibleCount += pageStep
+        Task {
+            await reload()
+            stackIndex = min(nextIndex, max(stories.count - 1, 0))
+            resizeWindowForCurrentLayout(force: true)
+        }
     }
 
     @ViewBuilder
