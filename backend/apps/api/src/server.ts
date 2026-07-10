@@ -3394,12 +3394,19 @@ async function hybridMatch(
 ): Promise<{ isMatch: boolean; score: number; vec: number[] | null }> {
   const hit = substringHit(title);
 
+  // Explicit keyword/tracked-topic hits should enter the Filtered feed
+  // immediately. Semantic matching is still used for non-substring matches,
+  // but it must not hold back obvious hits behind embedding latency.
+  if (hit) {
+    return { isMatch: true, score: 1, vec: null };
+  }
+
   if (!activeEmbeddingClient() || !aiEnabled || keywordVecs.length === 0) {
-    return { isMatch: hit, score: hit ? 1 : 0, vec: null };
+    return { isMatch: false, score: 0, vec: null };
   }
 
   const vec = await embed(title);
-  if (!vec) return { isMatch: hit, score: hit ? 1 : 0, vec: null };
+  if (!vec) return { isMatch: false, score: 0, vec: null };
 
   let best = -1;
   for (const k of keywordVecs) {
@@ -3410,7 +3417,6 @@ async function hybridMatch(
   const semScore = Number.isFinite(best) ? best : 0;
   const semMatch = semScore >= MATCH_THRESHOLD;
 
-  if (hit) return { isMatch: true, score: Math.max(1, semScore), vec };
   return { isMatch: semMatch, score: semScore, vec };
 }
 
