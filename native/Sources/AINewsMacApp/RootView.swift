@@ -1419,6 +1419,10 @@ private struct SavedWidgetEntryRow: View {
     let availableTargets: [(id: Int, name: String, isFiltered: Bool)]
     let onRemove: () -> Void
 
+    private var mergeTargets: [(id: Int, name: String, isFiltered: Bool)] {
+        availableTargets.filter { !$0.isFiltered && $0.id != entry.categoryID }
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack {
@@ -1429,6 +1433,11 @@ private struct SavedWidgetEntryRow: View {
                             entry.categoryID = target.id
                             entry.categoryName = target.name
                             entry.isFiltered = target.isFiltered
+                            if target.isFiltered {
+                                entry.mergedCategoryIDs = nil
+                            } else {
+                                entry.mergedCategoryIDs = entry.mergedCategoryIDs?.filter { $0 != target.id }
+                            }
                             view.updatedAt = Date()
                         }
                     }
@@ -1441,6 +1450,34 @@ private struct SavedWidgetEntryRow: View {
                 Spacer()
                 Button("Remove", role: .destructive, action: onRemove)
                     .buttonStyle(.bordered)
+            }
+
+            if entry.isFiltered {
+                Text("Filtered Feed cannot be merged with another feed.")
+                    .font(.caption)
+                    .foregroundStyle(AINewsTheme.textMuted)
+            } else {
+                HStack {
+                    Text("Merge with")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(AINewsTheme.textSecondary)
+                    Picker("Merge with", selection: Binding(
+                        get: { entry.mergedCategoryIDs?.first ?? 0 },
+                        set: { newValue in
+                            entry.mergedCategoryIDs = newValue == 0 ? nil : [newValue]
+                            view.updatedAt = Date()
+                        }
+                    )) {
+                        Text("None").tag(0)
+                        ForEach(mergeTargets, id: \.id) { target in
+                            Text(target.name).tag(target.id)
+                        }
+                    }
+                    .pickerStyle(.menu)
+                    Text("Opens as an overlapping widget with the same saved size.")
+                        .font(.caption)
+                        .foregroundStyle(AINewsTheme.textMuted)
+                }
             }
 
             HStack {

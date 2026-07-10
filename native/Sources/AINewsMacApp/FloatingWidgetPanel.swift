@@ -14,6 +14,37 @@ struct SavedWidgetEntry: Codable, Equatable, Identifiable {
     var categoryName: String
     var isFiltered: Bool
     var frame: String
+    var mergedCategoryIDs: [Int]? = nil
+
+    init(
+        id: String = UUID().uuidString,
+        categoryID: Int,
+        categoryName: String,
+        isFiltered: Bool,
+        frame: String,
+        mergedCategoryIDs: [Int]? = nil
+    ) {
+        self.id = id
+        self.categoryID = categoryID
+        self.categoryName = categoryName
+        self.isFiltered = isFiltered
+        self.frame = frame
+        self.mergedCategoryIDs = mergedCategoryIDs
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case id, categoryID, categoryName, isFiltered, frame, mergedCategoryIDs
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decodeIfPresent(String.self, forKey: .id) ?? UUID().uuidString
+        categoryID = try container.decode(Int.self, forKey: .categoryID)
+        categoryName = try container.decode(String.self, forKey: .categoryName)
+        isFiltered = try container.decode(Bool.self, forKey: .isFiltered)
+        frame = try container.decode(String.self, forKey: .frame)
+        mergedCategoryIDs = try container.decodeIfPresent([Int].self, forKey: .mergedCategoryIDs)
+    }
 }
 
 struct SavedWidgetView: Codable, Equatable, Identifiable {
@@ -198,18 +229,23 @@ final class FloatingWidgetManager: NSObject, NSWindowDelegate {
 
     func applySavedView(id: String) {
         guard let view = SavedWidgetViewStore.view(id: id) else { return }
-        let targetIDs = Set(view.widgets.map(\.categoryID))
+        let targetIDs = Set(view.widgets.flatMap { [$0.categoryID] + ($0.mergedCategoryIDs ?? []) })
         for (id, panel) in panels where panel.isVisible && !targetIDs.contains(id) {
             persistFrame(for: panel)
             panel.orderOut(nil)
         }
         for widget in view.widgets {
-            openWidget(
-                categoryID: widget.categoryID,
-                categoryName: widget.categoryName,
-                isFiltered: widget.isFiltered,
-                frameOverride: NSRectFromString(widget.frame)
-            )
+            let baseFrame = NSRectFromString(widget.frame)
+            openWidget(categoryID: widget.categoryID, categoryName: widget.categoryName, isFiltered: widget.isFiltered, frameOverride: baseFrame)
+            guard !widget.isFiltered else { continue }
+            for (index, id) in (widget.mergedCategoryIDs ?? []).enumerated() {
+                guard let category = state.categories.first(where: { $0.id == id }) else { continue }
+                var frame = baseFrame
+                let offset = CGFloat((index + 1) * 34)
+                frame.origin.x += offset
+                frame.origin.y -= offset
+                openWidget(categoryID: category.id, categoryName: category.name, isFiltered: false, frameOverride: frame)
+            }
         }
     }
 
