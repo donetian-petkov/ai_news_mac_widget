@@ -162,6 +162,7 @@ final class FloatingWidgetManager: NSObject, NSWindowDelegate {
     private var closedStack: [Int] = []
     private let state: WidgetAppState
     private var cascadeIndex = 0
+    private var isSnappingMergedWidget = false
 
     init(state: WidgetAppState) {
         self.state = state
@@ -198,7 +199,9 @@ final class FloatingWidgetManager: NSObject, NSWindowDelegate {
     }
 
     func windowDidMove(_ notification: Notification) {
-        if let window = notification.object as? NSWindow { persistFrame(for: window) }
+        guard let window = notification.object as? NSWindow else { return }
+        persistFrame(for: window)
+        maybeMergeMovedWindow(window)
     }
 
     func windowDidResize(_ notification: Notification) {
@@ -240,27 +243,110 @@ final class FloatingWidgetManager: NSObject, NSWindowDelegate {
             guard !widget.isFiltered else { continue }
             for (index, id) in (widget.mergedCategoryIDs ?? []).enumerated() {
                 guard let category = state.categories.first(where: { $0.id == id }) else { continue }
-                var frame = baseFrame
-                let offset = CGFloat((index + 1) * 34)
-                frame.origin.x += offset
-                frame.origin.y -= offset
+                let frame = mergedFrame(for: baseFrame, index: index)
                 openWidget(categoryID: category.id, categoryName: category.name, isFiltered: false, frameOverride: frame)
             }
         }
     }
 
     private func currentVisibleEntries() -> [SavedWidgetEntry] {
-        panels.compactMap { id, panel in
-            guard panel.isVisible else { return nil }
-            persistFrame(for: panel)
-            return SavedWidgetEntry(
-                categoryID: id,
-                categoryName: names[id] ?? panel.title,
-                isFiltered: id == filteredKey,
-                frame: NSStringFromRect(panel.frame)
+        let visible = panels
+            .filter { _, panel in panel.isVisible }
+            .sorted {
+                (names[$0.key] ?? $0.value.title).localizedCaseInsensitiveCompare(names[$1.key] ?? $1.value.title) == .orderedAscending
+            }
+        visible.forEach { _, panel in persistFrame(for: panel) }
+
+        var consumed = Set<Int>()
+        var entries: [SavedWidgetEntry] = []
+
+        for (id, panel) in visible {
+            guard !consumed.contains(id) else { continue }
+            consumed.insert(id)
+
+            if id == filteredKey {
+                entries.append(
+                    SavedWidgetEntry(
+                        categoryID: id,
+                        categoryName: names[id] ?? panel.title,
+                        isFiltered: true,
+                        frame: NSStringFromRect(panel.frame)
+                    )
+                )
+                continue
+            }
+
+            let mergedIDs = visible.compactMap { candidateID, candidatePanel -> Int? in
+                guard
+                    candidateID != id,
+                    candidateID != filteredKey,
+                    !consumed.contains(candidateID),
+                    mergedOverlapRatio(panel.frame, candidatePanel.frame) >= 0.46
+                else { return nil }
+                return candidateID
+            }
+            mergedIDs.forEach { consumed.insert($0) }
+
+            entries.append(
+                SavedWidgetEntry(
+                    categoryID: id,
+                    categoryName: names[id] ?? panel.title,
+                    isFiltered: false,
+                    frame: NSStringFromRect(panel.frame),
+                    mergedCategoryIDs: mergedIDs.isEmpty ? nil : mergedIDs
+                )
             )
         }
-        .sorted { $0.categoryName.localizedCaseInsensitiveCompare($1.categoryName) == .orderedAscending }
+
+        return entries
+    }
+
+    private func maybeMergeMovedWindow(_ window: NSWindow) {
+        guard !isSnappingMergedWidget, let movedID = panelID(for: window), movedID != filteredKey else { return }
+
+        let candidates = panels.compactMap { id, panel -> (id: Int, panel: NSPanel, ratio: CGFloat)? in
+            guard id != movedID, id != filteredKey, panel.isVisible else { return nil }
+            let ratio = mergedOverlapRatio(window.frame, panel.frame)
+            return ratio >= 0.50 ? (id, panel, ratio) : nil
+        }
+        guard let target = candidates.max(by: { $0.ratio < $1.ratio }) else { return }
+
+        isSnappingMergedWidget = true
+        let siblingCount = panels.filter { id, panel in
+            id != movedID &&
+            id != target.id &&
+            id != filteredKey &&
+            panel.isVisible &&
+            mergedOverlapRatio(target.panel.frame, panel.frame) >= 0.46
+        }.count
+        window.setFrame(mergedFrame(for: target.panel.frame, index: siblingCount), display: true, animate: true)
+        persistFrame(for: target.panel)
+        persistFrame(for: window)
+        isSnappingMergedWidget = false
+    }
+
+    private func panelID(for window: NSWindow) -> Int? {
+        panels.first(where: { $0.value === window })?.key
+    }
+
+    private func mergedFrame(for baseFrame: NSRect, index: Int) -> NSRect {
+        var frame = baseFrame
+        let offset = CGFloat((index + 1) * 34)
+        frame.origin.x += offset
+        frame.origin.y -= offset
+        return frame
+    }
+
+    private func mergedOverlapRatio(_ a: NSRect, _ b: NSRect) -> CGFloat {
+        let intersection = a.intersection(b)
+        guard !intersection.isNull, !intersection.isEmpty else { return 0 }
+        let smallerArea = min(rectArea(a), rectArea(b))
+        guard smallerArea > 0 else { return 0 }
+        return rectArea(intersection) / smallerArea
+    }
+
+    private func rectArea(_ rect: NSRect) -> CGFloat {
+        max(rect.width, 0) * max(rect.height, 0)
     }
 
     func openWidget(categoryID: Int, categoryName: String, isFiltered: Bool = false, frameOverride: NSRect? = nil) {
