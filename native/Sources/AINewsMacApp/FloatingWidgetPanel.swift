@@ -1085,19 +1085,21 @@ private struct FloatingWidgetView: View {
         guard let api = try? state.authorizedAPIClient() else { return }
         if isFiltered {
             if let matches = try? await api.fetchKeywordMatches(limit: visibleCount) {
-                updateStories(matches)
+                updateStories(matches, resizeAfterUpdate: false)
             }
         } else if let response = try? await api.fetchStories(categoryID: categoryID, limit: visibleCount) {
-            updateStories(response.stories)
+            updateStories(response.stories, resizeAfterUpdate: false)
         }
     }
 
-    private func updateStories(_ fetchedStories: [WidgetStory]) {
+    private func updateStories(_ fetchedStories: [WidgetStory], resizeAfterUpdate: Bool) {
         reachedEnd = fetchedStories.count < visibleCount
         stories = applyLocalOrder(to: fetchedStories)
         clampStackIndex()
         persistStoryOrder()
-        resizeWindowForCurrentLayout()
+        if resizeAfterUpdate {
+            resizeWindowForCurrentLayout()
+        }
     }
 
     private func applyLocalOrder(to fetchedStories: [WidgetStory]) -> [WidgetStory] {
