@@ -961,6 +961,18 @@ app.get('/api/ai-progress', async (req, res) => {
   if (!user) return;
   const byFeed = new Map<string, { done: number; pending: number; blocked: number; totalRelevant: number }>();
   const filteredCfg = feedSettings.get(FILTERED_FEED_URL);
+  const progressKindState = (
+    kind: AiJobKind,
+    item: NewsInternal,
+    hasOutput: boolean,
+    eligible: boolean
+  ): 'done' | 'pending' | 'blocked' => {
+    if (hasOutput) return 'done';
+    if (hasAiJobQueuedOrRunning(kind, item.id, item.feedUrl)) return 'pending';
+    if (kind === 'summary' && eligible) return 'pending';
+    return 'blocked';
+  };
+
   for (const item of recent) {
     const cfg = feedSettings.get(item.feedUrl);
     if (!cfg) continue;
@@ -968,9 +980,10 @@ app.get('/api/ai-progress', async (req, res) => {
     const entry = byFeed.get(item.feedUrl) || { done: 0, pending: 0, blocked: 0, totalRelevant: 0 };
     if (cfg.aiEnabled !== false && cfg.summaryEnabled !== false) {
       entry.totalRelevant += 1;
-      if (String(item.summary || '').trim()) {
+      const status = progressKindState('summary', item, !!String(item.summary || '').trim(), isAutoSummaryEligible(item));
+      if (status === 'done') {
         entry.done += 1;
-      } else if (isAutoSummaryEligible(item)) {
+      } else if (status === 'pending') {
         entry.pending += 1;
       } else {
         entry.blocked += 1;
@@ -978,9 +991,10 @@ app.get('/api/ai-progress', async (req, res) => {
     }
     if (cfg.aiEnabled !== false && cfg.researchEnabled !== false) {
       entry.totalRelevant += 1;
-      if (String(item.research || '').trim()) {
+      const status = progressKindState('research', item, !!String(item.research || '').trim(), budgetAllowsAutoResearch(budget));
+      if (status === 'done') {
         entry.done += 1;
-      } else if (budgetAllowsAutoResearch(budget)) {
+      } else if (status === 'pending') {
         entry.pending += 1;
       } else {
         entry.blocked += 1;
@@ -988,9 +1002,15 @@ app.get('/api/ai-progress', async (req, res) => {
     }
     if (cfg.aiEnabled !== false && cfg.translationEnabled !== false && needsTitleTranslation(item.title, item.titleBg, item.titleEn)) {
       entry.totalRelevant += 1;
-      if (String(item.titleBg || '').trim() || String(item.titleEn || '').trim()) {
+      const status = progressKindState(
+        'title_translate',
+        item,
+        !!String(item.titleBg || '').trim() || !!String(item.titleEn || '').trim(),
+        budget === 'high'
+      );
+      if (status === 'done') {
         entry.done += 1;
-      } else if (budget === 'high') {
+      } else if (status === 'pending') {
         entry.pending += 1;
       } else {
         entry.blocked += 1;
@@ -1003,9 +1023,10 @@ app.get('/api/ai-progress', async (req, res) => {
       const filteredEntry = byFeed.get(FILTERED_FEED_URL) || { done: 0, pending: 0, blocked: 0, totalRelevant: 0 };
       if (filteredCfg.aiEnabled !== false && filteredCfg.summaryEnabled !== false) {
         filteredEntry.totalRelevant += 1;
-        if (String(item.summary || '').trim()) {
+        const status = progressKindState('summary', item, !!String(item.summary || '').trim(), isAutoSummaryEligible(item));
+        if (status === 'done') {
           filteredEntry.done += 1;
-        } else if (isAutoSummaryEligible(item)) {
+        } else if (status === 'pending') {
           filteredEntry.pending += 1;
         } else {
           filteredEntry.blocked += 1;
@@ -1013,9 +1034,10 @@ app.get('/api/ai-progress', async (req, res) => {
       }
       if (filteredCfg.aiEnabled !== false && filteredCfg.researchEnabled !== false) {
         filteredEntry.totalRelevant += 1;
-        if (String(item.research || '').trim()) {
+        const status = progressKindState('research', item, !!String(item.research || '').trim(), budgetAllowsAutoResearch(filteredBudget));
+        if (status === 'done') {
           filteredEntry.done += 1;
-        } else if (budgetAllowsAutoResearch(filteredBudget)) {
+        } else if (status === 'pending') {
           filteredEntry.pending += 1;
         } else {
           filteredEntry.blocked += 1;
@@ -1023,9 +1045,15 @@ app.get('/api/ai-progress', async (req, res) => {
       }
       if (filteredCfg.aiEnabled !== false && filteredCfg.translationEnabled !== false && needsTitleTranslation(item.title, item.titleBg, item.titleEn)) {
         filteredEntry.totalRelevant += 1;
-        if (String(item.titleBg || '').trim() || String(item.titleEn || '').trim()) {
+        const status = progressKindState(
+          'title_translate',
+          item,
+          !!String(item.titleBg || '').trim() || !!String(item.titleEn || '').trim(),
+          filteredBudget === 'high'
+        );
+        if (status === 'done') {
           filteredEntry.done += 1;
-        } else if (filteredBudget === 'high') {
+        } else if (status === 'pending') {
           filteredEntry.pending += 1;
         } else {
           filteredEntry.blocked += 1;
@@ -5891,6 +5919,12 @@ function hasTitleTranslateJobQueuedOrRunning(id: string, feedUrl: string): boole
   const k = `title_translate:${feedUrl || ''}::${id}`;
   if (aiInFlight.has(k)) return true;
   return aiQueue.some(job => job.kind === 'title_translate' && job.id === id && job.feedUrl === feedUrl);
+}
+
+function hasAiJobQueuedOrRunning(kind: AiJobKind, id: string, feedUrl: string): boolean {
+  const k = `${kind}:${feedUrl || ''}::${id}`;
+  if (aiInFlight.has(k)) return true;
+  return aiQueue.some(job => job.kind === kind && job.id === id && job.feedUrl === feedUrl);
 }
 
 function summaryItemKey(id: string, feedUrl: string): string {

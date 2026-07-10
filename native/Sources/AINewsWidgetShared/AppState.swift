@@ -163,12 +163,26 @@ public final class WidgetAppState: ObservableObject {
             if q.research > 0 { parts.append("\(q.research) research") }
             if q.translation > 0 { parts.append("\(q.translation) translations") }
             statusMessage = "Generating \(parts.joined(separator: ", "))…"
-            // Poll a few times so freshly generated outputs (and the token counter)
-            // appear without a manual refresh.
-            for _ in 0..<6 {
-                try? await Task.sleep(nanoseconds: 3_000_000_000)
+            // Follow the real backend queue instead of declaring completion after a
+            // fixed delay. Large refreshes can enqueue many jobs, and some providers
+            // legitimately need retry/cooldown time.
+            var idlePolls = 0
+            for _ in 0..<60 {
+                try? await Task.sleep(nanoseconds: 2_000_000_000)
+                backendOps = try? await api.fetchOpsAiJobs(limit: 80)
+                await refreshAiProgress()
                 await loadStoriesForSelectedCategory(suppressUnauthorizedAlert: true)
                 await refreshUsage()
+
+                let queueSize = backendOps?.queue.size ?? 0
+                let inFlight = backendOps?.queue.inFlight ?? 0
+                if queueSize == 0 && inFlight == 0 {
+                    idlePolls += 1
+                    if idlePolls >= 2 { break }
+                } else {
+                    idlePolls = 0
+                    statusMessage = "Generating \(parts.joined(separator: ", "))… \(queueSize) queued, \(inFlight) running."
+                }
             }
             statusMessage = "Finished generating \(parts.joined(separator: ", "))."
         } catch {
