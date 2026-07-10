@@ -101,6 +101,10 @@ private enum FloatingWidgetPreferences {
         "AINewsFloatingWidgetStoryOrder-\(widgetKey(categoryID: categoryID, isFiltered: isFiltered))"
     }
 
+    private static func manualStoryOrderKey(categoryID: Int, isFiltered: Bool) -> String {
+        "AINewsFloatingWidgetManualStoryOrder-\(widgetKey(categoryID: categoryID, isFiltered: isFiltered))"
+    }
+
     private static func seenStoriesKey(categoryID: Int, isFiltered: Bool) -> String {
         "AINewsFloatingWidgetSeenStories-\(widgetKey(categoryID: categoryID, isFiltered: isFiltered))"
     }
@@ -118,8 +122,13 @@ private enum FloatingWidgetPreferences {
         UserDefaults.standard.stringArray(forKey: storyOrderKey(categoryID: categoryID, isFiltered: isFiltered)) ?? []
     }
 
+    static func hasManualStoryOrder(categoryID: Int, isFiltered: Bool) -> Bool {
+        UserDefaults.standard.bool(forKey: manualStoryOrderKey(categoryID: categoryID, isFiltered: isFiltered))
+    }
+
     static func setStoryOrder(_ order: [String], categoryID: Int, isFiltered: Bool) {
         UserDefaults.standard.set(order, forKey: storyOrderKey(categoryID: categoryID, isFiltered: isFiltered))
+        UserDefaults.standard.set(true, forKey: manualStoryOrderKey(categoryID: categoryID, isFiltered: isFiltered))
     }
 
     static func seenStories(categoryID: Int, isFiltered: Bool) -> Set<String> {
@@ -1534,13 +1543,15 @@ private struct FloatingWidgetView: View {
         reachedEnd = reachedEndOverride ?? (fetchedStories.count < visibleCount)
         stories = applyLocalOrder(to: fetchedStories)
         clampStackIndex()
-        persistStoryOrder()
         if resizeAfterUpdate {
             resizeWindowForCurrentLayout()
         }
     }
 
     private func applyLocalOrder(to fetchedStories: [WidgetStory]) -> [WidgetStory] {
+        guard FloatingWidgetPreferences.hasManualStoryOrder(categoryID: categoryID, isFiltered: isFiltered) else {
+            return fetchedStories
+        }
         let storedOrder = FloatingWidgetPreferences.storyOrder(categoryID: categoryID, isFiltered: isFiltered)
         guard !storedOrder.isEmpty else { return fetchedStories }
         let byKey = Dictionary(uniqueKeysWithValues: fetchedStories.map { ($0.storyKey, $0) })
