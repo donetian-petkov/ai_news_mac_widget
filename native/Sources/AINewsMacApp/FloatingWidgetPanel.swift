@@ -8,6 +8,55 @@ private enum FloatingWidgetLayoutMode: String, CaseIterable {
     case stack
 }
 
+struct SavedWidgetEntry: Codable, Equatable, Identifiable {
+    var id: String = UUID().uuidString
+    var categoryID: Int
+    var categoryName: String
+    var isFiltered: Bool
+    var frame: String
+}
+
+struct SavedWidgetView: Codable, Equatable, Identifiable {
+    var id: String = UUID().uuidString
+    var name: String
+    var widgets: [SavedWidgetEntry]
+    var createdAt: Date = Date()
+    var updatedAt: Date = Date()
+}
+
+enum SavedWidgetViewStore {
+    private static let key = "AINewsSavedWidgetViews"
+
+    static func load() -> [SavedWidgetView] {
+        guard let data = UserDefaults.standard.data(forKey: key) else { return [] }
+        return (try? JSONDecoder().decode([SavedWidgetView].self, from: data)) ?? []
+    }
+
+    static func save(_ views: [SavedWidgetView]) {
+        guard let data = try? JSONEncoder().encode(views) else { return }
+        UserDefaults.standard.set(data, forKey: key)
+        NotificationCenter.default.post(name: .aiNewsSavedWidgetViewsChanged, object: nil)
+    }
+
+    static func upsert(_ view: SavedWidgetView) {
+        var views = load()
+        if let index = views.firstIndex(where: { $0.id == view.id }) {
+            views[index] = view
+        } else {
+            views.insert(view, at: 0)
+        }
+        save(views)
+    }
+
+    static func delete(id: String) {
+        save(load().filter { $0.id != id })
+    }
+
+    static func view(id: String) -> SavedWidgetView? {
+        load().first(where: { $0.id == id })
+    }
+}
+
 private enum FloatingWidgetPreferences {
     private static func widgetKey(categoryID: Int, isFiltered: Bool) -> String {
         isFiltered ? "filtered" : "category-\(categoryID)"
@@ -136,10 +185,51 @@ final class FloatingWidgetManager: NSObject, NSWindowDelegate {
         closedStack.append(id)
     }
 
-    func openWidget(categoryID: Int, categoryName: String, isFiltered: Bool = false) {
+    func saveCurrentView(named rawName: String) {
+        let name = rawName.trimmingCharacters(in: .whitespacesAndNewlines)
+        let entries = currentVisibleEntries()
+        guard !name.isEmpty, !entries.isEmpty else { return }
+        SavedWidgetViewStore.upsert(SavedWidgetView(name: name, widgets: entries))
+    }
+
+    func applySavedView(id: String) {
+        guard let view = SavedWidgetViewStore.view(id: id) else { return }
+        let targetIDs = Set(view.widgets.map(\.categoryID))
+        for (id, panel) in panels where panel.isVisible && !targetIDs.contains(id) {
+            persistFrame(for: panel)
+            panel.orderOut(nil)
+        }
+        for widget in view.widgets {
+            openWidget(
+                categoryID: widget.categoryID,
+                categoryName: widget.categoryName,
+                isFiltered: widget.isFiltered,
+                frameOverride: NSRectFromString(widget.frame)
+            )
+        }
+    }
+
+    private func currentVisibleEntries() -> [SavedWidgetEntry] {
+        panels.compactMap { id, panel in
+            guard panel.isVisible else { return nil }
+            persistFrame(for: panel)
+            return SavedWidgetEntry(
+                categoryID: id,
+                categoryName: names[id] ?? panel.title,
+                isFiltered: id == filteredKey,
+                frame: NSStringFromRect(panel.frame)
+            )
+        }
+        .sorted { $0.categoryName.localizedCaseInsensitiveCompare($1.categoryName) == .orderedAscending }
+    }
+
+    func openWidget(categoryID: Int, categoryName: String, isFiltered: Bool = false, frameOverride: NSRect? = nil) {
         names[categoryID] = categoryName
         closedStack.removeAll { $0 == categoryID }
         if let existing = panels[categoryID] {
+            if let frameOverride {
+                existing.setFrame(frameOverride, display: true, animate: true)
+            }
             existing.makeKeyAndOrderFront(nil)
             return
         }
@@ -179,7 +269,9 @@ final class FloatingWidgetManager: NSObject, NSWindowDelegate {
         // Remember each widget's size/position across launches, per category.
         // We persist the frame ourselves (windowDidMove/Resize/WillClose) rather
         // than relying on AppKit's autosave, which is unreliable for panels.
-        if let saved = UserDefaults.standard.string(forKey: Self.frameKey(categoryID)) {
+        if let frameOverride {
+            panel.setFrame(frameOverride, display: false)
+        } else if let saved = UserDefaults.standard.string(forKey: Self.frameKey(categoryID)) {
             panel.setFrame(NSRectFromString(saved), display: false)
         } else {
             panel.center()

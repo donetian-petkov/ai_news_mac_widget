@@ -10,6 +10,10 @@ extension Notification.Name {
     static let aiNewsToggleFloatingWidget = Notification.Name("AINewsToggleFloatingWidget")
     static let aiNewsOpenFilteredWidget = Notification.Name("AINewsOpenFilteredWidget")
     static let aiNewsOpenCategoryWidget = Notification.Name("AINewsOpenCategoryWidget")
+    static let aiNewsOpenSavedViews = Notification.Name("AINewsOpenSavedViews")
+    static let aiNewsSaveCurrentWidgetView = Notification.Name("AINewsSaveCurrentWidgetView")
+    static let aiNewsApplySavedWidgetView = Notification.Name("AINewsApplySavedWidgetView")
+    static let aiNewsSavedWidgetViewsChanged = Notification.Name("AINewsSavedWidgetViewsChanged")
 }
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
@@ -48,6 +52,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             self,
             selector: #selector(openCategoryWidget(_:)),
             name: .aiNewsOpenCategoryWidget,
+            object: nil
+        )
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(saveCurrentWidgetView(_:)),
+            name: .aiNewsSaveCurrentWidgetView,
+            object: nil
+        )
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(applySavedWidgetView(_:)),
+            name: .aiNewsApplySavedWidgetView,
             object: nil
         )
         NSApp.activate(ignoringOtherApps: true)
@@ -154,6 +170,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             floatingWidgetManager = FloatingWidgetManager(state: appState)
         }
         floatingWidgetManager?.openWidget(categoryID: categoryID, categoryName: categoryName)
+    }
+
+    @MainActor
+    @objc private func saveCurrentWidgetView(_ notification: Notification) {
+        guard let appState else { return }
+        if floatingWidgetManager == nil {
+            floatingWidgetManager = FloatingWidgetManager(state: appState)
+        }
+        let name = notification.userInfo?["name"] as? String ?? ""
+        floatingWidgetManager?.saveCurrentView(named: name)
+    }
+
+    @MainActor
+    @objc private func applySavedWidgetView(_ notification: Notification) {
+        guard let appState else { return }
+        if floatingWidgetManager == nil {
+            floatingWidgetManager = FloatingWidgetManager(state: appState)
+        }
+        guard let id = notification.userInfo?["id"] as? String else { return }
+        floatingWidgetManager?.applySavedView(id: id)
     }
 
     @objc private func quitApp() {

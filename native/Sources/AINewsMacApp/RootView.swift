@@ -466,6 +466,13 @@ private struct DashboardView: View {
             }
             .buttonStyle(.bordered)
 
+            Button("Saved Views") {
+                UserDefaults.standard.set(8, forKey: "AINewsWorkspacePreferredTab")
+                state.showingWorkspace = true
+                NotificationCenter.default.post(name: .aiNewsOpenSavedViews, object: nil)
+            }
+            .buttonStyle(.bordered)
+
             Button("Widget Help") {
                 state.showingWidgetHelp = true
             }
@@ -1187,7 +1194,7 @@ private struct DiagnosticsWorkspaceTab: View {
 
 private struct WorkspaceView: View {
     @EnvironmentObject private var state: WidgetAppState
-    @State private var tab = 0
+    @State private var tab = UserDefaults.standard.integer(forKey: "AINewsWorkspacePreferredTab")
 
     var body: some View {
         VStack(spacing: 0) {
@@ -1205,6 +1212,7 @@ private struct WorkspaceView: View {
                     Text("OPML").tag(5)
                     Text("Keywords").tag(6)
                     Text("Diagnostics").tag(7)
+                    Text("Saved Views").tag(8)
                 }
                 .labelsHidden()
                 .pickerStyle(.menu)
@@ -1229,14 +1237,252 @@ private struct WorkspaceView: View {
                     OpmlWorkspaceTab()
                 case 6:
                     KeywordsWorkspaceTab()
-                default:
+                case 7:
                     DiagnosticsWorkspaceTab()
+                default:
+                    SavedWidgetViewsWorkspaceTab()
                 }
             }
             .padding(.horizontal, 24)
             .padding(.bottom, 24)
         }
         .background(AINewsBackground())
+        .onChange(of: tab) { _, newValue in
+            UserDefaults.standard.set(newValue, forKey: "AINewsWorkspacePreferredTab")
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .aiNewsOpenSavedViews)) { _ in
+            tab = 8
+        }
+    }
+}
+
+private struct SavedWidgetViewsWorkspaceTab: View {
+    @EnvironmentObject private var state: WidgetAppState
+    @State private var views: [SavedWidgetView] = []
+    @State private var captureName = ""
+
+    private var availableTargets: [(id: Int, name: String, isFiltered: Bool)] {
+        [(FilteredCategoryID, "Filtered Feed", true)] + state.categories.map { ($0.id, $0.name, false) }
+    }
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 16) {
+                header(
+                    title: "Saved widget views",
+                    subtitle: "Capture, restore, and edit exact floating widget layouts: feed, position, width, and height."
+                )
+
+                VStack(alignment: .leading, spacing: 12) {
+                    Text("Capture current open widgets")
+                        .font(.headline)
+                        .foregroundStyle(AINewsTheme.textSecondary)
+                    HStack {
+                        TextField("View name", text: $captureName)
+                            .textFieldStyle(.roundedBorder)
+                        Button("Save Current View") {
+                            let name = captureName.trimmingCharacters(in: .whitespacesAndNewlines)
+                            guard !name.isEmpty else { return }
+                            NotificationCenter.default.post(
+                                name: .aiNewsSaveCurrentWidgetView,
+                                object: nil,
+                                userInfo: ["name": name]
+                            )
+                            captureName = ""
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
+                                load()
+                            }
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .tint(AINewsTheme.accentCyan)
+                    }
+                    Button("Create Empty View") {
+                        let name = captureName.trimmingCharacters(in: .whitespacesAndNewlines)
+                        var view = SavedWidgetView(name: name.isEmpty ? "New widget view" : name, widgets: [])
+                        view.widgets.append(defaultWidgetEntry())
+                        SavedWidgetViewStore.upsert(view)
+                        captureName = ""
+                        load()
+                    }
+                    .buttonStyle(.bordered)
+                }
+                .padding(16)
+                .aiNewsPanelStyle()
+
+                if views.isEmpty {
+                    Text("No saved views yet. Open one or more floating widgets, position them, then save the current view.")
+                        .foregroundStyle(AINewsTheme.textMuted)
+                        .padding(16)
+                        .aiNewsPanelStyle()
+                } else {
+                    ForEach($views) { $view in
+                        savedViewEditor(view: $view)
+                    }
+                }
+            }
+        }
+        .task { load() }
+        .onReceive(NotificationCenter.default.publisher(for: .aiNewsSavedWidgetViewsChanged)) { _ in
+            load()
+        }
+    }
+
+    private func savedViewEditor(view: Binding<SavedWidgetView>) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                TextField("View name", text: view.name)
+                    .font(AINewsTheme.font(18, weight: .semibold))
+                    .textFieldStyle(.roundedBorder)
+                Spacer()
+                Button("Apply") {
+                    NotificationCenter.default.post(
+                        name: .aiNewsApplySavedWidgetView,
+                        object: nil,
+                        userInfo: ["id": view.wrappedValue.id]
+                    )
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(AINewsTheme.accentGold)
+                Button("Save Changes") {
+                    var updated = view.wrappedValue
+                    updated.updatedAt = Date()
+                    SavedWidgetViewStore.upsert(updated)
+                    load()
+                }
+                .buttonStyle(.bordered)
+                Button("Delete", role: .destructive) {
+                    SavedWidgetViewStore.delete(id: view.wrappedValue.id)
+                    load()
+                }
+                .buttonStyle(.bordered)
+            }
+
+            Text("\(view.wrappedValue.widgets.count) widget\(view.wrappedValue.widgets.count == 1 ? "" : "s")")
+                .font(.caption)
+                .foregroundStyle(AINewsTheme.textMuted)
+
+            ForEach(view.widgets) { $entry in
+                SavedWidgetEntryRow(
+                    view: view,
+                    entry: $entry,
+                    availableTargets: availableTargets,
+                    onRemove: {
+                        view.wrappedValue.widgets.removeAll { $0.id == entry.id }
+                    }
+                )
+            }
+
+            Button("Add Widget") {
+                view.wrappedValue.widgets.append(defaultWidgetEntry())
+            }
+            .buttonStyle(.bordered)
+        }
+        .padding(16)
+        .aiNewsPanelStyle()
+    }
+
+    private func defaultWidgetEntry() -> SavedWidgetEntry {
+        let target = availableTargets.first ?? (FilteredCategoryID, "Filtered Feed", true)
+        return SavedWidgetEntry(
+            categoryID: target.id,
+            categoryName: target.name,
+            isFiltered: target.isFiltered,
+            frame: NSStringFromRect(NSRect(x: 120, y: 160, width: 430, height: 560))
+        )
+    }
+
+    private func load() {
+        views = SavedWidgetViewStore.load()
+    }
+}
+
+private struct SavedWidgetEntryRow: View {
+    @Binding var view: SavedWidgetView
+    @Binding var entry: SavedWidgetEntry
+    let availableTargets: [(id: Int, name: String, isFiltered: Bool)]
+    let onRemove: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                Picker("Feed", selection: Binding(
+                    get: { entry.categoryID },
+                    set: { newValue in
+                        if let target = availableTargets.first(where: { $0.id == newValue }) {
+                            entry.categoryID = target.id
+                            entry.categoryName = target.name
+                            entry.isFiltered = target.isFiltered
+                            view.updatedAt = Date()
+                        }
+                    }
+                )) {
+                    ForEach(availableTargets, id: \.id) { target in
+                        Text(target.name).tag(target.id)
+                    }
+                }
+                .pickerStyle(.menu)
+                Spacer()
+                Button("Remove", role: .destructive, action: onRemove)
+                    .buttonStyle(.bordered)
+            }
+
+            HStack {
+                frameField("X", .x)
+                frameField("Y", .y)
+                frameField("W", .width)
+                frameField("H", .height)
+            }
+        }
+        .padding(12)
+        .background(AINewsTheme.backgroundAlt.opacity(0.55))
+        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .stroke(AINewsTheme.panelBorder.opacity(0.45), lineWidth: 1)
+        )
+    }
+
+    private enum FrameField {
+        case x, y, width, height
+    }
+
+    private func frameField(_ label: String, _ field: FrameField) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(label)
+                .font(.caption2.weight(.semibold))
+                .foregroundStyle(AINewsTheme.textMuted)
+            TextField(label, text: frameBinding(field))
+                .textFieldStyle(.roundedBorder)
+                .frame(width: 86)
+        }
+    }
+
+    private func frameBinding(_ field: FrameField) -> Binding<String> {
+        Binding(
+            get: {
+                let rect = NSRectFromString(entry.frame)
+                let value: CGFloat
+                switch field {
+                case .x: value = rect.origin.x
+                case .y: value = rect.origin.y
+                case .width: value = rect.width
+                case .height: value = rect.height
+                }
+                return String(format: "%.0f", value)
+            },
+            set: { rawValue in
+                guard let number = Double(rawValue.trimmingCharacters(in: .whitespaces)) else { return }
+                var rect = NSRectFromString(entry.frame)
+                switch field {
+                case .x: rect.origin.x = number
+                case .y: rect.origin.y = number
+                case .width: rect.size.width = max(260, number)
+                case .height: rect.size.height = max(220, number)
+                }
+                entry.frame = NSStringFromRect(rect)
+                view.updatedAt = Date()
+            }
+        )
     }
 }
 
