@@ -213,6 +213,7 @@ private struct FloatingWidgetView: View {
     @State private var stackIndex = 0
     @State private var lastAutoSizedStackSize: CGSize = .zero
     @State private var lastAutoSizedColumnSize: CGSize = .zero
+    @State private var suppressResizeDuringRefresh = false
     /// How many stories to show. Grows by `pageStep` via "Show More", resets to
     /// `pageStep` via "Reset". Mirrors ai_news_deploy_ready's column behaviour.
     @State private var visibleCount = 10
@@ -446,9 +447,11 @@ private struct FloatingWidgetView: View {
             resizeWindowForCurrentLayout(force: true)
         }
         .onChange(of: stackIndex) { _, _ in
+            guard !suppressResizeDuringRefresh else { return }
             resizeWindowForCurrentLayout(force: true)
         }
         .onChange(of: currentStackStory?.storyKey) { _, _ in
+            guard !suppressResizeDuringRefresh else { return }
             resizeWindowForCurrentLayout(force: true)
         }
         .onAppear {
@@ -1079,8 +1082,14 @@ private struct FloatingWidgetView: View {
     }
 
     private func reload() async {
+        suppressResizeDuringRefresh = true
         loading = true
-        defer { loading = false }
+        defer {
+            loading = false
+            DispatchQueue.main.async {
+                suppressResizeDuringRefresh = false
+            }
+        }
         await state.refreshUsage()
         guard let api = try? state.authorizedAPIClient() else { return }
         if isFiltered {
