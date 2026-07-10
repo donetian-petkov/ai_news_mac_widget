@@ -274,6 +274,13 @@ private struct FloatingWidgetView: View {
         widgetFont(13, weight: weight)
     }
 
+    private func compactHeaderDate(_ date: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.locale = .current
+        formatter.dateFormat = "d MMM · HH:mm"
+        return formatter.string(from: date)
+    }
+
     private var orderedStoryKeys: [String] {
         stories.map(\.storyKey)
     }
@@ -507,7 +514,7 @@ private struct FloatingWidgetView: View {
     private var headerMetaChip: some View {
         TimelineView(.periodic(from: Date(), by: 30)) { context in
             VStack(spacing: 1) {
-                Text(context.date.formatted(date: .abbreviated, time: .shortened))
+                Text(compactHeaderDate(context.date))
                     .font(widgetHeaderMeta())
                     .foregroundStyle(AINewsTheme.textSecondary)
                 Text("\(tokenText) tokens")
@@ -545,7 +552,7 @@ private struct FloatingWidgetView: View {
     private var compactHeaderMetaInline: some View {
         TimelineView(.periodic(from: Date(), by: 30)) { context in
             VStack(spacing: -1) {
-                Text(context.date.formatted(date: .abbreviated, time: .shortened))
+                Text(compactHeaderDate(context.date))
                     .font(widgetFont(11.5, weight: .semibold))
                     .foregroundStyle(AINewsTheme.textSecondary)
                 Text("\(tokenText) tokens")
