@@ -159,6 +159,7 @@ private struct FloatingGlassBackground: NSViewRepresentable {
 final class FloatingWidgetManager: NSObject, NSWindowDelegate {
     private var panels: [Int: NSPanel] = [:]
     private var names: [Int: String] = [:]
+    private var mergedCategoryIDsByBase: [Int: [Int]] = [:]
     private var closedStack: [Int] = []
     private let state: WidgetAppState
     private var cascadeIndex = 0
@@ -232,20 +233,20 @@ final class FloatingWidgetManager: NSObject, NSWindowDelegate {
 
     func applySavedView(id: String) {
         guard let view = SavedWidgetViewStore.view(id: id) else { return }
-        let targetIDs = Set(view.widgets.flatMap { [$0.categoryID] + ($0.mergedCategoryIDs ?? []) })
+        let targetIDs = Set(view.widgets.map(\.categoryID))
         for (id, panel) in panels where panel.isVisible && !targetIDs.contains(id) {
             persistFrame(for: panel)
             panel.orderOut(nil)
         }
         for widget in view.widgets {
             let baseFrame = NSRectFromString(widget.frame)
-            openWidget(categoryID: widget.categoryID, categoryName: widget.categoryName, isFiltered: widget.isFiltered, frameOverride: baseFrame)
-            guard !widget.isFiltered else { continue }
-            for (index, id) in (widget.mergedCategoryIDs ?? []).enumerated() {
-                guard let category = state.categories.first(where: { $0.id == id }) else { continue }
-                let frame = mergedFrame(for: baseFrame, index: index)
-                openWidget(categoryID: category.id, categoryName: category.name, isFiltered: false, frameOverride: frame)
-            }
+            openWidget(
+                categoryID: widget.categoryID,
+                categoryName: widget.categoryName,
+                isFiltered: widget.isFiltered,
+                frameOverride: baseFrame,
+                mergedCategoryIDs: widget.mergedCategoryIDs ?? []
+            )
         }
     }
 
@@ -276,15 +277,7 @@ final class FloatingWidgetManager: NSObject, NSWindowDelegate {
                 continue
             }
 
-            let mergedIDs = visible.compactMap { candidateID, candidatePanel -> Int? in
-                guard
-                    candidateID != id,
-                    candidateID != filteredKey,
-                    !consumed.contains(candidateID),
-                    mergedOverlapRatio(panel.frame, candidatePanel.frame) >= 0.46
-                else { return nil }
-                return candidateID
-            }
+            let mergedIDs = mergedCategoryIDsByBase[id] ?? []
             mergedIDs.forEach { consumed.insert($0) }
 
             entries.append(
@@ -312,16 +305,27 @@ final class FloatingWidgetManager: NSObject, NSWindowDelegate {
         guard let target = candidates.max(by: { $0.ratio < $1.ratio }) else { return }
 
         isSnappingMergedWidget = true
-        let siblingCount = panels.filter { id, panel in
-            id != movedID &&
-            id != target.id &&
-            id != filteredKey &&
-            panel.isVisible &&
-            mergedOverlapRatio(target.panel.frame, panel.frame) >= 0.46
-        }.count
-        window.setFrame(mergedFrame(for: target.panel.frame, index: siblingCount), display: true, animate: true)
+        let movedMergedIDs = mergedCategoryIDsByBase[movedID] ?? []
+        let targetMergedIDs = mergedCategoryIDsByBase[target.id] ?? []
+        let combined = orderedUnique(targetMergedIDs + [movedID] + movedMergedIDs)
+            .filter { $0 != target.id && $0 != filteredKey }
+        mergedCategoryIDsByBase[target.id] = combined
+        mergedCategoryIDsByBase.removeValue(forKey: movedID)
+
+        if let movedPanel = panels.removeValue(forKey: movedID) {
+            persistFrame(for: movedPanel)
+            movedPanel.orderOut(nil)
+        }
+        configurePanelContent(
+            target.panel,
+            categoryID: target.id,
+            categoryName: names[target.id] ?? target.panel.title,
+            isFiltered: false,
+            mergedCategoryIDs: combined
+        )
+        target.panel.title = mergedTitle(categoryName: names[target.id] ?? target.panel.title, mergedCategoryIDs: combined)
+        target.panel.makeKeyAndOrderFront(nil)
         persistFrame(for: target.panel)
-        persistFrame(for: window)
         isSnappingMergedWidget = false
     }
 
@@ -337,6 +341,11 @@ final class FloatingWidgetManager: NSObject, NSWindowDelegate {
         return frame
     }
 
+    private func orderedUnique(_ ids: [Int]) -> [Int] {
+        var seen = Set<Int>()
+        return ids.filter { seen.insert($0).inserted }
+    }
+
     private func mergedOverlapRatio(_ a: NSRect, _ b: NSRect) -> CGFloat {
         let intersection = a.intersection(b)
         guard !intersection.isNull, !intersection.isEmpty else { return 0 }
@@ -349,21 +358,37 @@ final class FloatingWidgetManager: NSObject, NSWindowDelegate {
         max(rect.width, 0) * max(rect.height, 0)
     }
 
-    func openWidget(categoryID: Int, categoryName: String, isFiltered: Bool = false, frameOverride: NSRect? = nil) {
+    func openWidget(
+        categoryID: Int,
+        categoryName: String,
+        isFiltered: Bool = false,
+        frameOverride: NSRect? = nil,
+        mergedCategoryIDs: [Int] = []
+    ) {
         names[categoryID] = categoryName
+        mergedCategoryIDsByBase[categoryID] = mergedCategoryIDs.isEmpty ? nil : mergedCategoryIDs
         closedStack.removeAll { $0 == categoryID }
         if let existing = panels[categoryID] {
             if let frameOverride {
                 existing.setFrame(frameOverride, display: true, animate: true)
             }
+            configurePanelContent(
+                existing,
+                categoryID: categoryID,
+                categoryName: categoryName,
+                isFiltered: isFiltered,
+                mergedCategoryIDs: mergedCategoryIDs
+            )
+            existing.title = mergedTitle(categoryName: categoryName, mergedCategoryIDs: mergedCategoryIDs)
             existing.makeKeyAndOrderFront(nil)
             return
         }
 
-        let hostingController = NSHostingController(
-            rootView: FloatingWidgetView(categoryID: categoryID, categoryName: categoryName, isFiltered: isFiltered)
-                .environmentObject(state)
-                .environmentObject(ThemeSettings.shared)
+        let hostingController = makeHostingController(
+            categoryID: categoryID,
+            categoryName: categoryName,
+            isFiltered: isFiltered,
+            mergedCategoryIDs: mergedCategoryIDs
         )
         hostingController.view.wantsLayer = true
         hostingController.view.layer?.backgroundColor = NSColor.clear.cgColor
@@ -374,7 +399,7 @@ final class FloatingWidgetManager: NSObject, NSWindowDelegate {
             backing: .buffered,
             defer: false
         )
-        panel.title = categoryName
+        panel.title = mergedTitle(categoryName: categoryName, mergedCategoryIDs: mergedCategoryIDs)
         panel.contentViewController = hostingController
         panel.titlebarAppearsTransparent = false
         panel.titleVisibility = .hidden
@@ -411,6 +436,48 @@ final class FloatingWidgetManager: NSObject, NSWindowDelegate {
         panels[categoryID] = panel
         panel.makeKeyAndOrderFront(nil)
     }
+
+    private func makeHostingController(
+        categoryID: Int,
+        categoryName: String,
+        isFiltered: Bool,
+        mergedCategoryIDs: [Int]
+    ) -> NSHostingController<AnyView> {
+        NSHostingController(
+            rootView: AnyView(
+                FloatingWidgetView(
+                    categoryID: categoryID,
+                    categoryName: categoryName,
+                    isFiltered: isFiltered,
+                    mergedCategoryIDs: mergedCategoryIDs
+                )
+                .environmentObject(state)
+                .environmentObject(ThemeSettings.shared)
+            )
+        )
+    }
+
+    private func configurePanelContent(
+        _ panel: NSPanel,
+        categoryID: Int,
+        categoryName: String,
+        isFiltered: Bool,
+        mergedCategoryIDs: [Int]
+    ) {
+        let hostingController = makeHostingController(
+            categoryID: categoryID,
+            categoryName: categoryName,
+            isFiltered: isFiltered,
+            mergedCategoryIDs: mergedCategoryIDs
+        )
+        hostingController.view.wantsLayer = true
+        hostingController.view.layer?.backgroundColor = NSColor.clear.cgColor
+        panel.contentViewController = hostingController
+    }
+
+    private func mergedTitle(categoryName: String, mergedCategoryIDs: [Int]) -> String {
+        mergedCategoryIDs.isEmpty ? categoryName : "\(categoryName) + \(mergedCategoryIDs.count)"
+    }
 }
 
 /// Compact, scrollable view shown inside a floating panel. Fetches its own
@@ -421,6 +488,7 @@ private struct FloatingWidgetView: View {
     let categoryID: Int
     let categoryName: String
     var isFiltered: Bool = false
+    var mergedCategoryIDs: [Int] = []
 
     @State private var stories: [WidgetStory] = []
     @State private var loading = false
@@ -439,21 +507,33 @@ private struct FloatingWidgetView: View {
     @State private var reachedEnd = false
     private let pageStep = 10
 
-    init(categoryID: Int, categoryName: String, isFiltered: Bool = false) {
+    init(categoryID: Int, categoryName: String, isFiltered: Bool = false, mergedCategoryIDs: [Int] = []) {
         self.categoryID = categoryID
         self.categoryName = categoryName
         self.isFiltered = isFiltered
+        self.mergedCategoryIDs = mergedCategoryIDs
         _layoutMode = State(initialValue: FloatingWidgetPreferences.layoutMode(categoryID: categoryID, isFiltered: isFiltered))
         _seenStoryKeys = State(initialValue: FloatingWidgetPreferences.seenStories(categoryID: categoryID, isFiltered: isFiltered))
+    }
+
+    private var allCategoryIDs: [Int] {
+        var seen = Set<Int>()
+        return ([categoryID] + mergedCategoryIDs).filter { seen.insert($0).inserted }
+    }
+
+    private var displayCategoryName: String {
+        mergedCategoryIDs.isEmpty ? categoryName : "\(categoryName) + \(mergedCategoryIDs.count)"
     }
 
     private var pendingCount: Int {
         if isFiltered {
             return state.aiProgress.values.reduce(0) { $0 + $1.pending }
         }
-        guard let category = state.categories.first(where: { $0.id == categoryID }) else { return 0 }
-        return category.feedUrls.reduce(into: 0) { total, url in
-            total += state.aiProgress[url]?.pending ?? 0
+        return allCategoryIDs.reduce(into: 0) { total, id in
+            guard let category = state.categories.first(where: { $0.id == id }) else { return }
+            total += category.feedUrls.reduce(0) { subtotal, url in
+                subtotal + (state.aiProgress[url]?.pending ?? 0)
+            }
         }
     }
 
@@ -720,7 +800,7 @@ private struct FloatingWidgetView: View {
             Image(systemName: "newspaper.fill")
                 .font(widgetFont(17, weight: .bold))
                 .foregroundStyle(AINewsTheme.accentBlue)
-            Text(categoryName)
+            Text(displayCategoryName)
                 .font(widgetHeaderTitle())
                 .foregroundStyle(AINewsTheme.textPrimary)
                 .lineLimit(1)
@@ -758,7 +838,7 @@ private struct FloatingWidgetView: View {
             Image(systemName: "newspaper.fill")
                 .font(widgetFont(14, weight: .bold))
                 .foregroundStyle(AINewsTheme.accentBlue)
-            Text(categoryName)
+            Text(displayCategoryName)
                 .font(widgetFont(15, weight: .bold))
                 .foregroundStyle(AINewsTheme.textPrimary)
                 .lineLimit(1)
@@ -1314,13 +1394,26 @@ private struct FloatingWidgetView: View {
             if let matches = try? await api.fetchKeywordMatches(limit: visibleCount) {
                 updateStories(matches, resizeAfterUpdate: false)
             }
-        } else if let response = try? await api.fetchStories(categoryID: categoryID, limit: visibleCount) {
-            updateStories(response.stories, resizeAfterUpdate: false)
+        } else {
+            var mergedStories: [WidgetStory] = []
+            var exhaustedCategories = 0
+            for id in allCategoryIDs {
+                guard let response = try? await api.fetchStories(categoryID: id, limit: visibleCount) else { continue }
+                mergedStories.append(contentsOf: response.stories)
+                if response.stories.count < visibleCount {
+                    exhaustedCategories += 1
+                }
+            }
+            let deduplicated = Dictionary(grouping: mergedStories, by: \.storyKey)
+                .compactMap { $0.value.first }
+                .sorted { lhs, rhs in lhs.publishedMs > rhs.publishedMs }
+            reachedEnd = exhaustedCategories == allCategoryIDs.count
+            updateStories(Array(deduplicated.prefix(visibleCount)), resizeAfterUpdate: false, reachedEndOverride: reachedEnd)
         }
     }
 
-    private func updateStories(_ fetchedStories: [WidgetStory], resizeAfterUpdate: Bool) {
-        reachedEnd = fetchedStories.count < visibleCount
+    private func updateStories(_ fetchedStories: [WidgetStory], resizeAfterUpdate: Bool, reachedEndOverride: Bool? = nil) {
+        reachedEnd = reachedEndOverride ?? (fetchedStories.count < visibleCount)
         stories = applyLocalOrder(to: fetchedStories)
         clampStackIndex()
         persistStoryOrder()
@@ -1423,7 +1516,7 @@ private struct FloatingWidgetView: View {
     }
 
     private func currentWidgetWindow() -> NSWindow? {
-        if let exact = NSApp.windows.first(where: { $0.title == categoryName && $0.isVisible }) {
+        if let exact = NSApp.windows.first(where: { $0.title == displayCategoryName && $0.isVisible }) {
             return exact
         }
         return NSApp.keyWindow ?? NSApp.mainWindow
