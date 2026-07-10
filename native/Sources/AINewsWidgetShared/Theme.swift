@@ -202,6 +202,7 @@ public enum AINewsFontSize: String, CaseIterable, Sendable {
     }
 }
 
+@MainActor
 public enum AINewsTheme {
     /// The active palette. Swapped by ThemeSettings; views re-read it on re-render.
     public static var palette: ThemePalette = AINewsVibe.dark.palette
@@ -284,6 +285,7 @@ public struct AINewsBackground: View {
 #if canImport(AppKit)
 /// Process-wide cache so a thumbnail loaded once stays put across re-renders and
 /// the widget's periodic refresh (AsyncImage re-fetches and blanks on every re-render).
+@MainActor
 private final class ThumbnailCache {
     static let shared = NSCache<NSURL, NSImage>()
 }

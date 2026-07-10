@@ -70,6 +70,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         showMainWindow()
     }
 
+    @MainActor
     private func configureStatusItem() {
         let statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         if let button = statusItem.button {
@@ -100,6 +101,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         self.statusItem = statusItem
     }
 
+    @MainActor
     func showMainWindow() {
         NSApp.activate(ignoringOtherApps: true)
         for window in NSApp.windows {
@@ -107,25 +109,30 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
+    @MainActor
     @objc private func openMainWindow() {
         showMainWindow()
     }
 
+    @MainActor
     @objc private func requestRefresh() {
         showMainWindow()
         NotificationCenter.default.post(name: .aiNewsRefreshRequested, object: nil)
     }
 
+    @MainActor
     @objc private func openWorkspace() {
         showMainWindow()
         NotificationCenter.default.post(name: .aiNewsOpenWorkspace, object: nil)
     }
 
+    @MainActor
     @objc private func openSettings() {
         showMainWindow()
         NotificationCenter.default.post(name: .aiNewsOpenSettings, object: nil)
     }
 
+    @MainActor
     @objc private func openWidgetHelp() {
         showMainWindow()
         NotificationCenter.default.post(name: .aiNewsOpenWidgetHelp, object: nil)
@@ -193,6 +200,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         floatingWidgetManager?.applySavedView(id: id)
     }
 
+    @MainActor
     @objc private func quitApp() {
         NSApp.terminate(nil)
     }

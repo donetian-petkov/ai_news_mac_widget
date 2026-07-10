@@ -28,6 +28,7 @@ public final class WidgetAppState: ObservableObject {
     @Published public var pendingSharedURL: String?
     @Published public var lastSharedStoryKey: String?
     @Published public var lastShareMessage: String?
+    @Published public var scrollToTopSignal = 0
 
     private let sessionStore: SessionStore
     private let snapshotStore: SnapshotStore
@@ -138,6 +139,7 @@ public final class WidgetAppState: ObservableObject {
             try await self.refreshAllCategorySnapshots(using: api)
             await self.loadRuntimeContext(suppressUnauthorizedAlert: suppressUnauthorizedAlert)
             await self.loadStoriesForSelectedCategory(suppressUnauthorizedAlert: suppressUnauthorizedAlert)
+            self.scrollToTop()
             self.statusMessage = "Updated \(self.categories.count) categories."
         }
     }
@@ -202,11 +204,13 @@ public final class WidgetAppState: ObservableObject {
     public func selectCategory(_ category: WidgetCategory) async {
         selectedCategoryID = category.id
         await loadStoriesForSelectedCategory()
+        scrollToTop()
     }
 
     public func selectFilteredFeed() async {
         selectedCategoryID = FilteredCategoryID
         await loadStoriesForSelectedCategory()
+        scrollToTop()
     }
 
     public func loadStoriesForSelectedCategory(limit: Int? = nil, suppressUnauthorizedAlert: Bool = false) async {
@@ -533,6 +537,8 @@ public final class WidgetAppState: ObservableObject {
             if recordCommand {
                 try? self.snapshotStore.appendCommand(WidgetCommand(kind: .refreshCategory, categoryID: category.id))
             }
+            await self.loadStoriesForSelectedCategory(suppressUnauthorizedAlert: true)
+            self.scrollToTop()
         }
     }
 
@@ -680,6 +686,7 @@ public final class WidgetAppState: ObservableObject {
     }
 
     public func scrollToTop() {
+        scrollToTopSignal += 1
         scrollToStoryID = stories.first?.id
     }
 

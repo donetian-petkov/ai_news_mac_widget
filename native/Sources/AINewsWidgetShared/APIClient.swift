@@ -5,6 +5,7 @@ public enum APIClientError: LocalizedError {
     case unauthorized
     case invalidResponse
     case notFound
+    case network(message: String)
     case server(message: String)
 
     public var errorDescription: String? {
@@ -17,6 +18,8 @@ public enum APIClientError: LocalizedError {
             return "The backend returned an invalid response."
         case .notFound:
             return "The app reached a backend that does not expose the widget API."
+        case .network(let message):
+            return message
         case .server(let message):
             return message
         }
@@ -461,6 +464,7 @@ public struct APIClient: Sendable {
     ) async throws -> Response {
         var request = URLRequest(url: makeURL(path: path))
         request.httpMethod = method
+        request.timeoutInterval = 18
         request.setValue("application/json", forHTTPHeaderField: "Accept")
         if let token, !token.isEmpty {
             request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
@@ -469,7 +473,13 @@ public struct APIClient: Sendable {
             request.httpBody = bodyData
             request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         }
-        let (data, response) = try await URLSession.shared.data(for: request)
+        let data: Data
+        let response: URLResponse
+        do {
+            (data, response) = try await URLSession.shared.data(for: request)
+        } catch {
+            throw mapNetworkError(error, method: method, path: path, url: request.url)
+        }
         guard let http = response as? HTTPURLResponse else {
             throw APIClientError.invalidResponse
         }
@@ -501,10 +511,17 @@ public struct APIClient: Sendable {
     ) async throws -> String {
         var request = URLRequest(url: makeURL(path: path))
         request.httpMethod = method
+        request.timeoutInterval = 18
         if let token, !token.isEmpty {
             request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         }
-        let (data, response) = try await URLSession.shared.data(for: request)
+        let data: Data
+        let response: URLResponse
+        do {
+            (data, response) = try await URLSession.shared.data(for: request)
+        } catch {
+            throw mapNetworkError(error, method: method, path: path, url: request.url)
+        }
         guard let http = response as? HTTPURLResponse else {
             throw APIClientError.invalidResponse
         }
@@ -522,6 +539,27 @@ public struct APIClient: Sendable {
             throw APIClientError.invalidResponse
         }
         return text
+    }
+
+    private func mapNetworkError(_ error: Error, method: String, path: String, url: URL?) -> APIClientError {
+        let target = url?.absoluteString ?? "\(baseURL.absoluteString)\(path)"
+        let message: String
+        if let urlError = error as? URLError {
+            switch urlError.code {
+            case .cancelled:
+                message = "Backend request was cancelled while calling \(method) \(path). Try Refresh; if it repeats, restart the app so the local backend is relaunched."
+            case .timedOut:
+                message = "Backend request timed out while calling \(method) \(path). The local backend may be busy or wedged."
+            case .cannotConnectToHost, .networkConnectionLost, .notConnectedToInternet:
+                message = "Local backend is not reachable at \(target). Reopen the app so it can relaunch the backend."
+            default:
+                message = "Backend request failed for \(method) \(path): \(urlError.localizedDescription)"
+            }
+        } else {
+            message = "Backend request failed for \(method) \(path): \(error.localizedDescription)"
+        }
+        AINewsDebugLog.log("api error \(method) \(target): \(error.localizedDescription)")
+        return .network(message: message)
     }
 
     private func makeURL(path: String) -> URL {

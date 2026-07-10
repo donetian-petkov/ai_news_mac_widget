@@ -1,83 +1,92 @@
 # AI News Mac Widget
 
-Standalone macOS widget project derived from `ai_news_deploy_ready`.
+Standalone macOS AI News product derived from `ai_news_deploy_ready`.
+
+It ships as an installed macOS app that supervises its own local Node/Prisma backend, plus native floating widgets for individual feeds, merged feeds, and the filtered feed.
 
 ## Structure
 
-- `backend/`
-  - Node/Prisma local backend derived from the existing AI News feed and AI pipeline
-- `native/`
-  - Swift package containing the macOS companion app, shared models/client, and WidgetKit source layer
-- `docs/`
-  - implementation notes and follow-up docs
+- `backend/` - local Node/Prisma API, RSS ingestion, AI jobs, filtered-feed matching, saved views, and widget endpoints.
+- `native/` - SwiftUI companion app, floating widget windows, shared API client, theme system, and WidgetKit source.
+- `scripts/` - app install/open helpers, backend build helpers, icon generation, and diagnostics.
+- `docs/` - implementation notes and follow-up design docs.
 
-## Current Implementation
+## Main Features
 
-- Account auth and provider-key storage are reused from the AI News backend.
-- Categories are backed by collection records and exposed through widget-specific REST routes.
-- macOS companion app is implemented in SwiftUI with:
-  - account sign-in
-  - category list
-  - 5/10 story expansion
-  - reset/top controls
-  - pinning
-  - on-demand summary/research/translation buttons
-- Widget source files are included in the Swift package so the widget data model, intents, and layouts stay aligned with the app.
+- Local account login and local provider-key storage.
+- Default feeds imported from the AI News project.
+- Per-feed controls from the main page: turn feed fetching off/on and pause/resume AI.
+- Filtered Feed as its own first-class feed driven by keyword rules.
+- Fast keyword matching for filtered stories before slower semantic work finishes.
+- AI actions for summaries, research, translations, model/provider settings, usage totals, and budget/pending counts.
+- Story cards with images, summaries, research state, translation state, share action, save/pin actions, and source links.
+- Sidebar health indicators showing loaded, pending, budget-blocked, hidden, and active feed state.
+- Native floating widgets with:
+  - individual feed widgets
+  - filtered feed widget
+  - merged feed widgets
+  - column view
+  - stack view
+  - solid and transparent background modes
+  - always-on-top behavior
+  - per-widget size and position persistence
+  - share button on each story
+  - NEW label for unseen stack stories
+  - stack navigation and stack load-more controls
+- Drag-over merging for feed widgets, with title-chip unmerge.
+- Saved Views page for saving, applying, editing, deleting, and rearranging widget layouts.
+- Menu bar icon with quick app/widget actions.
 
-## Run
+## Install / Update
 
-Backend:
+Run from the repo root:
 
 ```bash
 cd /Users/donetianpetkov/ai_news/ai_news_mac_widget
 npm install
-npm run prisma:generate
-npm run start:backend
-```
-
-`npm run start:backend` initializes the local SQLite database first, then builds and launches the backend, so you do not need a separate manual build step for a clean clone.
-It also generates local auth/encryption secrets on first run for the standalone app account system.
-It tries Prisma migrations first and falls back to a local `db push` bootstrap if the SQLite state is brand new or messy.
-If port `4000` is already in use, the backend will automatically move to the next available port and print the final URL.
-The backend also writes its active local URL to a runtime file in your macOS temp directory so the Swift app can follow port changes automatically.
-
-Native:
-
-```bash
-cd /Users/donetianpetkov/ai_news/ai_news_mac_widget/native
-swift build
-swift run AINewsMacApp
-```
-
-### Install / update the app (recommended)
-
-Run these from the repo root, in order:
-
-```bash
-# 1. Fully stop the app AND its backend
-#    (the installer quits the app but NOT the node backend, so a stale
-#    old-code backend can survive and the new app will reuse it)
-killall AINewsMacApp 2>/dev/null; pkill -f "dist/server.js" 2>/dev/null; rm -f /tmp/ai-news-mac-widget-runtime.json
-
-# 2. Build + install (regenerates the Xcode project, builds the backend,
-#    builds the app, copies it to /Applications, and codesigns it)
-./scripts/install-mac-app.sh
-
-# 3. Launch
+npm run install:app
 open "/Applications/AI News Widget.app"
 ```
 
-`install-mac-app.sh` does the full build for you — you do not run `xcodebuild` or the project generator yourself.
+The installed app starts and supervises its own backend. You normally do not need to run a backend command manually.
 
-**Gotchas:**
+## Development Commands
 
-- **Step 1 is not optional.** The installer stops the *app* but leaves the old *node backend* running. If you skip it, the freshly built app connects to the stale old-code backend and looks "still old."
-- **Fully quit the app (⌘Q) before reinstalling.** A lingering window keeps showing the old build even after a successful install.
-- **Do not run `npm run start` (the dev stack) at the same time as the installed app.** It spawns its own backend on port `4000` with possibly-old code and causes port confusion. Use *either* the installed app *or* the dev stack, not both.
+```bash
+npm run build:backend
+npm run build:native
+npm run install:app
+npm run open:app
+```
 
-The app auto-launches its own backend on start, so once installed you normally just `open` it — no separate backend command needed.
+Useful backend-only commands:
 
-## Notes
+```bash
+npm run prisma:generate
+npm run prisma:migrate
+npm run start:backend
+```
 
-- Images are intentionally disabled in the native app and widget layouts.
-- The widget source layer is present, but packaging it as a signed `.app` plus WidgetKit extension still requires opening the repo in Xcode and wiring bundle/signing settings.
+## Runtime Files And Logs
+
+- Runtime backend URL: `/tmp/ai-news-mac-widget-runtime.json`
+- Backend log: `~/Library/Logs/AINewsMacWidget/backend.log`
+- App/widget debug log: `/tmp/ai-news-widget-debug.log`
+- Local app data: `~/Library/Application Support/AINewsMacWidget/`
+
+Health checks:
+
+```bash
+curl -s http://127.0.0.1:3000/api/health
+curl -s http://127.0.0.1:3000/api/categories
+```
+
+## Operational Notes
+
+- The app follows the backend runtime file when the backend port changes.
+- If the app reports a backend/network error, check the runtime file and backend log first.
+- Feed refresh now reloads the selected stories and resets the main list to the newest story instead of preserving a stale deep scroll offset.
+- API request failures are logged with method, path, and URL so cancellation/timeout/connectivity errors are diagnosable.
+- Hidden categories are presentation-level visibility; use feed controls to stop fetching or pause AI.
+- Images are supported in the companion app and floating widgets when enabled.
+

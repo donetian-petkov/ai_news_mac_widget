@@ -670,6 +670,12 @@ private struct DashboardView: View {
                         proxy.scrollTo(newValue, anchor: .top)
                     }
                 }
+                .onChange(of: state.scrollToTopSignal) { _, _ in
+                    guard let first = filteredStories.first else { return }
+                    withAnimation(.easeInOut(duration: 0.2)) {
+                        proxy.scrollTo(first.id, anchor: .top)
+                    }
+                }
             }
         }
         .padding(24)
@@ -1882,6 +1888,7 @@ private struct DigestsWorkspaceTab: View {
     }
 }
 
+@MainActor
 private func automationCard(
     title: String,
     subtitle: String,
@@ -2251,6 +2258,7 @@ private func formatTokens(_ n: Int) -> String {
     return "\(n)"
 }
 
+@MainActor
 private func header(title: String, subtitle: String) -> some View {
     VStack(alignment: .leading, spacing: 6) {
         Text(title)
