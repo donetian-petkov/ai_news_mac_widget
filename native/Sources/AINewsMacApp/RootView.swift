@@ -379,7 +379,11 @@ private struct DashboardView: View {
                 .padding(.vertical, 6)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .contentShape(Rectangle())
+                .onTapGesture {
+                    Task { await state.selectFilteredFeed() }
+                }
                 .onTapGesture(count: 2) {
+                    Task { await state.selectFilteredFeed() }
                     NotificationCenter.default.post(name: .aiNewsOpenFilteredWidget, object: nil)
                 }
 
@@ -427,7 +431,11 @@ private struct DashboardView: View {
                     .padding(.vertical, 6)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .contentShape(Rectangle())
+                    .onTapGesture {
+                        Task { await state.selectCategory(category) }
+                    }
                     .onTapGesture(count: 2) {
+                        Task { await state.selectCategory(category) }
                         NotificationCenter.default.post(
                             name: .aiNewsOpenCategoryWidget,
                             object: nil,
