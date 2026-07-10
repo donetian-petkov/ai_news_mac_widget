@@ -179,7 +179,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             floatingWidgetManager = FloatingWidgetManager(state: appState)
         }
         let name = notification.userInfo?["name"] as? String ?? ""
-        floatingWidgetManager?.saveCurrentView(named: name)
+        let id = notification.userInfo?["id"] as? String
+        floatingWidgetManager?.saveCurrentView(named: name, replacingID: id)
     }
 
     @MainActor

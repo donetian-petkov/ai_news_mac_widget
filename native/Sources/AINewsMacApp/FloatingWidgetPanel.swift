@@ -185,11 +185,15 @@ final class FloatingWidgetManager: NSObject, NSWindowDelegate {
         closedStack.append(id)
     }
 
-    func saveCurrentView(named rawName: String) {
+    func saveCurrentView(named rawName: String, replacingID: String? = nil) {
         let name = rawName.trimmingCharacters(in: .whitespacesAndNewlines)
         let entries = currentVisibleEntries()
         guard !name.isEmpty, !entries.isEmpty else { return }
-        SavedWidgetViewStore.upsert(SavedWidgetView(name: name, widgets: entries))
+        var view = SavedWidgetViewStore.view(id: replacingID ?? "") ?? SavedWidgetView(name: name, widgets: [])
+        view.name = name
+        view.widgets = entries
+        view.updatedAt = Date()
+        SavedWidgetViewStore.upsert(view)
     }
 
     func applySavedView(id: String) {

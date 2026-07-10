@@ -1270,7 +1270,7 @@ private struct SavedWidgetViewsWorkspaceTab: View {
             VStack(alignment: .leading, spacing: 16) {
                 header(
                     title: "Saved widget views",
-                    subtitle: "Capture, restore, and edit exact floating widget layouts: feed, position, width, and height."
+                    subtitle: "Capture, restore, and edit exact floating widget layouts: feed, position, width, and height. Rearrange by moving/resizing open widgets, then update the saved view from them."
                 )
 
                 VStack(alignment: .leading, spacing: 12) {
@@ -1350,6 +1350,20 @@ private struct SavedWidgetViewsWorkspaceTab: View {
                     load()
                 }
                 .buttonStyle(.bordered)
+                Button("Update From Open Widgets") {
+                    NotificationCenter.default.post(
+                        name: .aiNewsSaveCurrentWidgetView,
+                        object: nil,
+                        userInfo: [
+                            "id": view.wrappedValue.id,
+                            "name": view.wrappedValue.name
+                        ]
+                    )
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
+                        load()
+                    }
+                }
+                .buttonStyle(.bordered)
                 Button("Delete", role: .destructive) {
                     SavedWidgetViewStore.delete(id: view.wrappedValue.id)
                     load()
@@ -1358,6 +1372,9 @@ private struct SavedWidgetViewsWorkspaceTab: View {
             }
 
             Text("\(view.wrappedValue.widgets.count) widget\(view.wrappedValue.widgets.count == 1 ? "" : "s")")
+                .font(.caption)
+                .foregroundStyle(AINewsTheme.textMuted)
+            Text("Fast rearrange: Apply the view, drag/resize the floating widgets where you want them, then click Update From Open Widgets.")
                 .font(.caption)
                 .foregroundStyle(AINewsTheme.textMuted)
 
