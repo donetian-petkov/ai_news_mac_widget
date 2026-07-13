@@ -1149,6 +1149,14 @@ private struct FloatingWidgetView: View {
 
                 HStack(spacing: 10) {
                     Button {
+                        goToStackStart()
+                    } label: {
+                        stackNavLabel(systemImage: "backward.end", title: "Start")
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(stackIndex <= 0)
+
+                    Button {
                         moveStack(by: -1)
                     } label: {
                         stackNavLabel(systemImage: "chevron.up", title: "Previous")
@@ -1288,6 +1296,19 @@ private struct FloatingWidgetView: View {
             markStorySeen(current.storyKey)
         }
         stackIndex = max(0, min(stories.count - 1, stackIndex + delta))
+    }
+
+    private func goToStackStart() {
+        guard !stories.isEmpty else { return }
+        if let current = currentStackStory {
+            markStorySeen(current.storyKey)
+        }
+        stackIndex = 0
+        if let first = currentStackStory {
+            markStorySeen(first.storyKey)
+        }
+        resizeWindowForCurrentLayout(force: true)
+        AINewsDebugLog.log("floating stack start scope=\(displayCategoryName)")
     }
 
     private func loadMoreStackStories() {
