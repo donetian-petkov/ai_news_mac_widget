@@ -846,14 +846,16 @@ export function registerProductFeatureApi({
     const user = await requireAuthUser(req, res);
     if (!user) return;
     const limitRaw = Number(req.query.limit);
-    const limit = Number.isFinite(limitRaw) ? Math.max(1, Math.min(100, Math.floor(limitRaw))) : 30;
-    const news = await widgetNewsOrFallback(prisma, getRecentNews(), { limit, filteredOnly: true });
-    const stories = news
+    const limit = Number.isFinite(limitRaw) ? Math.max(1, Math.min(200, Math.floor(limitRaw))) : 30;
+    const news = await widgetNewsOrFallback(prisma, getRecentNews(), { limit: limit + 1, filteredOnly: true });
+    const page = news
       .filter(item => item.isMatch === true && item.filteredOk !== false)
       .sort((a, b) => Number(b.publishedMs || 0) - Number(a.publishedMs || 0))
+      .slice(0, limit + 1);
+    const stories = page
       .slice(0, limit)
       .map(toWidgetStory);
-    res.json({ ok: true, stories, count: stories.length });
+    res.json({ ok: true, stories, count: stories.length, limit, hasMore: page.length > limit });
   });
 
   app.get('/api/widget/master', async (req, res) => {
@@ -892,18 +894,20 @@ export function registerProductFeatureApi({
       return;
     }
     const category = mapCollectionRow(row);
-    const limit = normalizeLimit(req.query.limit, category.activeCount, Math.max(category.expandedCount, 20));
+    const limit = normalizeLimit(req.query.limit, category.activeCount, 200);
     const news = await widgetNewsOrFallback(prisma, getRecentNews(), {
-      limit: Math.max(limit * Math.max(category.feedUrls.length, 1), 100),
+      limit: Math.max((limit + 1) * Math.max(category.feedUrls.length, 1), 100),
       feedUrls: category.feedUrls
     });
-    const stories = selectCategoryStories(category, news).slice(0, limit).map(toWidgetStory);
+    const page = selectCategoryStories(category, news).slice(0, limit + 1);
+    const stories = page.slice(0, limit).map(toWidgetStory);
     res.json({
       ok: true,
       category,
       stories,
       count: stories.length,
       limit,
+      hasMore: page.length > limit,
       pinnedStoryKey: category.pinnedStoryId ? buildStoryLookupKey(category.pinnedStoryId, category.pinnedFeedUrl) : null,
       imagesEnabled: false
     });

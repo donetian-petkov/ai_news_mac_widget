@@ -1648,26 +1648,34 @@ private struct FloatingWidgetView: View {
         AINewsDebugLog.log("floating reload start filtered=\(isFiltered) categories=\(allCategoryIDs) limit=\(visibleCount)")
         await refreshSourceFeedsIfDue(api: api)
         if isFiltered {
-            if let matches = try? await api.fetchKeywordMatches(limit: visibleCount) {
-                updateStories(matches, resizeAfterUpdate: false)
-                logTopStory(matches, scope: "filtered")
+            if let response = try? await api.fetchKeywordMatchesPage(limit: visibleCount) {
+                updateStories(
+                    response.stories,
+                    resizeAfterUpdate: false,
+                    reachedEndOverride: response.hasMore == false
+                )
+                AINewsDebugLog.log("floating reload page scope=filtered shown=\(response.stories.count) requested=\(visibleCount) hasMore=\(response.hasMore == true)")
+                logTopStory(response.stories, scope: "filtered")
             }
         } else {
             var mergedStories: [WidgetStory] = []
-            var exhaustedCategories = 0
+            var fetchedCategoryCount = 0
+            var categoryHasMore = false
             for id in allCategoryIDs {
                 guard let response = try? await api.fetchStories(categoryID: id, limit: visibleCount) else { continue }
+                fetchedCategoryCount += 1
                 mergedStories.append(contentsOf: response.stories)
-                if response.stories.count < visibleCount {
-                    exhaustedCategories += 1
+                if response.hasMore == true || (response.hasMore == nil && response.stories.count >= visibleCount) {
+                    categoryHasMore = true
                 }
             }
             let deduplicated = Dictionary(grouping: mergedStories, by: \.storyKey)
                 .compactMap { $0.value.first }
                 .sorted { lhs, rhs in lhs.publishedMs > rhs.publishedMs }
-            reachedEnd = exhaustedCategories == allCategoryIDs.count
+            reachedEnd = fetchedCategoryCount > 0 && !categoryHasMore
             let limitedStories = Array(deduplicated.prefix(visibleCount))
             updateStories(limitedStories, resizeAfterUpdate: false, reachedEndOverride: reachedEnd)
+            AINewsDebugLog.log("floating reload page scope=\(displayCategoryName) shown=\(limitedStories.count) requested=\(visibleCount) hasMore=\(!reachedEnd)")
             logTopStory(limitedStories, scope: displayCategoryName)
         }
         Task { await state.refreshUsage() }

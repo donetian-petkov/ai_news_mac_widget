@@ -247,8 +247,17 @@ public struct CategoryStoriesResponse: Codable, Sendable {
     public var stories: [WidgetStory]
     public var count: Int
     public var limit: Int
+    public var hasMore: Bool?
     public var pinnedStoryKey: String?
     public var imagesEnabled: Bool
+}
+
+public struct KeywordMatchesResponse: Codable, Sendable {
+    public var ok: Bool
+    public var stories: [WidgetStory]
+    public var count: Int
+    public var limit: Int?
+    public var hasMore: Bool?
 }
 
 public struct WidgetCategoriesResponse: Codable, Sendable {

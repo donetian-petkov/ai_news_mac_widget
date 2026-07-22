@@ -209,9 +209,11 @@ public struct APIClient: Sendable {
     }
 
     public func fetchKeywordMatches(limit: Int = 30) async throws -> [WidgetStory] {
-        struct Response: Codable { var ok: Bool; var stories: [WidgetStory] }
-        let response: Response = try await send(path: "/api/widget/keyword-matches?limit=\(limit)")
-        return response.stories
+        try await fetchKeywordMatchesPage(limit: limit).stories
+    }
+
+    public func fetchKeywordMatchesPage(limit: Int = 30) async throws -> KeywordMatchesResponse {
+        try await send(path: "/api/widget/keyword-matches?limit=\(limit)")
     }
 
     public func fetchAccountSettings() async throws -> AccountSettings {
