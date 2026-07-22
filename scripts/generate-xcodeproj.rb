@@ -124,6 +124,7 @@ project.targets.each do |target|
   target.product_reference.include_in_index = '1' if target.product_reference
 end
 
+project.predictabilize_uuids
 project.save
 
 scheme = Xcodeproj::XCScheme.new

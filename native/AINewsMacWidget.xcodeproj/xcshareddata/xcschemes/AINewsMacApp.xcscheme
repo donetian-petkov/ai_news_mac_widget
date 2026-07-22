@@ -14,7 +14,7 @@
             buildForAnalyzing = "YES">
             <BuildableReference
                BuildableIdentifier = "primary"
-               BlueprintIdentifier = "6BC5F8D4C2935CBE5381EDA7"
+               BlueprintIdentifier = "7BC605AB76B47B8915F37844ED7051CD"
                BuildableName = "AINewsMacApp.app"
                BlueprintName = "AINewsMacApp"
                ReferencedContainer = "container:AINewsMacWidget.xcodeproj">
@@ -30,7 +30,7 @@
       <MacroExpansion>
          <BuildableReference
             BuildableIdentifier = "primary"
-            BlueprintIdentifier = "6BC5F8D4C2935CBE5381EDA7"
+            BlueprintIdentifier = "7BC605AB76B47B8915F37844ED7051CD"
             BuildableName = "AINewsMacApp.app"
             BlueprintName = "AINewsMacApp"
             ReferencedContainer = "container:AINewsMacWidget.xcodeproj">
@@ -53,7 +53,7 @@
          runnableDebuggingMode = "0">
          <BuildableReference
             BuildableIdentifier = "primary"
-            BlueprintIdentifier = "6BC5F8D4C2935CBE5381EDA7"
+            BlueprintIdentifier = "7BC605AB76B47B8915F37844ED7051CD"
             BuildableName = "AINewsMacApp.app"
             BlueprintName = "AINewsMacApp"
             ReferencedContainer = "container:AINewsMacWidget.xcodeproj">
@@ -70,7 +70,7 @@
          runnableDebuggingMode = "0">
          <BuildableReference
             BuildableIdentifier = "primary"
-            BlueprintIdentifier = "6BC5F8D4C2935CBE5381EDA7"
+            BlueprintIdentifier = "7BC605AB76B47B8915F37844ED7051CD"
             BuildableName = "AINewsMacApp.app"
             BlueprintName = "AINewsMacApp"
             ReferencedContainer = "container:AINewsMacWidget.xcodeproj">

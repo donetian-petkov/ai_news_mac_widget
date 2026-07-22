@@ -604,7 +604,7 @@ private struct FloatingWidgetView: View {
     @State private var lastAutoSizedStackSize: CGSize = .zero
     @State private var lastAutoSizedColumnSize: CGSize = .zero
     @State private var automaticLayoutSwitchInProgress = false
-    @State private var suppressAutomaticLayoutSwitchUntil: Date?
+    @State private var manualLayoutOverrideActive = false
     @State private var suppressResizeDuringRefresh = false
     @State private var lastSourceRefreshAt: Date?
     /// How many stories to show. Grows by `pageStep` via "Show More", resets to
@@ -749,20 +749,17 @@ private struct FloatingWidgetView: View {
         size.width < 360 || size.height < 300
     }
 
-    private func preferredLayoutMode(for size: CGSize, isUserResize: Bool) -> FloatingWidgetLayoutMode? {
-        if let suppressUntil = suppressAutomaticLayoutSwitchUntil {
-            if Date() < suppressUntil, !isUserResize {
-                return nil
-            }
-            suppressAutomaticLayoutSwitchUntil = nil
-        }
-        if layoutMode == .column, size.width < 680 || size.height < 560 {
+    private func automaticLayoutMode(for size: CGSize) -> FloatingWidgetLayoutMode {
+        if usesMiniatureStackLayout(size: size) {
             return .stack
         }
-        if layoutMode == .stack, size.width >= 760 && size.height >= 640 {
+        if size.height >= 760, size.width >= 400 {
             return .column
         }
-        return nil
+        if size.width >= 760, size.height >= 560 {
+            return .column
+        }
+        return .stack
     }
 
     private var estimatedColumnWindowWidth: CGFloat {
@@ -937,11 +934,17 @@ private struct FloatingWidgetView: View {
     private func updateWindowSize(_ size: CGSize, isUserResize: Bool = false) -> Bool {
         guard size.width > 0, size.height > 0 else { return false }
         windowSize = size
-        guard let preferred = preferredLayoutMode(for: size, isUserResize: isUserResize), preferred != layoutMode else { return false }
+        if isUserResize {
+            manualLayoutOverrideActive = false
+        } else if manualLayoutOverrideActive {
+            return false
+        }
+        let preferred = automaticLayoutMode(for: size)
+        guard preferred != layoutMode else { return false }
         automaticLayoutSwitchInProgress = true
         layoutMode = preferred
         AINewsDebugLog.log(
-            "floating auto layout mode=\(preferred.rawValue) size=\(Int(size.width))x\(Int(size.height)) scope=\(displayCategoryName)"
+            "floating auto layout mode=\(preferred.rawValue) userResize=\(isUserResize) size=\(Int(size.width))x\(Int(size.height)) scope=\(displayCategoryName)"
         )
         return true
     }
@@ -1889,7 +1892,7 @@ private struct FloatingWidgetView: View {
     private func switchLayoutMode(to mode: FloatingWidgetLayoutMode) {
         guard mode != layoutMode else { return }
         persistCurrentWindowFrame(for: layoutMode)
-        suppressAutomaticLayoutSwitchUntil = Date().addingTimeInterval(1.5)
+        manualLayoutOverrideActive = true
         layoutMode = mode
     }
 
