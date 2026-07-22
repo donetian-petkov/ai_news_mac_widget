@@ -1161,16 +1161,123 @@ private struct FloatingWidgetView: View {
         } else if layoutMode == .stack {
             stackContent
         } else {
-            ScrollView {
-                LazyVStack(alignment: .leading, spacing: 12) {
-                    ForEach(stories) { story in
-                        storyRow(story)
+            ScrollViewReader { scrollProxy in
+                ZStack(alignment: .bottomTrailing) {
+                    ScrollView {
+                        LazyVStack(alignment: .leading, spacing: 12) {
+                            Color.clear
+                                .frame(height: 0)
+                                .id("floating-column-top")
+                            ForEach(stories) { story in
+                                storyRow(story)
+                            }
+                            paginationControls(scrollProxy: scrollProxy)
+                            Color.clear
+                                .frame(height: 0)
+                                .id("floating-column-bottom")
+                        }
+                        .padding(14)
                     }
-                    paginationControls
+                    columnJumpOverlay(scrollProxy: scrollProxy)
+                        .padding(.trailing, 14)
+                        .padding(.bottom, 18)
+                        .opacity(stories.count > 1 ? 1 : 0)
+                        .allowsHitTesting(stories.count > 1)
                 }
-                .padding(14)
             }
         }
+    }
+
+    private func scrollColumnToTop(_ scrollProxy: ScrollViewProxy) {
+        withAnimation(.easeInOut(duration: 0.2)) {
+            scrollProxy.scrollTo("floating-column-top", anchor: .top)
+        }
+    }
+
+    private func scrollColumnToBottom(_ scrollProxy: ScrollViewProxy) {
+        withAnimation(.easeInOut(duration: 0.2)) {
+            scrollProxy.scrollTo("floating-column-bottom", anchor: .bottom)
+        }
+    }
+
+    private func columnJumpOverlay(scrollProxy: ScrollViewProxy) -> some View {
+        VStack(spacing: 8) {
+            Button {
+                scrollColumnToTop(scrollProxy)
+            } label: {
+                Image(systemName: "arrow.up.to.line")
+                    .font(widgetFont(13, weight: .bold))
+                    .foregroundStyle(AINewsTheme.textPrimary)
+                    .frame(width: 34, height: 34)
+                    .background(
+                        Circle()
+                            .fill(AINewsTheme.backgroundAlt.opacity(theme.widgetBackgroundMode == .solid ? 0.96 : 0.82))
+                    )
+                    .overlay(
+                        Circle()
+                            .stroke(AINewsTheme.panelBorder.opacity(0.85), lineWidth: 1)
+                    )
+            }
+            .buttonStyle(.plain)
+            .help("Go to top")
+
+            Button {
+                scrollColumnToBottom(scrollProxy)
+            } label: {
+                Image(systemName: "arrow.down.to.line")
+                    .font(widgetFont(13, weight: .bold))
+                    .foregroundStyle(AINewsTheme.textPrimary)
+                    .frame(width: 34, height: 34)
+                    .background(
+                        Circle()
+                            .fill(AINewsTheme.backgroundAlt.opacity(theme.widgetBackgroundMode == .solid ? 0.96 : 0.82))
+                    )
+                    .overlay(
+                        Circle()
+                            .stroke(AINewsTheme.panelBorder.opacity(0.85), lineWidth: 1)
+                    )
+            }
+            .buttonStyle(.plain)
+            .help("Go to bottom")
+        }
+    }
+
+    @ViewBuilder
+    private func paginationControls(scrollProxy: ScrollViewProxy) -> some View {
+        VStack(spacing: 8) {
+            if !reachedEnd {
+                Button {
+                    visibleCount += pageStep
+                    Task { await reload() }
+                } label: {
+                    paginationButtonLabel(
+                        title: "Show \(pageStep) More News",
+                        systemImage: "chevron.down",
+                        prominent: true
+                    )
+                }
+                .buttonStyle(.plain)
+            }
+            if visibleCount > pageStep {
+                Button {
+                    visibleCount = pageStep
+                    Task {
+                        await reload()
+                        await MainActor.run {
+                            scrollColumnToTop(scrollProxy)
+                        }
+                    }
+                } label: {
+                    paginationButtonLabel(
+                        title: "Reset to the First \(pageStep) News",
+                        systemImage: "arrow.uturn.up",
+                        prominent: false
+                    )
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .padding(.top, 4)
     }
 
     private var stackContent: some View {
@@ -1429,39 +1536,6 @@ private struct FloatingWidgetView: View {
             stackIndex = min(nextIndex, max(stories.count - 1, 0))
             resizeWindowForCurrentLayout(force: true)
         }
-    }
-
-    @ViewBuilder
-    private var paginationControls: some View {
-        VStack(spacing: 8) {
-            if !reachedEnd {
-                Button {
-                    visibleCount += pageStep
-                    Task { await reload() }
-                } label: {
-                    paginationButtonLabel(
-                        title: "Show \(pageStep) More News",
-                        systemImage: "chevron.down",
-                        prominent: true
-                    )
-                }
-                .buttonStyle(.plain)
-            }
-            if visibleCount > pageStep {
-                Button {
-                    visibleCount = pageStep
-                    Task { await reload() }
-                } label: {
-                    paginationButtonLabel(
-                        title: "Reset to the First \(pageStep) News",
-                        systemImage: "arrow.uturn.up",
-                        prominent: false
-                    )
-                }
-                .buttonStyle(.plain)
-            }
-        }
-        .padding(.top, 4)
     }
 
     private func paginationButtonLabel(title: String, systemImage: String, prominent: Bool) -> some View {

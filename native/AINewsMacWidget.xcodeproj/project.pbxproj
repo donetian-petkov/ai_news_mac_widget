@@ -7,63 +7,63 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
-		06E9D6D998F6AD3646B5438B /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = E60A5AE9A5D3391F42B1A637 /* Assets.xcassets */; };
-		149D3A1DDFBB0DC8523DB1AE /* APIClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 86FBA69A88D0D82AFD395C99 /* APIClient.swift */; };
-		17B4C7FEE46A9DDA5D575EC1 /* Models.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2D13A3E40E79FE7F5C64749C /* Models.swift */; };
-		4754EE57CCCA515A61CAB452 /* AINewsWidgets.swift in Sources */ = {isa = PBXBuildFile; fileRef = 61B62AD7259873ABF1E0C29E /* AINewsWidgets.swift */; };
-		5A1920C2A95CE621C01D4FF4 /* BackendSupervisor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 476067D5E609A6A3EC308249 /* BackendSupervisor.swift */; };
-		5B9FB5571E03934EC784DDEB /* WidgetIntents.swift in Sources */ = {isa = PBXBuildFile; fileRef = 811CC26F429650FF8C683B42 /* WidgetIntents.swift */; };
-		5BEDE5A89A88DC47137910E4 /* DebugLog.swift in Sources */ = {isa = PBXBuildFile; fileRef = 784B2BB5CA548AE65843428C /* DebugLog.swift */; };
-		5D3BD8A01D01ECC3F6D0C54E /* Cocoa.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 3A721B94F2631757CAFF7C61 /* Cocoa.framework */; };
-		73102DDDCA1F4B788ED30873 /* SnapshotStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = C79233EE55A5ADEBF8ABA522 /* SnapshotStore.swift */; };
-		8A6CAD5ECF24377EB5530272 /* SessionStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = BBEAB6F63A71231A2946ECA9 /* SessionStore.swift */; };
-		8C1AB8293A83FB24816FCBAB /* WidgetSnapshotViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = A8CCFD1B74E9143D0C0BEAFD /* WidgetSnapshotViews.swift */; };
-		8C5C6A25BE7CBBE7466CF45E /* Cocoa.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 3A721B94F2631757CAFF7C61 /* Cocoa.framework */; };
-		8F717FF20CE8AC14903E1CC6 /* FloatingWidgetPanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = E19189A6C23193A9FF015EBE /* FloatingWidgetPanel.swift */; };
-		96BA1A815B05E0D6CC156F09 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = E60A5AE9A5D3391F42B1A637 /* Assets.xcassets */; };
-		97581CC34F91796ED9010A9B /* AINewsWidgets.appex in Embed App Extensions */ = {isa = PBXBuildFile; fileRef = 973A91760D517E7DA3C6AB9D /* AINewsWidgets.appex */; };
-		9B24F34860C8F89855ED2DB5 /* backend-launch.json in Resources */ = {isa = PBXBuildFile; fileRef = 8A0DDFE0AFC064C8E7189B71 /* backend-launch.json */; };
-		A5C8B8B9E5DA45B6FE67ECA6 /* RootView.swift in Sources */ = {isa = PBXBuildFile; fileRef = EFD599A89C86EFD33148E259 /* RootView.swift */; };
-		B352A9D04A1AA4683838FE51 /* AINewsMacApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 15E8804C57CA9C33BB871423 /* AINewsMacApp.swift */; };
-		BED5A394776BED1862E57E40 /* AppState.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7DDC5A75E1BF7E48CB49079E /* AppState.swift */; };
-		C582FD2E9D15CCB86F5C406F /* libAINewsWidgetShared.a in Frameworks */ = {isa = PBXBuildFile; fileRef = 46AF91A439186662B91B27FE /* libAINewsWidgetShared.a */; };
-		C73CBDE756F4A49FF8CE6F64 /* Theme.swift in Sources */ = {isa = PBXBuildFile; fileRef = 33183D921C80DD3FF0C3A654 /* Theme.swift */; };
-		CBE2B3C0A9C4A7B03F933E59 /* BackendDiscovery.swift in Sources */ = {isa = PBXBuildFile; fileRef = 583DAF0B4928653A50C0F0F5 /* BackendDiscovery.swift */; };
-		DEAC287A02A69EC7BCE87750 /* libAINewsWidgetShared.a in Frameworks */ = {isa = PBXBuildFile; fileRef = 46AF91A439186662B91B27FE /* libAINewsWidgetShared.a */; };
+		0B3907F6709F9CE61AD873AB /* SessionStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = CDBBBC8A894105A5BAF02677 /* SessionStore.swift */; };
+		0E521DFFC9225AD35ECE78C0 /* backend-launch.json in Resources */ = {isa = PBXBuildFile; fileRef = 81034D03247AE34015032780 /* backend-launch.json */; };
+		271BD5F0AA42A5DF0A7BA69B /* DebugLog.swift in Sources */ = {isa = PBXBuildFile; fileRef = 92FCF1AC7387D748FEDE8AB0 /* DebugLog.swift */; };
+		3D56819C4445549AF6EC0FA6 /* Cocoa.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 75F41EC16337A8E29C9E6EFD /* Cocoa.framework */; };
+		4199298498C09EC1193EE0F8 /* Theme.swift in Sources */ = {isa = PBXBuildFile; fileRef = 32D6409A32C55144F8ABE76B /* Theme.swift */; };
+		62F4E398EDAF5D12136D9A3A /* AINewsMacApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = D202C39CB5B4DA2770966D51 /* AINewsMacApp.swift */; };
+		7B98F467006BE047D199A9C7 /* WidgetSnapshotViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 653F136E9960413651B553B4 /* WidgetSnapshotViews.swift */; };
+		7C333DE68E2D89C73D5533A6 /* libAINewsWidgetShared.a in Frameworks */ = {isa = PBXBuildFile; fileRef = 4363FFE5823DB5E7B8358892 /* libAINewsWidgetShared.a */; };
+		806265FFC3D646B0E2795B19 /* Models.swift in Sources */ = {isa = PBXBuildFile; fileRef = 59403EC21783775CAA2C6760 /* Models.swift */; };
+		85BA1730B8A0935ACEF8EE08 /* APIClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7A5F8ED76E1222F8B90B27C1 /* APIClient.swift */; };
+		8F7F9C1C939F1DB37451544A /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = EFC48233B7826AB53F3D372C /* Assets.xcassets */; };
+		93C014E0A687150F271C1095 /* AINewsWidgets.appex in Embed App Extensions */ = {isa = PBXBuildFile; fileRef = D2912BF7295104E0418D5D82 /* AINewsWidgets.appex */; };
+		9E9E843CD22D2A3AFE97BAB7 /* SnapshotStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3A32310674091F519B457F9C /* SnapshotStore.swift */; };
+		9EA164CFB1831104BE9C4202 /* WidgetIntents.swift in Sources */ = {isa = PBXBuildFile; fileRef = D9A6DB00750836B2F44D5302 /* WidgetIntents.swift */; };
+		B0B9D5BDC545121D20DCCC7B /* AINewsWidgets.swift in Sources */ = {isa = PBXBuildFile; fileRef = D47E854A92FF9A14ED39E855 /* AINewsWidgets.swift */; };
+		B4A447BD4044A7C9FB7D96F2 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = EFC48233B7826AB53F3D372C /* Assets.xcassets */; };
+		D14C2A4525BD8DF9927B6BF0 /* RootView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1E9B24E7F79EA1448EA1C02 /* RootView.swift */; };
+		D3CBB07CF8533089B4212709 /* AppState.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9CAF003689BC1AB63A5D326E /* AppState.swift */; };
+		D45A3EE38A6A25016A1865C0 /* libAINewsWidgetShared.a in Frameworks */ = {isa = PBXBuildFile; fileRef = 4363FFE5823DB5E7B8358892 /* libAINewsWidgetShared.a */; };
+		D8A66C823C3FF3149012CED3 /* BackendSupervisor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 12DCB0C56C49DD6C8BB78CBB /* BackendSupervisor.swift */; };
+		DC1F89A9C53EDB3A48FA3AD3 /* Cocoa.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 75F41EC16337A8E29C9E6EFD /* Cocoa.framework */; };
+		F4A1CADF62972074CE98C93B /* BackendDiscovery.swift in Sources */ = {isa = PBXBuildFile; fileRef = DD63BA53C9B60FEF6113CF63 /* BackendDiscovery.swift */; };
+		F9355D158CBD273C99615B58 /* FloatingWidgetPanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 76456261D2E97B29327D6A5B /* FloatingWidgetPanel.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
-		8EE1654CC26FB1EC60FB4F91 /* PBXContainerItemProxy */ = {
+		51526D91BD721ADD24525DBE /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
-			containerPortal = 5A4C3E384A06A5DCEAD33219 /* Project object */;
+			containerPortal = 0D06444824FE26533F402C44 /* Project object */;
 			proxyType = 1;
-			remoteGlobalIDString = A4E59B463315F3A1E8FE9A6D;
+			remoteGlobalIDString = E7C641D6519F63B7DBD81A06;
 			remoteInfo = AINewsWidgetShared;
 		};
-		CC43E407265ACEF40AC569FF /* PBXContainerItemProxy */ = {
+		57366B17467FD733758F4FA7 /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
-			containerPortal = 5A4C3E384A06A5DCEAD33219 /* Project object */;
+			containerPortal = 0D06444824FE26533F402C44 /* Project object */;
 			proxyType = 1;
-			remoteGlobalIDString = A4E59B463315F3A1E8FE9A6D;
-			remoteInfo = AINewsWidgetShared;
-		};
-		F5AD65EB512C062F35632093 /* PBXContainerItemProxy */ = {
-			isa = PBXContainerItemProxy;
-			containerPortal = 5A4C3E384A06A5DCEAD33219 /* Project object */;
-			proxyType = 1;
-			remoteGlobalIDString = 11926EDB9684574DA1D07160;
+			remoteGlobalIDString = B546DF772E8411121ADD941F;
 			remoteInfo = AINewsWidgets;
+		};
+		5F7C45FCCE43968414E2D7AA /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 0D06444824FE26533F402C44 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = E7C641D6519F63B7DBD81A06;
+			remoteInfo = AINewsWidgetShared;
 		};
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXCopyFilesBuildPhase section */
-		7D6EB48D79A154FB66D25DE1 /* Embed App Extensions */ = {
+		E5D3812DA3586DA191DED95F /* Embed App Extensions */ = {
 			isa = PBXCopyFilesBuildPhase;
 			buildActionMask = 2147483647;
 			dstPath = "";
 			dstSubfolderSpec = 13;
 			files = (
-				97581CC34F91796ED9010A9B /* AINewsWidgets.appex in Embed App Extensions */,
+				93C014E0A687150F271C1095 /* AINewsWidgets.appex in Embed App Extensions */,
 			);
 			name = "Embed App Extensions";
 			runOnlyForDeploymentPostprocessing = 0;
@@ -71,184 +71,184 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
-		15E8804C57CA9C33BB871423 /* AINewsMacApp.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = AINewsMacApp.swift; sourceTree = "<group>"; };
-		2C75083B83AE4CCEA2A3FDB0 /* AINewsMacApp.entitlements */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.plist.entitlements; path = AINewsMacApp.entitlements; sourceTree = "<group>"; };
-		2D13A3E40E79FE7F5C64749C /* Models.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = Models.swift; sourceTree = "<group>"; };
-		33183D921C80DD3FF0C3A654 /* Theme.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = Theme.swift; sourceTree = "<group>"; };
-		3A721B94F2631757CAFF7C61 /* Cocoa.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Cocoa.framework; path = Platforms/MacOSX.platform/Developer/SDKs/MacOSX15.0.sdk/System/Library/Frameworks/Cocoa.framework; sourceTree = DEVELOPER_DIR; };
-		46AF91A439186662B91B27FE /* libAINewsWidgetShared.a */ = {isa = PBXFileReference; explicitFileType = archive.ar; includeInIndex = 1; path = libAINewsWidgetShared.a; sourceTree = BUILT_PRODUCTS_DIR; };
-		476067D5E609A6A3EC308249 /* BackendSupervisor.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = BackendSupervisor.swift; sourceTree = "<group>"; };
-		558E233618C503D9462CB5E9 /* AINewsWidgets.entitlements */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.plist.entitlements; path = AINewsWidgets.entitlements; sourceTree = "<group>"; };
-		583DAF0B4928653A50C0F0F5 /* BackendDiscovery.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = BackendDiscovery.swift; sourceTree = "<group>"; };
-		61B62AD7259873ABF1E0C29E /* AINewsWidgets.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = AINewsWidgets.swift; sourceTree = "<group>"; };
-		784B2BB5CA548AE65843428C /* DebugLog.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = DebugLog.swift; sourceTree = "<group>"; };
-		7DDC5A75E1BF7E48CB49079E /* AppState.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = AppState.swift; sourceTree = "<group>"; };
-		811CC26F429650FF8C683B42 /* WidgetIntents.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = WidgetIntents.swift; sourceTree = "<group>"; };
-		86FBA69A88D0D82AFD395C99 /* APIClient.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = APIClient.swift; sourceTree = "<group>"; };
-		8A0DDFE0AFC064C8E7189B71 /* backend-launch.json */ = {isa = PBXFileReference; includeInIndex = 1; path = "backend-launch.json"; sourceTree = "<group>"; };
-		973A91760D517E7DA3C6AB9D /* AINewsWidgets.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 1; path = AINewsWidgets.appex; sourceTree = BUILT_PRODUCTS_DIR; };
-		A8CCFD1B74E9143D0C0BEAFD /* WidgetSnapshotViews.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = WidgetSnapshotViews.swift; sourceTree = "<group>"; };
-		BBEAB6F63A71231A2946ECA9 /* SessionStore.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = SessionStore.swift; sourceTree = "<group>"; };
-		BE06D4928310293EEC754520 /* AINewsMacApp-Info.plist */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.plist.xml; path = "AINewsMacApp-Info.plist"; sourceTree = "<group>"; };
-		C56D7F713BDECAEFAED378B3 /* AINewsWidgets-Info.plist */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.plist.xml; path = "AINewsWidgets-Info.plist"; sourceTree = "<group>"; };
-		C79233EE55A5ADEBF8ABA522 /* SnapshotStore.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = SnapshotStore.swift; sourceTree = "<group>"; };
-		DC1002B3949DF60BF35A5C2A /* AINewsMacApp.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 1; path = AINewsMacApp.app; sourceTree = BUILT_PRODUCTS_DIR; };
-		E19189A6C23193A9FF015EBE /* FloatingWidgetPanel.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = FloatingWidgetPanel.swift; sourceTree = "<group>"; };
-		E60A5AE9A5D3391F42B1A637 /* Assets.xcassets */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
-		EFD599A89C86EFD33148E259 /* RootView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = RootView.swift; sourceTree = "<group>"; };
+		0D9554037783304B402D2C74 /* AINewsMacApp-Info.plist */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.plist.xml; path = "AINewsMacApp-Info.plist"; sourceTree = "<group>"; };
+		12DCB0C56C49DD6C8BB78CBB /* BackendSupervisor.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = BackendSupervisor.swift; sourceTree = "<group>"; };
+		32D6409A32C55144F8ABE76B /* Theme.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = Theme.swift; sourceTree = "<group>"; };
+		3A32310674091F519B457F9C /* SnapshotStore.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = SnapshotStore.swift; sourceTree = "<group>"; };
+		3D971FDBEB17DBF25E4A839A /* AINewsWidgets.entitlements */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.plist.entitlements; path = AINewsWidgets.entitlements; sourceTree = "<group>"; };
+		4363FFE5823DB5E7B8358892 /* libAINewsWidgetShared.a */ = {isa = PBXFileReference; explicitFileType = archive.ar; includeInIndex = 1; path = libAINewsWidgetShared.a; sourceTree = BUILT_PRODUCTS_DIR; };
+		59403EC21783775CAA2C6760 /* Models.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = Models.swift; sourceTree = "<group>"; };
+		653F136E9960413651B553B4 /* WidgetSnapshotViews.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = WidgetSnapshotViews.swift; sourceTree = "<group>"; };
+		75F41EC16337A8E29C9E6EFD /* Cocoa.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Cocoa.framework; path = Platforms/MacOSX.platform/Developer/SDKs/MacOSX15.0.sdk/System/Library/Frameworks/Cocoa.framework; sourceTree = DEVELOPER_DIR; };
+		76456261D2E97B29327D6A5B /* FloatingWidgetPanel.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = FloatingWidgetPanel.swift; sourceTree = "<group>"; };
+		7A5F8ED76E1222F8B90B27C1 /* APIClient.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = APIClient.swift; sourceTree = "<group>"; };
+		81034D03247AE34015032780 /* backend-launch.json */ = {isa = PBXFileReference; includeInIndex = 1; path = "backend-launch.json"; sourceTree = "<group>"; };
+		92FCF1AC7387D748FEDE8AB0 /* DebugLog.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = DebugLog.swift; sourceTree = "<group>"; };
+		9CAF003689BC1AB63A5D326E /* AppState.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = AppState.swift; sourceTree = "<group>"; };
+		A5FAC4276E8707FD9A9C1B45 /* AINewsWidgets-Info.plist */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.plist.xml; path = "AINewsWidgets-Info.plist"; sourceTree = "<group>"; };
+		CDBBBC8A894105A5BAF02677 /* SessionStore.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = SessionStore.swift; sourceTree = "<group>"; };
+		D1E9B24E7F79EA1448EA1C02 /* RootView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = RootView.swift; sourceTree = "<group>"; };
+		D202C39CB5B4DA2770966D51 /* AINewsMacApp.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = AINewsMacApp.swift; sourceTree = "<group>"; };
+		D2912BF7295104E0418D5D82 /* AINewsWidgets.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 1; path = AINewsWidgets.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		D47E854A92FF9A14ED39E855 /* AINewsWidgets.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = AINewsWidgets.swift; sourceTree = "<group>"; };
+		D55DA20E6AFA37B7994E35EB /* AINewsMacApp.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 1; path = AINewsMacApp.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		D9A6DB00750836B2F44D5302 /* WidgetIntents.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = WidgetIntents.swift; sourceTree = "<group>"; };
+		DD63BA53C9B60FEF6113CF63 /* BackendDiscovery.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = BackendDiscovery.swift; sourceTree = "<group>"; };
+		EFC48233B7826AB53F3D372C /* Assets.xcassets */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		F60B951BD2239C9C55C3BBF6 /* AINewsMacApp.entitlements */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.plist.entitlements; path = AINewsMacApp.entitlements; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
-		5F11134F780996CDB9D89208 /* Frameworks */ = {
+		389D5146472FC7653F06D07F /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
-		9FD1137B52F7404B12BCAF89 /* Frameworks */ = {
+		8FF3DD1331EB686DECEFE257 /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				8C5C6A25BE7CBBE7466CF45E /* Cocoa.framework in Frameworks */,
-				C582FD2E9D15CCB86F5C406F /* libAINewsWidgetShared.a in Frameworks */,
+				DC1F89A9C53EDB3A48FA3AD3 /* Cocoa.framework in Frameworks */,
+				7C333DE68E2D89C73D5533A6 /* libAINewsWidgetShared.a in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
-		DE8F573E67FB1AB0F90B6160 /* Frameworks */ = {
+		B32949112B5AA6E53BF6EA51 /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				5D3BD8A01D01ECC3F6D0C54E /* Cocoa.framework in Frameworks */,
-				DEAC287A02A69EC7BCE87750 /* libAINewsWidgetShared.a in Frameworks */,
+				3D56819C4445549AF6EC0FA6 /* Cocoa.framework in Frameworks */,
+				D45A3EE38A6A25016A1865C0 /* libAINewsWidgetShared.a in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
-		16FAA9F538161A1615B8B795 /* AINewsMacApp */ = {
+		000987DB30E30CEB54BD97C9 /* OS X */ = {
 			isa = PBXGroup;
 			children = (
-				15E8804C57CA9C33BB871423 /* AINewsMacApp.swift */,
-				476067D5E609A6A3EC308249 /* BackendSupervisor.swift */,
-				E19189A6C23193A9FF015EBE /* FloatingWidgetPanel.swift */,
-				EFD599A89C86EFD33148E259 /* RootView.swift */,
-			);
-			name = AINewsMacApp;
-			path = AINewsMacApp;
-			sourceTree = "<group>";
-		};
-		332C9311CE993AC2B5BF3102 /* Products */ = {
-			isa = PBXGroup;
-			children = (
-				46AF91A439186662B91B27FE /* libAINewsWidgetShared.a */,
-				DC1002B3949DF60BF35A5C2A /* AINewsMacApp.app */,
-				973A91760D517E7DA3C6AB9D /* AINewsWidgets.appex */,
-			);
-			name = Products;
-			sourceTree = "<group>";
-		};
-		44BF3EC22A5F7B21C1C5821E /* OS X */ = {
-			isa = PBXGroup;
-			children = (
-				3A721B94F2631757CAFF7C61 /* Cocoa.framework */,
+				75F41EC16337A8E29C9E6EFD /* Cocoa.framework */,
 			);
 			name = "OS X";
 			sourceTree = "<group>";
 		};
-		4817AB13BA72B77CF58BD8F5 /* Frameworks */ = {
+		417157DB0CA2E1FA1AC2328B /* AINewsWidgetShared */ = {
 			isa = PBXGroup;
 			children = (
-				44BF3EC22A5F7B21C1C5821E /* OS X */,
-			);
-			name = Frameworks;
-			sourceTree = "<group>";
-		};
-		4A9143E341E8A7AF4D52DC6B /* Resources */ = {
-			isa = PBXGroup;
-			children = (
-				E60A5AE9A5D3391F42B1A637 /* Assets.xcassets */,
-			);
-			name = Resources;
-			path = .;
-			sourceTree = "<group>";
-		};
-		54E50D9277D1A9FD35B35621 /* Sources */ = {
-			isa = PBXGroup;
-			children = (
-				71426076CC045A726191A3B9 /* AINewsWidgetShared */,
-				16FAA9F538161A1615B8B795 /* AINewsMacApp */,
-				7F51972D49E3D7F4CE04F131 /* AINewsWidgets */,
-				BA2DDD3B60D7A7E11C29FD16 /* AINewsWidgetExtensionSupport */,
-			);
-			name = Sources;
-			path = Sources;
-			sourceTree = "<group>";
-		};
-		687F29539AEB64E088576A24 = {
-			isa = PBXGroup;
-			children = (
-				332C9311CE993AC2B5BF3102 /* Products */,
-				4817AB13BA72B77CF58BD8F5 /* Frameworks */,
-				54E50D9277D1A9FD35B35621 /* Sources */,
-				82AE29AFCFD8EFA17B0C3621 /* Support */,
-				4A9143E341E8A7AF4D52DC6B /* Resources */,
-			);
-			sourceTree = "<group>";
-		};
-		71426076CC045A726191A3B9 /* AINewsWidgetShared */ = {
-			isa = PBXGroup;
-			children = (
-				86FBA69A88D0D82AFD395C99 /* APIClient.swift */,
-				7DDC5A75E1BF7E48CB49079E /* AppState.swift */,
-				583DAF0B4928653A50C0F0F5 /* BackendDiscovery.swift */,
-				784B2BB5CA548AE65843428C /* DebugLog.swift */,
-				2D13A3E40E79FE7F5C64749C /* Models.swift */,
-				BBEAB6F63A71231A2946ECA9 /* SessionStore.swift */,
-				C79233EE55A5ADEBF8ABA522 /* SnapshotStore.swift */,
-				33183D921C80DD3FF0C3A654 /* Theme.swift */,
+				7A5F8ED76E1222F8B90B27C1 /* APIClient.swift */,
+				9CAF003689BC1AB63A5D326E /* AppState.swift */,
+				DD63BA53C9B60FEF6113CF63 /* BackendDiscovery.swift */,
+				92FCF1AC7387D748FEDE8AB0 /* DebugLog.swift */,
+				59403EC21783775CAA2C6760 /* Models.swift */,
+				CDBBBC8A894105A5BAF02677 /* SessionStore.swift */,
+				3A32310674091F519B457F9C /* SnapshotStore.swift */,
+				32D6409A32C55144F8ABE76B /* Theme.swift */,
 			);
 			name = AINewsWidgetShared;
 			path = AINewsWidgetShared;
 			sourceTree = "<group>";
 		};
-		7F51972D49E3D7F4CE04F131 /* AINewsWidgets */ = {
+		45C5AA1A66F04F3411B7B45C /* Frameworks */ = {
 			isa = PBXGroup;
 			children = (
-				61B62AD7259873ABF1E0C29E /* AINewsWidgets.swift */,
+				000987DB30E30CEB54BD97C9 /* OS X */,
 			);
-			name = AINewsWidgets;
-			path = AINewsWidgetExtension;
+			name = Frameworks;
 			sourceTree = "<group>";
 		};
-		82AE29AFCFD8EFA17B0C3621 /* Support */ = {
+		5BFFB96C8343B43152817435 /* Support */ = {
 			isa = PBXGroup;
 			children = (
-				BE06D4928310293EEC754520 /* AINewsMacApp-Info.plist */,
-				C56D7F713BDECAEFAED378B3 /* AINewsWidgets-Info.plist */,
-				2C75083B83AE4CCEA2A3FDB0 /* AINewsMacApp.entitlements */,
-				558E233618C503D9462CB5E9 /* AINewsWidgets.entitlements */,
-				8A0DDFE0AFC064C8E7189B71 /* backend-launch.json */,
+				0D9554037783304B402D2C74 /* AINewsMacApp-Info.plist */,
+				A5FAC4276E8707FD9A9C1B45 /* AINewsWidgets-Info.plist */,
+				F60B951BD2239C9C55C3BBF6 /* AINewsMacApp.entitlements */,
+				3D971FDBEB17DBF25E4A839A /* AINewsWidgets.entitlements */,
+				81034D03247AE34015032780 /* backend-launch.json */,
 			);
 			name = Support;
 			path = Support;
 			sourceTree = "<group>";
 		};
-		BA2DDD3B60D7A7E11C29FD16 /* AINewsWidgetExtensionSupport */ = {
+		61D2BD3B0377271ADC6F1A1E /* Resources */ = {
 			isa = PBXGroup;
 			children = (
-				811CC26F429650FF8C683B42 /* WidgetIntents.swift */,
-				A8CCFD1B74E9143D0C0BEAFD /* WidgetSnapshotViews.swift */,
+				EFC48233B7826AB53F3D372C /* Assets.xcassets */,
+			);
+			name = Resources;
+			path = .;
+			sourceTree = "<group>";
+		};
+		7421F2F5421A95199FFE7CE2 = {
+			isa = PBXGroup;
+			children = (
+				EF051C900E5F313BCECB51EE /* Products */,
+				45C5AA1A66F04F3411B7B45C /* Frameworks */,
+				A384E5F2FFEE656F39359BBA /* Sources */,
+				5BFFB96C8343B43152817435 /* Support */,
+				61D2BD3B0377271ADC6F1A1E /* Resources */,
+			);
+			sourceTree = "<group>";
+		};
+		A384E5F2FFEE656F39359BBA /* Sources */ = {
+			isa = PBXGroup;
+			children = (
+				417157DB0CA2E1FA1AC2328B /* AINewsWidgetShared */,
+				D16946985A23AE9D70C13294 /* AINewsMacApp */,
+				EBFF8D11A38079CB9C17D54B /* AINewsWidgets */,
+				AA17FA17D5240953FB350111 /* AINewsWidgetExtensionSupport */,
+			);
+			name = Sources;
+			path = Sources;
+			sourceTree = "<group>";
+		};
+		AA17FA17D5240953FB350111 /* AINewsWidgetExtensionSupport */ = {
+			isa = PBXGroup;
+			children = (
+				D9A6DB00750836B2F44D5302 /* WidgetIntents.swift */,
+				653F136E9960413651B553B4 /* WidgetSnapshotViews.swift */,
 			);
 			name = AINewsWidgetExtensionSupport;
 			path = AINewsWidgetExtensionSupport;
 			sourceTree = "<group>";
 		};
+		D16946985A23AE9D70C13294 /* AINewsMacApp */ = {
+			isa = PBXGroup;
+			children = (
+				D202C39CB5B4DA2770966D51 /* AINewsMacApp.swift */,
+				12DCB0C56C49DD6C8BB78CBB /* BackendSupervisor.swift */,
+				76456261D2E97B29327D6A5B /* FloatingWidgetPanel.swift */,
+				D1E9B24E7F79EA1448EA1C02 /* RootView.swift */,
+			);
+			name = AINewsMacApp;
+			path = AINewsMacApp;
+			sourceTree = "<group>";
+		};
+		EBFF8D11A38079CB9C17D54B /* AINewsWidgets */ = {
+			isa = PBXGroup;
+			children = (
+				D47E854A92FF9A14ED39E855 /* AINewsWidgets.swift */,
+			);
+			name = AINewsWidgets;
+			path = AINewsWidgetExtension;
+			sourceTree = "<group>";
+		};
+		EF051C900E5F313BCECB51EE /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				4363FFE5823DB5E7B8358892 /* libAINewsWidgetShared.a */,
+				D55DA20E6AFA37B7994E35EB /* AINewsMacApp.app */,
+				D2912BF7295104E0418D5D82 /* AINewsWidgets.appex */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
 /* End PBXGroup section */
 
 /* Begin PBXHeadersBuildPhase section */
-		964EC684616CBCF57E9F849A /* Headers */ = {
+		0C1C3A92BA43F6F875C5C6B4 /* Headers */ = {
 			isa = PBXHeadersBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -258,51 +258,51 @@
 /* End PBXHeadersBuildPhase section */
 
 /* Begin PBXNativeTarget section */
-		11926EDB9684574DA1D07160 /* AINewsWidgets */ = {
+		126385481B17F39AB4203468 /* AINewsMacApp */ = {
 			isa = PBXNativeTarget;
-			buildConfigurationList = 99E0C4644081C99BDD3ECE23 /* Build configuration list for PBXNativeTarget "AINewsWidgets" */;
+			buildConfigurationList = 4F5EE80B944932F2B454F761 /* Build configuration list for PBXNativeTarget "AINewsMacApp" */;
 			buildPhases = (
-				B711D61F3B72B5D48B16E9D3 /* Sources */,
-				9FD1137B52F7404B12BCAF89 /* Frameworks */,
-				A2900D69422474CD4E9CA9B5 /* Resources */,
+				1A377553628CFA53CF7ACA94 /* Sources */,
+				B32949112B5AA6E53BF6EA51 /* Frameworks */,
+				98135127C9C2E907021D0440 /* Resources */,
+				E5D3812DA3586DA191DED95F /* Embed App Extensions */,
 			);
 			buildRules = (
 			);
 			dependencies = (
-				EB79A3543279FD7B11388A69 /* PBXTargetDependency */,
-			);
-			name = AINewsWidgets;
-			productName = AINewsWidgets;
-			productReference = 973A91760D517E7DA3C6AB9D /* AINewsWidgets.appex */;
-			productType = "com.apple.product-type.app-extension";
-		};
-		2EF3DDD4E0416F909F7C3838 /* AINewsMacApp */ = {
-			isa = PBXNativeTarget;
-			buildConfigurationList = 4F78A64ED1817E368145A981 /* Build configuration list for PBXNativeTarget "AINewsMacApp" */;
-			buildPhases = (
-				78396FE5EF662005388D8188 /* Sources */,
-				DE8F573E67FB1AB0F90B6160 /* Frameworks */,
-				1EF24B882C9CD58A41426C1E /* Resources */,
-				7D6EB48D79A154FB66D25DE1 /* Embed App Extensions */,
-			);
-			buildRules = (
-			);
-			dependencies = (
-				236CDC0B49F6FAEA07C518A5 /* PBXTargetDependency */,
-				C4BD02F021EEFC9A64F05B3D /* PBXTargetDependency */,
+				DBF9609AAD697E6FB1376B07 /* PBXTargetDependency */,
+				6AFB6659FEF16E3183B543CB /* PBXTargetDependency */,
 			);
 			name = AINewsMacApp;
 			productName = AINewsMacApp;
-			productReference = DC1002B3949DF60BF35A5C2A /* AINewsMacApp.app */;
+			productReference = D55DA20E6AFA37B7994E35EB /* AINewsMacApp.app */;
 			productType = "com.apple.product-type.application";
 		};
-		A4E59B463315F3A1E8FE9A6D /* AINewsWidgetShared */ = {
+		B546DF772E8411121ADD941F /* AINewsWidgets */ = {
 			isa = PBXNativeTarget;
-			buildConfigurationList = F32453E572F29CA608D5A521 /* Build configuration list for PBXNativeTarget "AINewsWidgetShared" */;
+			buildConfigurationList = EF90996B4FD8ED213BEA73E4 /* Build configuration list for PBXNativeTarget "AINewsWidgets" */;
 			buildPhases = (
-				964EC684616CBCF57E9F849A /* Headers */,
-				88078AEB44177000968BCAE3 /* Sources */,
-				5F11134F780996CDB9D89208 /* Frameworks */,
+				98B5C1741039700B66CB324C /* Sources */,
+				8FF3DD1331EB686DECEFE257 /* Frameworks */,
+				71C2A7E0D43C4EB9E2E30966 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				8C0F81D3CCE45C97C1244759 /* PBXTargetDependency */,
+			);
+			name = AINewsWidgets;
+			productName = AINewsWidgets;
+			productReference = D2912BF7295104E0418D5D82 /* AINewsWidgets.appex */;
+			productType = "com.apple.product-type.app-extension";
+		};
+		E7C641D6519F63B7DBD81A06 /* AINewsWidgetShared */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = CB83BB97FE30E0F324D2013B /* Build configuration list for PBXNativeTarget "AINewsWidgetShared" */;
+			buildPhases = (
+				0C1C3A92BA43F6F875C5C6B4 /* Headers */,
+				B44FA261B3736287B39DF9C0 /* Sources */,
+				389D5146472FC7653F06D07F /* Frameworks */,
 			);
 			buildRules = (
 			);
@@ -310,19 +310,19 @@
 			);
 			name = AINewsWidgetShared;
 			productName = AINewsWidgetShared;
-			productReference = 46AF91A439186662B91B27FE /* libAINewsWidgetShared.a */;
+			productReference = 4363FFE5823DB5E7B8358892 /* libAINewsWidgetShared.a */;
 			productType = "com.apple.product-type.library.static";
 		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
-		5A4C3E384A06A5DCEAD33219 /* Project object */ = {
+		0D06444824FE26533F402C44 /* Project object */ = {
 			isa = PBXProject;
 			attributes = {
 				LastSwiftUpdateCheck = 1640;
 				LastUpgradeCheck = 1640;
 			};
-			buildConfigurationList = AE1C314ADA3841BE25D23992 /* Build configuration list for PBXProject "AINewsMacWidget" */;
+			buildConfigurationList = 5559C541DFDDFE661BF4CA7C /* Build configuration list for PBXProject "AINewsMacWidget" */;
 			compatibilityVersion = "Xcode 3.2";
 			developmentRegion = en;
 			hasScannedForEncodings = 0;
@@ -330,135 +330,102 @@
 				en,
 				Base,
 			);
-			mainGroup = 687F29539AEB64E088576A24;
+			mainGroup = 7421F2F5421A95199FFE7CE2;
 			minimizedProjectReferenceProxies = 0;
 			preferredProjectObjectVersion = 77;
-			productRefGroup = 332C9311CE993AC2B5BF3102 /* Products */;
+			productRefGroup = EF051C900E5F313BCECB51EE /* Products */;
 			projectDirPath = "";
 			projectRoot = "";
 			targets = (
-				A4E59B463315F3A1E8FE9A6D /* AINewsWidgetShared */,
-				2EF3DDD4E0416F909F7C3838 /* AINewsMacApp */,
-				11926EDB9684574DA1D07160 /* AINewsWidgets */,
+				E7C641D6519F63B7DBD81A06 /* AINewsWidgetShared */,
+				126385481B17F39AB4203468 /* AINewsMacApp */,
+				B546DF772E8411121ADD941F /* AINewsWidgets */,
 			);
 		};
 /* End PBXProject section */
 
 /* Begin PBXResourcesBuildPhase section */
-		1EF24B882C9CD58A41426C1E /* Resources */ = {
+		71C2A7E0D43C4EB9E2E30966 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				9B24F34860C8F89855ED2DB5 /* backend-launch.json in Resources */,
-				96BA1A815B05E0D6CC156F09 /* Assets.xcassets in Resources */,
+				B4A447BD4044A7C9FB7D96F2 /* Assets.xcassets in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
-		A2900D69422474CD4E9CA9B5 /* Resources */ = {
+		98135127C9C2E907021D0440 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				06E9D6D998F6AD3646B5438B /* Assets.xcassets in Resources */,
+				0E521DFFC9225AD35ECE78C0 /* backend-launch.json in Resources */,
+				8F7F9C1C939F1DB37451544A /* Assets.xcassets in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
-		78396FE5EF662005388D8188 /* Sources */ = {
+		1A377553628CFA53CF7ACA94 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				B352A9D04A1AA4683838FE51 /* AINewsMacApp.swift in Sources */,
-				5A1920C2A95CE621C01D4FF4 /* BackendSupervisor.swift in Sources */,
-				8F717FF20CE8AC14903E1CC6 /* FloatingWidgetPanel.swift in Sources */,
-				A5C8B8B9E5DA45B6FE67ECA6 /* RootView.swift in Sources */,
+				62F4E398EDAF5D12136D9A3A /* AINewsMacApp.swift in Sources */,
+				D8A66C823C3FF3149012CED3 /* BackendSupervisor.swift in Sources */,
+				F9355D158CBD273C99615B58 /* FloatingWidgetPanel.swift in Sources */,
+				D14C2A4525BD8DF9927B6BF0 /* RootView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
-		88078AEB44177000968BCAE3 /* Sources */ = {
+		98B5C1741039700B66CB324C /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				149D3A1DDFBB0DC8523DB1AE /* APIClient.swift in Sources */,
-				BED5A394776BED1862E57E40 /* AppState.swift in Sources */,
-				CBE2B3C0A9C4A7B03F933E59 /* BackendDiscovery.swift in Sources */,
-				5BEDE5A89A88DC47137910E4 /* DebugLog.swift in Sources */,
-				17B4C7FEE46A9DDA5D575EC1 /* Models.swift in Sources */,
-				8A6CAD5ECF24377EB5530272 /* SessionStore.swift in Sources */,
-				73102DDDCA1F4B788ED30873 /* SnapshotStore.swift in Sources */,
-				C73CBDE756F4A49FF8CE6F64 /* Theme.swift in Sources */,
+				B0B9D5BDC545121D20DCCC7B /* AINewsWidgets.swift in Sources */,
+				9EA164CFB1831104BE9C4202 /* WidgetIntents.swift in Sources */,
+				7B98F467006BE047D199A9C7 /* WidgetSnapshotViews.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
-		B711D61F3B72B5D48B16E9D3 /* Sources */ = {
+		B44FA261B3736287B39DF9C0 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				4754EE57CCCA515A61CAB452 /* AINewsWidgets.swift in Sources */,
-				5B9FB5571E03934EC784DDEB /* WidgetIntents.swift in Sources */,
-				8C1AB8293A83FB24816FCBAB /* WidgetSnapshotViews.swift in Sources */,
+				85BA1730B8A0935ACEF8EE08 /* APIClient.swift in Sources */,
+				D3CBB07CF8533089B4212709 /* AppState.swift in Sources */,
+				F4A1CADF62972074CE98C93B /* BackendDiscovery.swift in Sources */,
+				271BD5F0AA42A5DF0A7BA69B /* DebugLog.swift in Sources */,
+				806265FFC3D646B0E2795B19 /* Models.swift in Sources */,
+				0B3907F6709F9CE61AD873AB /* SessionStore.swift in Sources */,
+				9E9E843CD22D2A3AFE97BAB7 /* SnapshotStore.swift in Sources */,
+				4199298498C09EC1193EE0F8 /* Theme.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXSourcesBuildPhase section */
 
 /* Begin PBXTargetDependency section */
-		236CDC0B49F6FAEA07C518A5 /* PBXTargetDependency */ = {
-			isa = PBXTargetDependency;
-			name = AINewsWidgetShared;
-			target = A4E59B463315F3A1E8FE9A6D /* AINewsWidgetShared */;
-			targetProxy = 8EE1654CC26FB1EC60FB4F91 /* PBXContainerItemProxy */;
-		};
-		C4BD02F021EEFC9A64F05B3D /* PBXTargetDependency */ = {
+		6AFB6659FEF16E3183B543CB /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
 			name = AINewsWidgets;
-			target = 11926EDB9684574DA1D07160 /* AINewsWidgets */;
-			targetProxy = F5AD65EB512C062F35632093 /* PBXContainerItemProxy */;
+			target = B546DF772E8411121ADD941F /* AINewsWidgets */;
+			targetProxy = 57366B17467FD733758F4FA7 /* PBXContainerItemProxy */;
 		};
-		EB79A3543279FD7B11388A69 /* PBXTargetDependency */ = {
+		8C0F81D3CCE45C97C1244759 /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
 			name = AINewsWidgetShared;
-			target = A4E59B463315F3A1E8FE9A6D /* AINewsWidgetShared */;
-			targetProxy = CC43E407265ACEF40AC569FF /* PBXContainerItemProxy */;
+			target = E7C641D6519F63B7DBD81A06 /* AINewsWidgetShared */;
+			targetProxy = 5F7C45FCCE43968414E2D7AA /* PBXContainerItemProxy */;
+		};
+		DBF9609AAD697E6FB1376B07 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			name = AINewsWidgetShared;
+			target = E7C641D6519F63B7DBD81A06 /* AINewsWidgetShared */;
+			targetProxy = 51526D91BD721ADD24525DBE /* PBXContainerItemProxy */;
 		};
 /* End PBXTargetDependency section */
 
 /* Begin XCBuildConfiguration section */
-		2760764866DA6D78873D6557 /* Release */ = {
-			isa = XCBuildConfiguration;
-			buildSettings = {
-				CLANG_ENABLE_MODULES = YES;
-				CODE_SIGNING_ALLOWED = NO;
-				DEFINES_MODULE = YES;
-				EXECUTABLE_PREFIX = lib;
-				MACOSX_DEPLOYMENT_TARGET = 14.0;
-				PRODUCT_MODULE_NAME = AINewsWidgetShared;
-				PRODUCT_NAME = AINewsWidgetShared;
-				SDKROOT = macosx;
-				SKIP_INSTALL = YES;
-				SWIFT_VERSION = 5.0;
-			};
-			name = Release;
-		};
-		3E899B7CEBC44670D2B295AF /* Debug */ = {
-			isa = XCBuildConfiguration;
-			buildSettings = {
-				APPLICATION_EXTENSION_API_ONLY = YES;
-				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
-				CLANG_ENABLE_MODULES = YES;
-				CODE_SIGNING_ALLOWED = NO;
-				INFOPLIST_FILE = "Support/AINewsWidgets-Info.plist";
-				MACOSX_DEPLOYMENT_TARGET = 14.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.donetianpetkov.ainewsmacwidget.widgets;
-				PRODUCT_NAME = AINewsWidgets;
-				SDKROOT = macosx;
-				SKIP_INSTALL = YES;
-				SWIFT_VERSION = 5.0;
-			};
-			name = Debug;
-		};
-		450DA5D8771DC13E5E6ED0AE /* Debug */ = {
+		11D6765CD680673EC9D8C242 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
@@ -519,7 +486,58 @@
 			};
 			name = Debug;
 		};
-		4834EC750C83239ACA2F3340 /* Release */ = {
+		11D7A052DA0FB3E2B554D2D7 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CLANG_ENABLE_MODULES = YES;
+				CODE_SIGNING_ALLOWED = NO;
+				COMBINE_HIDPI_IMAGES = YES;
+				INFOPLIST_FILE = "Support/AINewsMacApp-Info.plist";
+				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/../Frameworks @executable_path/../PlugIns";
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.donetianpetkov.ainewsmacwidget;
+				PRODUCT_NAME = AINewsMacApp;
+				SDKROOT = macosx;
+				SKIP_INSTALL = NO;
+				SWIFT_VERSION = 5.0;
+			};
+			name = Release;
+		};
+		92645C167CD3252F792A3A71 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CLANG_ENABLE_MODULES = YES;
+				CODE_SIGNING_ALLOWED = NO;
+				DEFINES_MODULE = YES;
+				EXECUTABLE_PREFIX = lib;
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				PRODUCT_MODULE_NAME = AINewsWidgetShared;
+				PRODUCT_NAME = AINewsWidgetShared;
+				SDKROOT = macosx;
+				SKIP_INSTALL = YES;
+				SWIFT_VERSION = 5.0;
+			};
+			name = Debug;
+		};
+		A1CAC1181BA6819641EA9C56 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CLANG_ENABLE_MODULES = YES;
+				CODE_SIGNING_ALLOWED = NO;
+				DEFINES_MODULE = YES;
+				EXECUTABLE_PREFIX = lib;
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				PRODUCT_MODULE_NAME = AINewsWidgetShared;
+				PRODUCT_NAME = AINewsWidgetShared;
+				SDKROOT = macosx;
+				SKIP_INSTALL = YES;
+				SWIFT_VERSION = 5.0;
+			};
+			name = Release;
+		};
+		AFB44E1084B9F2213ABF655F /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
@@ -573,7 +591,24 @@
 			};
 			name = Release;
 		};
-		5BD22450C91A1DF782625206 /* Release */ = {
+		B9B93A518667CF7439D75BE1 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				APPLICATION_EXTENSION_API_ONLY = YES;
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CLANG_ENABLE_MODULES = YES;
+				CODE_SIGNING_ALLOWED = NO;
+				INFOPLIST_FILE = "Support/AINewsWidgets-Info.plist";
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.donetianpetkov.ainewsmacwidget.widgets;
+				PRODUCT_NAME = AINewsWidgets;
+				SDKROOT = macosx;
+				SKIP_INSTALL = YES;
+				SWIFT_VERSION = 5.0;
+			};
+			name = Debug;
+		};
+		BB40DE4A2E2E546F6BCDF7D0 /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				APPLICATION_EXTENSION_API_ONLY = YES;
@@ -590,42 +625,7 @@
 			};
 			name = Release;
 		};
-		6D653944BC6DD5D1ED8E854A /* Debug */ = {
-			isa = XCBuildConfiguration;
-			buildSettings = {
-				CLANG_ENABLE_MODULES = YES;
-				CODE_SIGNING_ALLOWED = NO;
-				DEFINES_MODULE = YES;
-				EXECUTABLE_PREFIX = lib;
-				MACOSX_DEPLOYMENT_TARGET = 14.0;
-				PRODUCT_MODULE_NAME = AINewsWidgetShared;
-				PRODUCT_NAME = AINewsWidgetShared;
-				SDKROOT = macosx;
-				SKIP_INSTALL = YES;
-				SWIFT_VERSION = 5.0;
-			};
-			name = Debug;
-		};
-		C90357DA1174BBFF60136F5A /* Release */ = {
-			isa = XCBuildConfiguration;
-			buildSettings = {
-				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
-				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
-				CLANG_ENABLE_MODULES = YES;
-				CODE_SIGNING_ALLOWED = NO;
-				COMBINE_HIDPI_IMAGES = YES;
-				INFOPLIST_FILE = "Support/AINewsMacApp-Info.plist";
-				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/../Frameworks @executable_path/../PlugIns";
-				MACOSX_DEPLOYMENT_TARGET = 14.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.donetianpetkov.ainewsmacwidget;
-				PRODUCT_NAME = AINewsMacApp;
-				SDKROOT = macosx;
-				SKIP_INSTALL = NO;
-				SWIFT_VERSION = 5.0;
-			};
-			name = Release;
-		};
-		CC7818A570B9C3FCBC1C9CB2 /* Debug */ = {
+		FE6DCCCE85D54526F8E07FC5 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
@@ -647,43 +647,43 @@
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
-		4F78A64ED1817E368145A981 /* Build configuration list for PBXNativeTarget "AINewsMacApp" */ = {
+		4F5EE80B944932F2B454F761 /* Build configuration list for PBXNativeTarget "AINewsMacApp" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
-				C90357DA1174BBFF60136F5A /* Release */,
-				CC7818A570B9C3FCBC1C9CB2 /* Debug */,
+				11D7A052DA0FB3E2B554D2D7 /* Release */,
+				FE6DCCCE85D54526F8E07FC5 /* Debug */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
-		99E0C4644081C99BDD3ECE23 /* Build configuration list for PBXNativeTarget "AINewsWidgets" */ = {
+		5559C541DFDDFE661BF4CA7C /* Build configuration list for PBXProject "AINewsMacWidget" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
-				5BD22450C91A1DF782625206 /* Release */,
-				3E899B7CEBC44670D2B295AF /* Debug */,
+				11D6765CD680673EC9D8C242 /* Debug */,
+				AFB44E1084B9F2213ABF655F /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
-		AE1C314ADA3841BE25D23992 /* Build configuration list for PBXProject "AINewsMacWidget" */ = {
+		CB83BB97FE30E0F324D2013B /* Build configuration list for PBXNativeTarget "AINewsWidgetShared" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
-				450DA5D8771DC13E5E6ED0AE /* Debug */,
-				4834EC750C83239ACA2F3340 /* Release */,
+				A1CAC1181BA6819641EA9C56 /* Release */,
+				92645C167CD3252F792A3A71 /* Debug */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
-		F32453E572F29CA608D5A521 /* Build configuration list for PBXNativeTarget "AINewsWidgetShared" */ = {
+		EF90996B4FD8ED213BEA73E4 /* Build configuration list for PBXNativeTarget "AINewsWidgets" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
-				2760764866DA6D78873D6557 /* Release */,
-				6D653944BC6DD5D1ED8E854A /* Debug */,
+				BB40DE4A2E2E546F6BCDF7D0 /* Release */,
+				B9B93A518667CF7439D75BE1 /* Debug */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
 /* End XCConfigurationList section */
 	};
-	rootObject = 5A4C3E384A06A5DCEAD33219 /* Project object */;
+	rootObject = 0D06444824FE26533F402C44 /* Project object */;
 }
