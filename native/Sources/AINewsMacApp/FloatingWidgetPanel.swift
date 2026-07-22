@@ -572,6 +572,7 @@ private struct FloatingWidgetView: View {
     @State private var layoutMode: FloatingWidgetLayoutMode
     @State private var seenStoryKeys: Set<String>
     @State private var stackIndex = 0
+    @State private var windowSize: CGSize = .zero
     @State private var lastAutoSizedStackSize: CGSize = .zero
     @State private var lastAutoSizedColumnSize: CGSize = .zero
     @State private var automaticLayoutSwitchInProgress = false
@@ -711,15 +712,15 @@ private struct FloatingWidgetView: View {
         max(availableHeight, 214)
     }
 
-    private func usesMiniatureStackLayout(width: CGFloat, height: CGFloat) -> Bool {
-        width < 380 || height < 310
+    private func usesMiniatureStackLayout(size: CGSize) -> Bool {
+        size.width < 430 || size.height < 330
     }
 
     private func preferredLayoutMode(for size: CGSize) -> FloatingWidgetLayoutMode? {
-        if layoutMode == .column, size.width < 410 || size.height < 360 {
+        if layoutMode == .column, size.width < 620 || size.height < 600 {
             return .stack
         }
-        if layoutMode == .stack, size.width >= 455 && size.height >= 440 {
+        if layoutMode == .stack, size.width >= 700 && size.height >= 650 {
             return .column
         }
         return nil
@@ -812,17 +813,13 @@ private struct FloatingWidgetView: View {
             }
         )
         .dynamicTypeSize(theme.widgetFontSize.dynamicTypeSize)
-        .background(
-            GeometryReader { proxy in
-                Color.clear
-                    .onAppear {
-                        applyAutomaticLayoutForSize(proxy.size)
-                    }
-                    .onChange(of: proxy.size) { _, newSize in
-                        applyAutomaticLayoutForSize(newSize)
-                    }
+        .onReceive(NotificationCenter.default.publisher(for: NSWindow.didResizeNotification)) { notification in
+            guard let window = notification.object as? NSWindow,
+                  currentWidgetWindow() === window else {
+                return
             }
-        )
+            _ = updateWindowSize(window.frame.size)
+        }
         .task {
             // Load now, then auto-refresh so the widget picks up new stories and
             // freshly generated summaries/translations without clicking reload.
@@ -867,7 +864,14 @@ private struct FloatingWidgetView: View {
             resizeWindowForCurrentLayout(force: true)
         }
         .onAppear {
-            resizeWindowForCurrentLayout(force: true)
+            if let window = currentWidgetWindow() {
+                let switchedLayout = updateWindowSize(window.frame.size)
+                if !switchedLayout {
+                    resizeWindowForCurrentLayout(force: true)
+                }
+            } else {
+                resizeWindowForCurrentLayout(force: true)
+            }
         }
     }
 
@@ -886,14 +890,17 @@ private struct FloatingWidgetView: View {
         .padding(.vertical, layoutMode == .stack ? 8 : 10)
     }
 
-    private func applyAutomaticLayoutForSize(_ size: CGSize) {
-        guard size.width > 0, size.height > 0 else { return }
-        guard let preferred = preferredLayoutMode(for: size), preferred != layoutMode else { return }
+    @discardableResult
+    private func updateWindowSize(_ size: CGSize) -> Bool {
+        guard size.width > 0, size.height > 0 else { return false }
+        windowSize = size
+        guard let preferred = preferredLayoutMode(for: size), preferred != layoutMode else { return false }
         automaticLayoutSwitchInProgress = true
         layoutMode = preferred
         AINewsDebugLog.log(
             "floating auto layout mode=\(preferred.rawValue) size=\(Int(size.width))x\(Int(size.height)) scope=\(displayCategoryName)"
         )
+        return true
     }
 
     private var headerExpandedLayout: some View {
@@ -1165,7 +1172,8 @@ private struct FloatingWidgetView: View {
     private var stackContent: some View {
         GeometryReader { proxy in
             let availableViewportHeight = max(proxy.size.height - 94, 214)
-            let isMiniature = usesMiniatureStackLayout(width: proxy.size.width, height: proxy.size.height)
+            let measuredSize = windowSize == .zero ? proxy.size : windowSize
+            let isMiniature = usesMiniatureStackLayout(size: measuredSize)
 
             Group {
                 if isMiniature {
