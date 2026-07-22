@@ -717,14 +717,14 @@ private struct FloatingWidgetView: View {
     }
 
     private func usesMiniatureStackLayout(size: CGSize) -> Bool {
-        size.width < 430 || size.height < 330
+        size.width < 360 || size.height < 300
     }
 
     private func preferredLayoutMode(for size: CGSize) -> FloatingWidgetLayoutMode? {
-        if layoutMode == .column, size.width < 520 || size.height < 560 {
+        if layoutMode == .column, size.width < 340 || size.height < 560 {
             return .stack
         }
-        if layoutMode == .stack, size.width >= 520 && size.height >= 650 {
+        if layoutMode == .stack, size.width >= 340 && size.height >= 650 {
             return .column
         }
         return nil
@@ -1209,7 +1209,7 @@ private struct FloatingWidgetView: View {
                         )
                 }
             }
-            .frame(maxWidth: .infinity, minHeight: cardHeight, maxHeight: availableViewportHeight, alignment: .top)
+            .frame(maxWidth: .infinity, minHeight: cardHeight, maxHeight: cardHeight, alignment: .top)
             .padding(.horizontal, 14)
             .padding(.top, 14)
 
