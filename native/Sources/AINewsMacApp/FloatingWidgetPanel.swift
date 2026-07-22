@@ -749,17 +749,17 @@ private struct FloatingWidgetView: View {
         size.width < 360 || size.height < 300
     }
 
-    private func preferredLayoutMode(for size: CGSize) -> FloatingWidgetLayoutMode? {
+    private func preferredLayoutMode(for size: CGSize, isUserResize: Bool) -> FloatingWidgetLayoutMode? {
         if let suppressUntil = suppressAutomaticLayoutSwitchUntil {
-            if Date() < suppressUntil {
+            if Date() < suppressUntil, !isUserResize {
                 return nil
             }
             suppressAutomaticLayoutSwitchUntil = nil
         }
-        if layoutMode == .column, size.width < 340 {
+        if layoutMode == .column, size.width < 680 || size.height < 560 {
             return .stack
         }
-        if layoutMode == .stack, size.width >= 520 {
+        if layoutMode == .stack, size.width >= 760 && size.height >= 640 {
             return .column
         }
         return nil
@@ -857,7 +857,7 @@ private struct FloatingWidgetView: View {
                   currentWidgetWindow() === window else {
                 return
             }
-            _ = updateWindowSize(window.frame.size)
+            _ = updateWindowSize(window.frame.size, isUserResize: window.inLiveResize)
         }
         .task {
             // Load now, then auto-refresh so the widget picks up new stories and
@@ -889,11 +889,11 @@ private struct FloatingWidgetView: View {
             } else {
                 clampStackIndex()
             }
-            if restoreSavedWindowFrame(for: newValue) {
+            if automaticLayoutSwitchInProgress {
                 automaticLayoutSwitchInProgress = false
-            } else if automaticLayoutSwitchInProgress {
+                updateMinimumWindowSize()
+            } else if restoreSavedWindowFrame(for: newValue) {
                 automaticLayoutSwitchInProgress = false
-                resizeWindowForCurrentLayout(force: true)
             } else {
                 resizeWindowForCurrentLayout(force: true)
             }
@@ -908,7 +908,7 @@ private struct FloatingWidgetView: View {
         }
         .onAppear {
             if let window = currentWidgetWindow() {
-                let switchedLayout = updateWindowSize(window.frame.size)
+                let switchedLayout = updateWindowSize(window.frame.size, isUserResize: false)
                 if !switchedLayout {
                     resizeWindowForCurrentLayout(force: true)
                 }
@@ -934,10 +934,10 @@ private struct FloatingWidgetView: View {
     }
 
     @discardableResult
-    private func updateWindowSize(_ size: CGSize) -> Bool {
+    private func updateWindowSize(_ size: CGSize, isUserResize: Bool = false) -> Bool {
         guard size.width > 0, size.height > 0 else { return false }
         windowSize = size
-        guard let preferred = preferredLayoutMode(for: size), preferred != layoutMode else { return false }
+        guard let preferred = preferredLayoutMode(for: size, isUserResize: isUserResize), preferred != layoutMode else { return false }
         automaticLayoutSwitchInProgress = true
         layoutMode = preferred
         AINewsDebugLog.log(
@@ -1910,6 +1910,14 @@ private struct FloatingWidgetView: View {
             windowSize = savedFrame.size
         }
         return true
+    }
+
+    private func updateMinimumWindowSize() {
+        DispatchQueue.main.async {
+            guard let window = currentWidgetWindow() else { return }
+            window.minSize = layoutMode == .stack ? NSSize(width: 300, height: 190) : NSSize(width: 400, height: 260)
+            windowSize = window.frame.size
+        }
     }
 
     private func resizeWindowForCurrentLayout(force: Bool = false, allowShrink: Bool = true) {
