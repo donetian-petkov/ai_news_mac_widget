@@ -710,6 +710,10 @@ private struct FloatingWidgetView: View {
         max(availableHeight, 214)
     }
 
+    private func usesMiniatureStackLayout(width: CGFloat, height: CGFloat) -> Bool {
+        width < 380 || height < 310
+    }
+
     private var estimatedColumnWindowWidth: CGFloat {
         420
     }
@@ -1125,67 +1129,117 @@ private struct FloatingWidgetView: View {
     private var stackContent: some View {
         GeometryReader { proxy in
             let availableViewportHeight = max(proxy.size.height - 94, 214)
+            let isMiniature = usesMiniatureStackLayout(width: proxy.size.width, height: proxy.size.height)
 
-            VStack(spacing: 12) {
-                ZStack(alignment: .topLeading) {
-                    if let tertiary = stackStory(offsetBy: 2) {
-                        stackBackdropCard(for: tertiary, scale: 0.92, xOffset: 52, yOffset: 8, opacity: 0.10)
-                    }
-                    if let secondary = stackStory(offsetBy: 1) {
-                        stackBackdropCard(for: secondary, scale: 0.96, xOffset: 28, yOffset: 4, opacity: 0.16)
-                    }
-                    if let current = currentStackStory {
-                        storyRow(current, draggable: false, minCardHeight: stackStoryViewportHeight(for: availableViewportHeight))
-                            .frame(
-                                maxWidth: .infinity,
-                                minHeight: stackStoryViewportHeight(for: availableViewportHeight),
-                                alignment: .topLeading
-                            )
-                    }
+            Group {
+                if isMiniature {
+                    miniatureStackContent
+                } else {
+                    fullStackContent(availableViewportHeight: availableViewportHeight)
                 }
-                .frame(maxWidth: .infinity, minHeight: 214, maxHeight: availableViewportHeight, alignment: .top)
-                .padding(.horizontal, 14)
-                .padding(.top, 14)
-
-                HStack(spacing: 10) {
-                    Button {
-                        goToStackStart()
-                    } label: {
-                        stackNavLabel(systemImage: "backward.end", title: "Start")
-                    }
-                    .buttonStyle(.plain)
-                    .disabled(stackIndex <= 0)
-
-                    Button {
-                        moveStack(by: -1)
-                    } label: {
-                        stackNavLabel(systemImage: "chevron.up", title: "Previous")
-                    }
-                    .buttonStyle(.plain)
-                    .disabled(stackIndex <= 0)
-
-                    stackPositionLabel
-
-                    Button {
-                        if canMoveStackForward {
-                            moveStack(by: 1)
-                        } else {
-                            loadMoreStackStories()
-                        }
-                    } label: {
-                        stackNavLabel(
-                            systemImage: canMoveStackForward ? "chevron.down" : "plus",
-                            title: canMoveStackForward ? "Next" : "Load \(pageStep)"
-                        )
-                    }
-                    .buttonStyle(.plain)
-                    .disabled(!canMoveStackForward && (!canLoadMoreStackStories || loading))
-                }
-                .padding(.horizontal, 14)
-                .padding(.bottom, 14)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         }
+    }
+
+    private func fullStackContent(availableViewportHeight: CGFloat) -> some View {
+        VStack(spacing: 12) {
+            ZStack(alignment: .topLeading) {
+                if let tertiary = stackStory(offsetBy: 2) {
+                    stackBackdropCard(for: tertiary, scale: 0.92, xOffset: 52, yOffset: 8, opacity: 0.10)
+                }
+                if let secondary = stackStory(offsetBy: 1) {
+                    stackBackdropCard(for: secondary, scale: 0.96, xOffset: 28, yOffset: 4, opacity: 0.16)
+                }
+                if let current = currentStackStory {
+                    storyRow(current, draggable: false, minCardHeight: stackStoryViewportHeight(for: availableViewportHeight))
+                        .frame(
+                            maxWidth: .infinity,
+                            minHeight: stackStoryViewportHeight(for: availableViewportHeight),
+                            alignment: .topLeading
+                        )
+                }
+            }
+            .frame(maxWidth: .infinity, minHeight: 214, maxHeight: availableViewportHeight, alignment: .top)
+            .padding(.horizontal, 14)
+            .padding(.top, 14)
+
+            stackNavigationControls(spacing: 10, horizontalPadding: 14, bottomPadding: 14, iconOnly: false)
+        }
+    }
+
+    private var miniatureStackContent: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            if let current = currentStackStory {
+                Text(current.title)
+                    .font(widgetFont(15.5, weight: .bold))
+                    .foregroundStyle(AINewsTheme.accentBlue)
+                    .lineLimit(3)
+                    .minimumScaleFactor(0.78)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(10)
+                    .background(
+                        RoundedRectangle(cornerRadius: 14, style: .continuous)
+                            .fill(AINewsTheme.backgroundAlt.opacity(0.94))
+                    )
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 14, style: .continuous)
+                            .stroke(AINewsTheme.panelBorder.opacity(0.72), lineWidth: 1)
+                    )
+                    .contentShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                    .onTapGesture {
+                        openStory(current)
+                    }
+            }
+
+            stackNavigationControls(spacing: 6, horizontalPadding: 0, bottomPadding: 0, iconOnly: true)
+        }
+        .padding(10)
+    }
+
+    private func stackNavigationControls(
+        spacing: CGFloat,
+        horizontalPadding: CGFloat,
+        bottomPadding: CGFloat,
+        iconOnly: Bool
+    ) -> some View {
+        HStack(spacing: spacing) {
+            Button {
+                goToStackStart()
+            } label: {
+                stackNavLabel(systemImage: "backward.end", title: "Start", iconOnly: iconOnly)
+            }
+            .buttonStyle(.plain)
+            .disabled(stackIndex <= 0)
+
+            Button {
+                moveStack(by: -1)
+            } label: {
+                stackNavLabel(systemImage: "chevron.up", title: "Previous", iconOnly: iconOnly)
+            }
+            .buttonStyle(.plain)
+            .disabled(stackIndex <= 0)
+
+            stackPositionLabel
+
+            Button {
+                if canMoveStackForward {
+                    moveStack(by: 1)
+                } else {
+                    loadMoreStackStories()
+                }
+            } label: {
+                stackNavLabel(
+                    systemImage: canMoveStackForward ? "chevron.down" : "plus",
+                    title: canMoveStackForward ? "Next" : "Load \(pageStep)",
+                    iconOnly: iconOnly
+                )
+            }
+            .buttonStyle(.plain)
+            .disabled(!canMoveStackForward && (!canLoadMoreStackStories || loading))
+        }
+        .padding(.horizontal, horizontalPadding)
+        .padding(.bottom, bottomPadding)
     }
 
     private func stackBackdropCard(for _: WidgetStory, scale: CGFloat, xOffset: CGFloat, yOffset: CGFloat, opacity: Double) -> some View {
@@ -1233,15 +1287,17 @@ private struct FloatingWidgetView: View {
             .frame(height: 168)
     }
 
-    private func stackNavLabel(systemImage: String, title: String) -> some View {
+    private func stackNavLabel(systemImage: String, title: String, iconOnly: Bool = false) -> some View {
         HStack(spacing: 8) {
             Image(systemName: systemImage)
                 .font(widgetFont(12, weight: .semibold))
-            Text(title)
-                .font(widgetFont(12, weight: .semibold))
+            if !iconOnly {
+                Text(title)
+                    .font(widgetFont(12, weight: .semibold))
+            }
         }
         .foregroundStyle(AINewsTheme.textPrimary)
-        .frame(maxWidth: .infinity)
+        .frame(maxWidth: .infinity, minHeight: iconOnly ? 30 : 0)
         .padding(.vertical, 8)
         .background(
             RoundedRectangle(cornerRadius: 12, style: .continuous)
@@ -1258,7 +1314,8 @@ private struct FloatingWidgetView: View {
             .font(widgetFont(12, weight: .bold))
             .foregroundStyle(AINewsTheme.textPrimary)
             .lineLimit(1)
-            .frame(minWidth: 72)
+            .minimumScaleFactor(0.82)
+            .frame(minWidth: 58)
             .padding(.horizontal, 10)
             .padding(.vertical, 7)
             .background(
@@ -1703,7 +1760,7 @@ private struct FloatingWidgetView: View {
             frame.origin.x -= deltaWidth / 2
             frame.size.height = targetHeight
             frame.size.width = targetWidth
-            window.minSize = layoutMode == .stack ? NSSize(width: 430, height: 220) : NSSize(width: 400, height: 260)
+            window.minSize = layoutMode == .stack ? NSSize(width: 300, height: 190) : NSSize(width: 400, height: 260)
             window.setFrame(frame, display: true, animate: true)
         }
     }
