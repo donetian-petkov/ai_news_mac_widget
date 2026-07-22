@@ -574,6 +574,7 @@ private struct FloatingWidgetView: View {
     @State private var stackIndex = 0
     @State private var lastAutoSizedStackSize: CGSize = .zero
     @State private var lastAutoSizedColumnSize: CGSize = .zero
+    @State private var automaticLayoutSwitchInProgress = false
     @State private var suppressResizeDuringRefresh = false
     @State private var lastSourceRefreshAt: Date?
     /// How many stories to show. Grows by `pageStep` via "Show More", resets to
@@ -714,6 +715,16 @@ private struct FloatingWidgetView: View {
         width < 380 || height < 310
     }
 
+    private func preferredLayoutMode(for size: CGSize) -> FloatingWidgetLayoutMode? {
+        if layoutMode == .column, size.width < 410 || size.height < 360 {
+            return .stack
+        }
+        if layoutMode == .stack, size.width >= 455 && size.height >= 440 {
+            return .column
+        }
+        return nil
+    }
+
     private var estimatedColumnWindowWidth: CGFloat {
         420
     }
@@ -801,6 +812,17 @@ private struct FloatingWidgetView: View {
             }
         )
         .dynamicTypeSize(theme.widgetFontSize.dynamicTypeSize)
+        .background(
+            GeometryReader { proxy in
+                Color.clear
+                    .onAppear {
+                        applyAutomaticLayoutForSize(proxy.size)
+                    }
+                    .onChange(of: proxy.size) { _, newSize in
+                        applyAutomaticLayoutForSize(newSize)
+                    }
+            }
+        )
         .task {
             // Load now, then auto-refresh so the widget picks up new stories and
             // freshly generated summaries/translations without clicking reload.
@@ -830,7 +852,11 @@ private struct FloatingWidgetView: View {
             } else {
                 clampStackIndex()
             }
-            resizeWindowForCurrentLayout(force: true)
+            if automaticLayoutSwitchInProgress {
+                automaticLayoutSwitchInProgress = false
+            } else {
+                resizeWindowForCurrentLayout(force: true)
+            }
         }
         .onChange(of: stackIndex) { _, _ in
             guard !suppressResizeDuringRefresh else { return }
@@ -858,6 +884,16 @@ private struct FloatingWidgetView: View {
         }
         .padding(.horizontal, layoutMode == .stack ? 12 : 14)
         .padding(.vertical, layoutMode == .stack ? 8 : 10)
+    }
+
+    private func applyAutomaticLayoutForSize(_ size: CGSize) {
+        guard size.width > 0, size.height > 0 else { return }
+        guard let preferred = preferredLayoutMode(for: size), preferred != layoutMode else { return }
+        automaticLayoutSwitchInProgress = true
+        layoutMode = preferred
+        AINewsDebugLog.log(
+            "floating auto layout mode=\(preferred.rawValue) size=\(Int(size.width))x\(Int(size.height)) scope=\(displayCategoryName)"
+        )
     }
 
     private var headerExpandedLayout: some View {
