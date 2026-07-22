@@ -701,6 +701,10 @@ private struct FloatingWidgetView: View {
         return CGFloat(min(max(cardHeight + windowChrome, 420.0), screenLimit))
     }
 
+    private var estimatedStackCardHeight: CGFloat {
+        max(estimatedStackWindowHeight - 178.0, 214.0)
+    }
+
     private var estimatedStackWindowWidth: CGFloat {
         guard let story = currentStackStory else { return 436 }
         let titleWeight = min(CGFloat(story.title.count) * 0.38, 40)
@@ -717,10 +721,10 @@ private struct FloatingWidgetView: View {
     }
 
     private func preferredLayoutMode(for size: CGSize) -> FloatingWidgetLayoutMode? {
-        if layoutMode == .column, size.width < 620 || size.height < 600 {
+        if layoutMode == .column, size.width < 520 || size.height < 560 {
             return .stack
         }
-        if layoutMode == .stack, size.width >= 700 && size.height >= 650 {
+        if layoutMode == .stack, size.width >= 520 && size.height >= 650 {
             return .column
         }
         return nil
@@ -1187,7 +1191,8 @@ private struct FloatingWidgetView: View {
     }
 
     private func fullStackContent(availableViewportHeight: CGFloat) -> some View {
-        VStack(spacing: 12) {
+        let cardHeight = min(estimatedStackCardHeight, availableViewportHeight)
+        return VStack(spacing: 12) {
             ZStack(alignment: .topLeading) {
                 if let tertiary = stackStory(offsetBy: 2) {
                     stackBackdropCard(for: tertiary, scale: 0.92, xOffset: 52, yOffset: 8, opacity: 0.10)
@@ -1196,15 +1201,15 @@ private struct FloatingWidgetView: View {
                     stackBackdropCard(for: secondary, scale: 0.96, xOffset: 28, yOffset: 4, opacity: 0.16)
                 }
                 if let current = currentStackStory {
-                    storyRow(current, draggable: false, minCardHeight: stackStoryViewportHeight(for: availableViewportHeight))
+                    storyRow(current, draggable: false, minCardHeight: cardHeight)
                         .frame(
                             maxWidth: .infinity,
-                            minHeight: stackStoryViewportHeight(for: availableViewportHeight),
+                            minHeight: cardHeight,
                             alignment: .topLeading
                         )
                 }
             }
-            .frame(maxWidth: .infinity, minHeight: 214, maxHeight: availableViewportHeight, alignment: .top)
+            .frame(maxWidth: .infinity, minHeight: cardHeight, maxHeight: availableViewportHeight, alignment: .top)
             .padding(.horizontal, 14)
             .padding(.top, 14)
 
