@@ -605,6 +605,7 @@ private struct FloatingWidgetView: View {
     @State private var lastAutoSizedColumnSize: CGSize = .zero
     @State private var automaticLayoutSwitchInProgress = false
     @State private var explicitLayoutMode: FloatingWidgetLayoutMode?
+    @State private var suppressResizeDrivenLayoutSwitch = false
     @State private var suppressResizeDuringRefresh = false
     @State private var lastSourceRefreshAt: Date?
     /// How many stories to show. Grows by `pageStep` via "Show More", resets to
@@ -852,6 +853,13 @@ private struct FloatingWidgetView: View {
         .onReceive(NotificationCenter.default.publisher(for: NSWindow.didResizeNotification)) { notification in
             guard let window = notification.object as? NSWindow,
                   currentWidgetWindow() === window else {
+                return
+            }
+            if suppressResizeDrivenLayoutSwitch {
+                windowSize = window.frame.size
+                AINewsDebugLog.log(
+                    "floating resize notice suppressed size=\(Int(window.frame.width))x\(Int(window.frame.height)) scope=\(displayCategoryName)"
+                )
                 return
             }
             if window.inLiveResize {
@@ -1900,8 +1908,16 @@ private struct FloatingWidgetView: View {
         persistCurrentWindowFrame(for: layoutMode)
         explicitLayoutMode = mode
         automaticLayoutSwitchInProgress = false
+        suppressProgrammaticResizeSwitch()
         layoutMode = mode
         AINewsDebugLog.log("floating manual layout mode=\(mode.rawValue) scope=\(displayCategoryName)")
+    }
+
+    private func suppressProgrammaticResizeSwitch() {
+        suppressResizeDrivenLayoutSwitch = true
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.9) {
+            suppressResizeDrivenLayoutSwitch = false
+        }
     }
 
     private func persistCurrentWindowFrame(for mode: FloatingWidgetLayoutMode) {
@@ -1916,6 +1932,7 @@ private struct FloatingWidgetView: View {
         }
         DispatchQueue.main.async {
             guard let window = currentWidgetWindow() else { return }
+            suppressProgrammaticResizeSwitch()
             window.minSize = mode == .stack ? NSSize(width: 300, height: 190) : NSSize(width: 400, height: 260)
             window.setFrame(savedFrame, display: true, animate: true)
             windowSize = savedFrame.size
@@ -1934,6 +1951,7 @@ private struct FloatingWidgetView: View {
     private func resizeWindowForCurrentLayout(force: Bool = false, allowShrink: Bool = true) {
         DispatchQueue.main.async {
             guard let window = currentWidgetWindow() else { return }
+            suppressProgrammaticResizeSwitch()
             var frame = window.frame
             let targetWidth: CGFloat
             let targetHeight: CGFloat
