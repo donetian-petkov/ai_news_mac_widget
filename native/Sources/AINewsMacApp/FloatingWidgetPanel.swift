@@ -604,7 +604,7 @@ private struct FloatingWidgetView: View {
     @State private var lastAutoSizedStackSize: CGSize = .zero
     @State private var lastAutoSizedColumnSize: CGSize = .zero
     @State private var automaticLayoutSwitchInProgress = false
-    @State private var manualLayoutOverrideActive = false
+    @State private var explicitLayoutMode: FloatingWidgetLayoutMode?
     @State private var suppressResizeDuringRefresh = false
     @State private var lastSourceRefreshAt: Date?
     /// How many stories to show. Grows by `pageStep` via "Show More", resets to
@@ -854,7 +854,11 @@ private struct FloatingWidgetView: View {
                   currentWidgetWindow() === window else {
                 return
             }
-            _ = updateWindowSize(window.frame.size, isUserResize: window.inLiveResize)
+            if window.inLiveResize {
+                _ = updateWindowSize(window.frame.size, isUserResize: true)
+            } else {
+                windowSize = window.frame.size
+            }
         }
         .task {
             // Load now, then auto-refresh so the widget picks up new stories and
@@ -934,13 +938,15 @@ private struct FloatingWidgetView: View {
     private func updateWindowSize(_ size: CGSize, isUserResize: Bool = false) -> Bool {
         guard size.width > 0, size.height > 0 else { return false }
         windowSize = size
-        if isUserResize {
-            manualLayoutOverrideActive = false
-        } else if manualLayoutOverrideActive {
-            return false
-        }
         let preferred = automaticLayoutMode(for: size)
+        if let explicitLayoutMode {
+            if !isUserResize || preferred == explicitLayoutMode {
+                return false
+            }
+            self.explicitLayoutMode = nil
+        }
         guard preferred != layoutMode else { return false }
+        explicitLayoutMode = nil
         automaticLayoutSwitchInProgress = true
         layoutMode = preferred
         AINewsDebugLog.log(
@@ -1892,8 +1898,10 @@ private struct FloatingWidgetView: View {
     private func switchLayoutMode(to mode: FloatingWidgetLayoutMode) {
         guard mode != layoutMode else { return }
         persistCurrentWindowFrame(for: layoutMode)
-        manualLayoutOverrideActive = true
+        explicitLayoutMode = mode
+        automaticLayoutSwitchInProgress = false
         layoutMode = mode
+        AINewsDebugLog.log("floating manual layout mode=\(mode.rawValue) scope=\(displayCategoryName)")
     }
 
     private func persistCurrentWindowFrame(for mode: FloatingWidgetLayoutMode) {
