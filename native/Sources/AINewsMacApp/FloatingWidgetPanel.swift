@@ -137,6 +137,10 @@ private enum FloatingWidgetPreferences {
         )
     }
 
+    static func removeFrame(categoryID: Int, isFiltered: Bool, mode: FloatingWidgetLayoutMode) {
+        UserDefaults.standard.removeObject(forKey: frameKey(categoryID: categoryID, isFiltered: isFiltered, mode: mode))
+    }
+
     static func storyOrder(categoryID: Int, isFiltered: Bool) -> [String] {
         UserDefaults.standard.stringArray(forKey: storyOrderKey(categoryID: categoryID, isFiltered: isFiltered)) ?? []
     }
@@ -1928,6 +1932,13 @@ private struct FloatingWidgetView: View {
     @discardableResult
     private func restoreSavedWindowFrame(for mode: FloatingWidgetLayoutMode) -> Bool {
         guard let savedFrame = FloatingWidgetPreferences.frame(categoryID: categoryID, isFiltered: isFiltered, mode: mode) else {
+            return false
+        }
+        guard mode != .stack || automaticLayoutMode(for: savedFrame.size) == .stack else {
+            FloatingWidgetPreferences.removeFrame(categoryID: categoryID, isFiltered: isFiltered, mode: mode)
+            AINewsDebugLog.log(
+                "floating ignored invalid saved \(mode.rawValue) frame size=\(Int(savedFrame.width))x\(Int(savedFrame.height)) scope=\(displayCategoryName)"
+            )
             return false
         }
         DispatchQueue.main.async {
