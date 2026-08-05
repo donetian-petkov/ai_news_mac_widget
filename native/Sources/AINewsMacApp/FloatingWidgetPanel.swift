@@ -708,17 +708,17 @@ private struct FloatingWidgetView: View {
         guard let story = currentStackStory else { return 460 }
         let scale = Double(widgetFontScale)
         let lineWidth = estimatedStackWindowWidth > 450 ? 34.0 : 30.0
-        let titleLines = ceil(Double(story.title.count) / lineWidth)
-        let translatedLength = story.translatedTitle?.isEmpty == false && story.translatedTitle != story.title
-            ? Double(story.translatedTitle?.count ?? 0)
+        let titleLines = ceil(Double(displayTitle(for: story).count) / lineWidth)
+        let secondaryLength = secondaryTitle(for: story)?.isEmpty == false
+            ? Double(secondaryTitle(for: story)?.count ?? 0)
             : 0
-        let translatedLines = ceil(translatedLength / (lineWidth + 4.0))
+        let secondaryLines = ceil(secondaryLength / (lineWidth + 4.0))
         let summaryLength = story.summary?.count ?? 0
         let summaryLines = max(1.0, ceil(Double(summaryLength) / (lineWidth + 4.0)))
         let researchLength = story.research?.count ?? 0
         let researchLines = max(1.0, ceil(Double(researchLength) / (lineWidth + 4.0)))
         let sourceLines = ceil(Double((story.source ?? story.feedUrl).count) / 28.0)
-        let translatedHeight = translatedLines > 0 ? translatedLines * 19.0 * scale + 8.0 : 0
+        let secondaryHeight = secondaryLines > 0 ? secondaryLines * 19.0 * scale + 8.0 : 0
         let summaryHeight = state.globalAiDefaults.summaryEnabled ? (summaryLines * 21.0 * scale + 28.0) : 0
         let researchHeight = state.globalAiDefaults.researchEnabled ? (researchLines * 21.0 * scale + 28.0) : 0
         let cardHeight = max(
@@ -726,7 +726,7 @@ private struct FloatingWidgetView: View {
             42.0
             + (sourceLines * 18.0 * scale)
             + (titleLines * 27.0 * scale)
-            + translatedHeight
+            + secondaryHeight
             + summaryHeight
             + researchHeight
         )
@@ -741,7 +741,7 @@ private struct FloatingWidgetView: View {
 
     private var estimatedStackWindowWidth: CGFloat {
         guard let story = currentStackStory else { return 436 }
-        let titleWeight = min(CGFloat(story.title.count) * 0.38, 40)
+        let titleWeight = min(CGFloat(displayTitle(for: story).count) * 0.38, 40)
         let summaryWeight = min(CGFloat(story.summary?.count ?? 0) * 0.1, 22)
         return min(max(406 + titleWeight + summaryWeight, 430), 468)
     }
@@ -772,15 +772,15 @@ private struct FloatingWidgetView: View {
     }
 
     private func estimatedColumnCardHeight(for story: WidgetStory) -> CGFloat {
-        let titleLines = ceil(Double(story.title.count) / 30.0)
-        let translatedLength = story.translatedTitle?.isEmpty == false && story.translatedTitle != story.title
-            ? Double(story.translatedTitle?.count ?? 0)
+        let titleLines = ceil(Double(displayTitle(for: story).count) / 30.0)
+        let secondaryLength = secondaryTitle(for: story)?.isEmpty == false
+            ? Double(secondaryTitle(for: story)?.count ?? 0)
             : 0
-        let translatedLines = ceil(translatedLength / 34.0)
+        let secondaryLines = ceil(secondaryLength / 34.0)
         let summaryLines = ceil(Double((story.summary ?? "").count) / 34.0)
         let sourceLines = ceil(Double((story.source ?? story.feedUrl).count) / 26.0)
         let baseHeight = coversEnabled ? 138.0 : 118.0
-        let dynamicHeight = (titleLines * 20.0) + (translatedLines * 14.0) + (summaryLines * 16.0) + (sourceLines * 8.0)
+        let dynamicHeight = (titleLines * 20.0) + (secondaryLines * 14.0) + (summaryLines * 16.0) + (sourceLines * 8.0)
         return min(max(baseHeight + dynamicHeight, 150.0), 300.0)
     }
 
@@ -1391,7 +1391,7 @@ private struct FloatingWidgetView: View {
                     if current.hasNeutralTitle {
                         neutralizedTitleBadge(compact: true)
                     }
-                    Text(current.title)
+                    Text(displayTitle(for: current))
                         .font(widgetFont(15.5, weight: .bold))
                         .foregroundStyle(AINewsTheme.accentBlue)
                         .underline(current.hasNeutralTitle, color: AINewsTheme.accentCyan.opacity(0.85))
@@ -1631,6 +1631,15 @@ private struct FloatingWidgetView: View {
     }
 
     @AppStorage("ai_news_show_thumbnails") private var coversEnabled = true
+    @AppStorage("ai_news_show_original_titles") private var showOriginalTitles = false
+
+    private func displayTitle(for story: WidgetStory) -> String {
+        story.displayTitle(showOriginalTitle: showOriginalTitles)
+    }
+
+    private func secondaryTitle(for story: WidgetStory) -> String? {
+        story.secondaryTitle(showOriginalTitle: showOriginalTitles)
+    }
 
     private func storyRow(_ story: WidgetStory, draggable: Bool = true, minCardHeight: CGFloat? = nil) -> some View {
         ZStack(alignment: .topTrailing) {
@@ -1660,14 +1669,14 @@ private struct FloatingWidgetView: View {
                             .foregroundStyle(AINewsTheme.textMuted)
                     }
 
-                    Text(story.title)
+                    Text(displayTitle(for: story))
                         .font(widgetHeadline(weight: .bold))
                         .foregroundStyle(AINewsTheme.accentBlue)
                         .underline(story.hasNeutralTitle, color: AINewsTheme.accentCyan.opacity(0.85))
                         .fixedSize(horizontal: false, vertical: true)
 
-                    if let translated = story.translatedTitle, !translated.isEmpty, translated != story.title {
-                        Text(translated)
+                    if let secondary = secondaryTitle(for: story) {
+                        Text(secondary)
                             .font(widgetCaption())
                             .foregroundStyle(AINewsTheme.accentGold)
                             .fixedSize(horizontal: false, vertical: true)
@@ -1718,7 +1727,7 @@ private struct FloatingWidgetView: View {
                         .font(widgetCaption(weight: .semibold))
                         .foregroundStyle(AINewsTheme.accentCyan)
                         .lineLimit(1)
-                    Text(story.title)
+                    Text(displayTitle(for: story))
                         .font(widgetHeadline(weight: .bold))
                         .foregroundStyle(AINewsTheme.accentBlue)
                         .underline(story.hasNeutralTitle, color: AINewsTheme.accentCyan.opacity(0.85))

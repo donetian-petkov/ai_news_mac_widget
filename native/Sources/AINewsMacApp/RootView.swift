@@ -243,6 +243,7 @@ private struct DashboardView: View {
                 || (story.summary?.lowercased().contains(lowered) ?? false)
                 || (story.research?.lowercased().contains(lowered) ?? false)
                 || (story.translatedTitle?.lowercased().contains(lowered) ?? false)
+                || (story.preferredNeutralTitle?.lowercased().contains(lowered) ?? false)
         }
     }
 
@@ -751,6 +752,7 @@ private struct StoryCardView: View {
     let story: WidgetStory
 
     @AppStorage("ai_news_show_thumbnails") private var coversEnabled = true
+    @AppStorage("ai_news_show_original_titles") private var showOriginalTitles = false
 
     var body: some View {
         HStack(alignment: .top, spacing: 16) {
@@ -786,13 +788,13 @@ private struct StoryCardView: View {
                 }
             }
 
-            Text(story.title)
+            Text(displayTitle)
                 .font(AINewsTheme.font(28, weight: .bold))
                 .foregroundStyle(AINewsTheme.accentBlue)
                 .underline(story.hasNeutralTitle, color: AINewsTheme.accentCyan.opacity(0.8))
 
-            if let translated = story.translatedTitle, !translated.isEmpty, translated != story.title {
-                Text(translated)
+            if let secondaryTitle {
+                Text(secondaryTitle)
                     .font(.title3)
                     .foregroundStyle(AINewsTheme.textSecondary)
             }
@@ -895,27 +897,44 @@ private struct StoryCardView: View {
     }
 
     private var translatedStoryText: String? {
-        guard let translated = story.translatedTitle, !translated.isEmpty, translated != story.title else {
+        guard let translated = story.translatedTitle?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !translated.isEmpty,
+              translated != story.sourceOriginalTitle,
+              translated != displayTitle
+        else {
             return nil
         }
         return translated
     }
 
+    private var displayTitle: String {
+        story.displayTitle(showOriginalTitle: showOriginalTitles)
+    }
+
+    private var secondaryTitle: String? {
+        story.secondaryTitle(showOriginalTitle: showOriginalTitles)
+    }
+
     private var neutralizedTitleBadge: some View {
-        Label("Neutral title", systemImage: "checkmark.seal.fill")
-            .font(.caption.weight(.bold))
-            .foregroundStyle(AINewsTheme.accentCyan)
-            .padding(.horizontal, 9)
-            .padding(.vertical, 4)
-            .background(
-                Capsule(style: .continuous)
-                    .fill(AINewsTheme.accentCyan.opacity(0.14))
-            )
-            .overlay(
-                Capsule(style: .continuous)
-                    .stroke(AINewsTheme.accentCyan.opacity(0.5), lineWidth: 1)
-            )
-            .help("This headline was neutralized by AI.")
+        Button {
+            showOriginalTitles.toggle()
+        } label: {
+            Label(showOriginalTitles ? "Original title" : "Neutral title", systemImage: showOriginalTitles ? "text.quote" : "checkmark.seal.fill")
+                .font(.caption.weight(.bold))
+                .foregroundStyle(AINewsTheme.accentCyan)
+                .padding(.horizontal, 9)
+                .padding(.vertical, 4)
+                .background(
+                    Capsule(style: .continuous)
+                        .fill(AINewsTheme.accentCyan.opacity(0.14))
+                )
+                .overlay(
+                    Capsule(style: .continuous)
+                        .stroke(AINewsTheme.accentCyan.opacity(0.5), lineWidth: 1)
+                )
+        }
+        .buttonStyle(.plain)
+        .help(showOriginalTitles ? "Showing the original headline. Click to show the neutral headline." : "Showing the AI-neutralized headline. Click to show the original headline.")
     }
 
     private func actionButton(_ title: String, systemImage: String, tint: Color, action: @escaping () -> Void) -> some View {
@@ -929,9 +948,9 @@ private struct StoryCardView: View {
     private func openShare(_ base: String) {
         guard let link = story.link, !link.isEmpty, var comps = URLComponents(string: base) else { return }
         if base.contains("x.com") {
-            comps.queryItems = [URLQueryItem(name: "text", value: "\(story.title) \(link)")]
+            comps.queryItems = [URLQueryItem(name: "text", value: "\(displayTitle) \(link)")]
         } else if base.contains("reddit") {
-            comps.queryItems = [URLQueryItem(name: "url", value: link), URLQueryItem(name: "title", value: story.title)]
+            comps.queryItems = [URLQueryItem(name: "url", value: link), URLQueryItem(name: "title", value: displayTitle)]
         } else {
             comps.queryItems = [URLQueryItem(name: "u", value: link)]
         }
@@ -941,6 +960,7 @@ private struct StoryCardView: View {
 
 private struct KeywordsWorkspaceTab: View {
     @EnvironmentObject private var state: WidgetAppState
+    @AppStorage("ai_news_show_original_titles") private var showOriginalTitles = false
     @State private var keywords: [String] = []
     @State private var draft = ""
     @State private var matches: [WidgetStory] = []
@@ -1013,7 +1033,7 @@ private struct KeywordsWorkspaceTab: View {
                             VStack(alignment: .leading, spacing: 4) {
                                 Text(story.source ?? story.feedUrl)
                                     .font(.caption2).foregroundStyle(AINewsTheme.textMuted)
-                                Text(story.title)
+                                Text(story.displayTitle(showOriginalTitle: showOriginalTitles))
                                     .font(.headline).foregroundStyle(AINewsTheme.accentBlue)
                                     .fixedSize(horizontal: false, vertical: true)
                                 if let summary = story.summary, !summary.isEmpty {
@@ -2299,6 +2319,7 @@ private struct SettingsView: View {
     @EnvironmentObject private var state: WidgetAppState
     @EnvironmentObject private var theme: ThemeSettings
     @AppStorage("ai_news_show_thumbnails") private var showThumbnails = true
+    @AppStorage("ai_news_show_original_titles") private var showOriginalTitles = false
     @State private var regionDraft = ""
     @State private var topicsDraft = ""
     @State private var newCategoryName = ""
@@ -2347,6 +2368,9 @@ private struct SettingsView: View {
                 }
             }
             .pickerStyle(.segmented)
+            Toggle("Show original headlines when neutral titles exist", isOn: $showOriginalTitles)
+                .toggleStyle(.switch)
+                .help("Off means AI-neutralized headlines replace the original title. On shows the publisher title again.")
         }
         .padding(16)
         .aiNewsPanelStyle()

@@ -153,7 +153,11 @@ public struct WidgetStory: Codable, Equatable, Hashable, Identifiable, Sendable 
     public var id: String
     public var feedUrl: String
     public var title: String
+    public var originalTitle: String?
     public var translatedTitle: String?
+    public var neutralTitle: String?
+    public var neutralTitleBg: String?
+    public var neutralTitleEn: String?
     public var link: String?
     public var source: String?
     public var publishedMs: Int64
@@ -178,7 +182,11 @@ public struct WidgetStory: Codable, Equatable, Hashable, Identifiable, Sendable 
         id: String,
         feedUrl: String,
         title: String,
+        originalTitle: String? = nil,
         translatedTitle: String? = nil,
+        neutralTitle: String? = nil,
+        neutralTitleBg: String? = nil,
+        neutralTitleEn: String? = nil,
         link: String? = nil,
         source: String? = nil,
         publishedMs: Int64 = 0,
@@ -202,7 +210,11 @@ public struct WidgetStory: Codable, Equatable, Hashable, Identifiable, Sendable 
         self.id = id
         self.feedUrl = feedUrl
         self.title = title
+        self.originalTitle = originalTitle
         self.translatedTitle = translatedTitle
+        self.neutralTitle = neutralTitle
+        self.neutralTitleBg = neutralTitleBg
+        self.neutralTitleEn = neutralTitleEn
         self.link = link
         self.source = source
         self.publishedMs = publishedMs
@@ -225,7 +237,8 @@ public struct WidgetStory: Codable, Equatable, Hashable, Identifiable, Sendable 
     }
 
     private enum CodingKeys: String, CodingKey {
-        case id, feedUrl, title, translatedTitle, link, source, publishedMs, summary, research, mood, newsType
+        case id, feedUrl, title, originalTitle, translatedTitle, neutralTitle, neutralTitleBg, neutralTitleEn
+        case link, source, publishedMs, summary, research, mood, newsType
         case isMatch, filteredOk, summaryPending, researchPending, translationPending, neutralTitlePending
         case hasSummary, hasResearch, hasTranslation, hasNeutralTitle, coverUrl, imagesEnabled
     }
@@ -235,7 +248,11 @@ public struct WidgetStory: Codable, Equatable, Hashable, Identifiable, Sendable 
         id = try container.decode(String.self, forKey: .id)
         feedUrl = try container.decode(String.self, forKey: .feedUrl)
         title = try container.decode(String.self, forKey: .title)
+        originalTitle = try container.decodeIfPresent(String.self, forKey: .originalTitle)
         translatedTitle = try container.decodeIfPresent(String.self, forKey: .translatedTitle)
+        neutralTitle = try container.decodeIfPresent(String.self, forKey: .neutralTitle)
+        neutralTitleBg = try container.decodeIfPresent(String.self, forKey: .neutralTitleBg)
+        neutralTitleEn = try container.decodeIfPresent(String.self, forKey: .neutralTitleEn)
         link = try container.decodeIfPresent(String.self, forKey: .link)
         source = try container.decodeIfPresent(String.self, forKey: .source)
         publishedMs = try container.decodeIfPresent(Int64.self, forKey: .publishedMs) ?? 0
@@ -259,6 +276,54 @@ public struct WidgetStory: Codable, Equatable, Hashable, Identifiable, Sendable 
 
     public var storyKey: String {
         "\(feedUrl)::\(id)"
+    }
+
+    private static func cleanTitle(_ value: String?) -> String? {
+        let trimmed = value?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return trimmed.isEmpty ? nil : trimmed
+    }
+
+    public var sourceOriginalTitle: String {
+        Self.cleanTitle(originalTitle) ?? title.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    public var preferredNeutralTitle: String? {
+        let original = sourceOriginalTitle
+        let candidates = [
+            neutralTitle,
+            neutralTitleBg,
+            neutralTitleEn,
+            hasNeutralTitle ? translatedTitle : nil,
+            hasNeutralTitle && title.trimmingCharacters(in: .whitespacesAndNewlines) != original ? title : nil
+        ]
+        for candidate in candidates {
+            if let cleaned = Self.cleanTitle(candidate), cleaned != original {
+                return cleaned
+            }
+        }
+        return nil
+    }
+
+    public func displayTitle(showOriginalTitle: Bool) -> String {
+        if showOriginalTitle {
+            return sourceOriginalTitle
+        }
+        return preferredNeutralTitle ?? sourceOriginalTitle
+    }
+
+    public func secondaryTitle(showOriginalTitle: Bool) -> String? {
+        let primary = displayTitle(showOriginalTitle: showOriginalTitle)
+        if showOriginalTitle {
+            guard let neutral = preferredNeutralTitle, neutral != primary else { return nil }
+            return neutral
+        }
+        guard let translated = Self.cleanTitle(translatedTitle),
+              translated != primary,
+              translated != sourceOriginalTitle
+        else {
+            return nil
+        }
+        return translated
     }
 
     public var publishedDate: Date? {
