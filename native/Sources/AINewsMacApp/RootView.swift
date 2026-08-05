@@ -791,7 +791,7 @@ private struct StoryCardView: View {
             Text(displayTitle)
                 .font(AINewsTheme.font(28, weight: .bold))
                 .foregroundStyle(AINewsTheme.accentBlue)
-                .underline(story.hasNeutralTitle, color: AINewsTheme.accentCyan.opacity(0.8))
+                .underline(story.hasNeutralTitle && !showOriginalTitles, color: AINewsTheme.accentCyan.opacity(0.8))
 
             if let secondaryTitle {
                 Text(secondaryTitle)

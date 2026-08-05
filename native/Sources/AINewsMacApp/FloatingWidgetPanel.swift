@@ -1398,7 +1398,7 @@ private struct FloatingWidgetView: View {
                     Text(displayTitle(for: current))
                         .font(widgetFont(15.5, weight: .bold))
                         .foregroundStyle(AINewsTheme.accentBlue)
-                        .underline(current.hasNeutralTitle, color: AINewsTheme.accentCyan.opacity(0.85))
+                        .underline(isShowingNeutralTitle(for: current), color: AINewsTheme.accentCyan.opacity(0.85))
                         .lineLimit(3)
                         .minimumScaleFactor(0.78)
                         .frame(maxWidth: .infinity, alignment: .leading)
@@ -1649,6 +1649,10 @@ private struct FloatingWidgetView: View {
         story.visibleSummary(showOriginalTitle: showOriginalTitles)
     }
 
+    private func isShowingNeutralTitle(for story: WidgetStory) -> Bool {
+        story.hasNeutralTitle && !showOriginalTitles
+    }
+
     private func storyRow(_ story: WidgetStory, draggable: Bool = true, minCardHeight: CGFloat? = nil) -> some View {
         ZStack(alignment: .topTrailing) {
             HStack(alignment: .top, spacing: 12) {
@@ -1680,7 +1684,7 @@ private struct FloatingWidgetView: View {
                     Text(displayTitle(for: story))
                         .font(widgetHeadline(weight: .bold))
                         .foregroundStyle(AINewsTheme.accentBlue)
-                        .underline(story.hasNeutralTitle, color: AINewsTheme.accentCyan.opacity(0.85))
+                        .underline(isShowingNeutralTitle(for: story), color: AINewsTheme.accentCyan.opacity(0.85))
                         .fixedSize(horizontal: false, vertical: true)
 
                     if let secondary = secondaryTitle(for: story) {
@@ -1740,7 +1744,7 @@ private struct FloatingWidgetView: View {
                     Text(displayTitle(for: story))
                         .font(widgetHeadline(weight: .bold))
                         .foregroundStyle(AINewsTheme.accentBlue)
-                        .underline(story.hasNeutralTitle, color: AINewsTheme.accentCyan.opacity(0.85))
+                        .underline(isShowingNeutralTitle(for: story), color: AINewsTheme.accentCyan.opacity(0.85))
                         .lineLimit(3)
                     if let summary = visibleSummary(for: story), !summary.isEmpty {
                         Text(summary)
@@ -1938,27 +1942,32 @@ private struct FloatingWidgetView: View {
     }
 
     private func neutralizedTitleBadge(compact: Bool = false) -> some View {
-        HStack(spacing: 4) {
-            Image(systemName: "checkmark.seal.fill")
-            if !compact {
-                Text("Neutral title")
-            } else {
-                Text("Neutral")
+        Button {
+            showOriginalTitles.toggle()
+        } label: {
+            HStack(spacing: 4) {
+                Image(systemName: showOriginalTitles ? "text.quote" : "checkmark.seal.fill")
+                if !compact {
+                    Text(showOriginalTitles ? "Original title" : "Neutral title")
+                } else {
+                    Text(showOriginalTitles ? "Original" : "Neutral")
+                }
             }
+            .font(widgetCaption2(weight: .bold))
+            .foregroundStyle(AINewsTheme.accentCyan)
+            .padding(.horizontal, compact ? 6 : 8)
+            .padding(.vertical, 2)
+            .background(
+                Capsule(style: .continuous)
+                    .fill(AINewsTheme.accentCyan.opacity(showOriginalTitles ? 0.08 : 0.15))
+            )
+            .overlay(
+                Capsule(style: .continuous)
+                    .stroke(AINewsTheme.accentCyan.opacity(showOriginalTitles ? 0.38 : 0.55), lineWidth: 1)
+            )
         }
-        .font(widgetCaption2(weight: .bold))
-        .foregroundStyle(AINewsTheme.accentCyan)
-        .padding(.horizontal, compact ? 6 : 8)
-        .padding(.vertical, 2)
-        .background(
-            Capsule(style: .continuous)
-                .fill(AINewsTheme.accentCyan.opacity(0.15))
-        )
-        .overlay(
-            Capsule(style: .continuous)
-                .stroke(AINewsTheme.accentCyan.opacity(0.55), lineWidth: 1)
-        )
-        .help("This headline was neutralized by AI.")
+        .buttonStyle(.plain)
+        .help(showOriginalTitles ? "Showing the original headline. Click to show the neutral headline." : "Showing the AI-neutralized headline. Click to show the original headline.")
     }
 
     private func switchLayoutMode(to mode: FloatingWidgetLayoutMode) {
