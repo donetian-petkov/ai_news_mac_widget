@@ -34,6 +34,8 @@ model NewsItemRecord {
   neutralTitleEn     String?
   neutralTitleStatus String?
   neutralTitleReason String?
+  neutralTitleClassification String?
+  neutralTitleConfidence Float?
   neutralTitleCheckedAtMs BigInt?
   coverUrl           String?
   link               String

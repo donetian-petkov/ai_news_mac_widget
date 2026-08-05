@@ -31,6 +31,10 @@ type ProductNews = {
   neutralTitle?: string;
   neutralTitleBg?: string;
   neutralTitleEn?: string;
+  neutralTitleStatus?: string;
+  neutralTitleReason?: string;
+  neutralTitleClassification?: string;
+  neutralTitleConfidence?: number;
   link?: string;
   source?: string;
   publishedMs?: number;
@@ -56,6 +60,10 @@ type PersistedProductNews = {
   neutralTitle: string | null;
   neutralTitleBg: string | null;
   neutralTitleEn: string | null;
+  neutralTitleStatus: string | null;
+  neutralTitleReason: string | null;
+  neutralTitleClassification: string | null;
+  neutralTitleConfidence: number | null;
   link: string;
   source: string;
   publishedMs: bigint | number;
@@ -174,6 +182,10 @@ function persistedNewsToProductNews(row: PersistedProductNews): ProductNews {
     neutralTitle: row.neutralTitle || undefined,
     neutralTitleBg: row.neutralTitleBg || undefined,
     neutralTitleEn: row.neutralTitleEn || undefined,
+    neutralTitleStatus: row.neutralTitleStatus || undefined,
+    neutralTitleReason: row.neutralTitleReason || undefined,
+    neutralTitleClassification: row.neutralTitleClassification || undefined,
+    neutralTitleConfidence: typeof row.neutralTitleConfidence === 'number' ? row.neutralTitleConfidence : undefined,
     link: row.link,
     source: row.source,
     publishedMs: Number(row.publishedMs),
@@ -315,6 +327,10 @@ function toWidgetStory(news: ProductNews) {
     neutralTitle: neutralOriginal || null,
     neutralTitleBg: neutralBg || null,
     neutralTitleEn: neutralEn || null,
+    neutralTitleStatus: trimStoryText(news.neutralTitleStatus) || null,
+    neutralTitleReason: trimStoryText(news.neutralTitleReason) || null,
+    neutralTitleClassification: trimStoryText(news.neutralTitleClassification) || null,
+    neutralTitleConfidence: typeof news.neutralTitleConfidence === 'number' ? news.neutralTitleConfidence : null,
     link: trimStoryText(news.link) || null,
     source: trimStoryText(news.source) || null,
     publishedMs: Number(news.publishedMs || 0) || 0,

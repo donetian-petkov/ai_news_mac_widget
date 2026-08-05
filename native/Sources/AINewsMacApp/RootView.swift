@@ -2504,7 +2504,7 @@ private struct SettingsView: View {
                         Toggle("Neutral titles", isOn: $state.globalAiDefaults.neutralTitlesEnabled)
                     }
                     .toggleStyle(.switch)
-                    Text("Neutral titles add about 250 AI tokens per rewritten story. Low: manual only. Standard: visible/on-demand only. High: background neutralization for new stories.")
+                    Text("Neutral titles add about 500-900 AI tokens per judged story. Low: manual only. Standard: visible/on-demand only. High: background neutralization for new stories.")
                         .font(.caption)
                         .foregroundStyle(AINewsTheme.textMuted)
                     Button("Apply to all feeds") {
@@ -3002,7 +3002,7 @@ private struct CategoryAiControls: View {
                 Toggle("Research", isOn: $settings.researchEnabled)
                 Toggle("Translations", isOn: $settings.translationEnabled)
                 Toggle("Neutral titles", isOn: $settings.neutralTitlesEnabled)
-                Text("Neutral titles cost about +250 tokens/story. High budget enables background rewriting; Standard keeps it visible/on-demand; Low keeps it manual.")
+                Text("Neutral titles cost about +500-900 tokens/story. High budget enables background rewriting; Standard keeps it visible/on-demand; Low keeps it manual.")
                     .font(.caption)
                     .foregroundStyle(AINewsTheme.textMuted)
                 Button("Apply to \(feedCount) feed\(feedCount == 1 ? "" : "s")") {
@@ -3176,7 +3176,7 @@ private struct FeedSettingsCard: View {
             .opacity(draft.settings.aiEnabled ? 1 : 0.55)
 
             if draft.settings.neutralTitlesEnabled {
-                Text("Neutral titles: about +250 AI tokens per rewritten story. Low runs manual only; Standard runs visible/on-demand; High also runs background rewrites for new stories.")
+                Text("Neutral titles: about +500-900 AI tokens per judged story. Low runs manual only; Standard runs visible/on-demand; High also runs background rewrites for new stories.")
                     .font(.caption)
                     .foregroundStyle(AINewsTheme.textMuted)
             }

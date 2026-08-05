@@ -158,6 +158,10 @@ public struct WidgetStory: Codable, Equatable, Hashable, Identifiable, Sendable 
     public var neutralTitle: String?
     public var neutralTitleBg: String?
     public var neutralTitleEn: String?
+    public var neutralTitleStatus: String?
+    public var neutralTitleReason: String?
+    public var neutralTitleClassification: String?
+    public var neutralTitleConfidence: Double?
     public var link: String?
     public var source: String?
     public var publishedMs: Int64
@@ -187,6 +191,10 @@ public struct WidgetStory: Codable, Equatable, Hashable, Identifiable, Sendable 
         neutralTitle: String? = nil,
         neutralTitleBg: String? = nil,
         neutralTitleEn: String? = nil,
+        neutralTitleStatus: String? = nil,
+        neutralTitleReason: String? = nil,
+        neutralTitleClassification: String? = nil,
+        neutralTitleConfidence: Double? = nil,
         link: String? = nil,
         source: String? = nil,
         publishedMs: Int64 = 0,
@@ -215,6 +223,10 @@ public struct WidgetStory: Codable, Equatable, Hashable, Identifiable, Sendable 
         self.neutralTitle = neutralTitle
         self.neutralTitleBg = neutralTitleBg
         self.neutralTitleEn = neutralTitleEn
+        self.neutralTitleStatus = neutralTitleStatus
+        self.neutralTitleReason = neutralTitleReason
+        self.neutralTitleClassification = neutralTitleClassification
+        self.neutralTitleConfidence = neutralTitleConfidence
         self.link = link
         self.source = source
         self.publishedMs = publishedMs
@@ -238,6 +250,7 @@ public struct WidgetStory: Codable, Equatable, Hashable, Identifiable, Sendable 
 
     private enum CodingKeys: String, CodingKey {
         case id, feedUrl, title, originalTitle, translatedTitle, neutralTitle, neutralTitleBg, neutralTitleEn
+        case neutralTitleStatus, neutralTitleReason, neutralTitleClassification, neutralTitleConfidence
         case link, source, publishedMs, summary, research, mood, newsType
         case isMatch, filteredOk, summaryPending, researchPending, translationPending, neutralTitlePending
         case hasSummary, hasResearch, hasTranslation, hasNeutralTitle, coverUrl, imagesEnabled
@@ -253,6 +266,10 @@ public struct WidgetStory: Codable, Equatable, Hashable, Identifiable, Sendable 
         neutralTitle = try container.decodeIfPresent(String.self, forKey: .neutralTitle)
         neutralTitleBg = try container.decodeIfPresent(String.self, forKey: .neutralTitleBg)
         neutralTitleEn = try container.decodeIfPresent(String.self, forKey: .neutralTitleEn)
+        neutralTitleStatus = try container.decodeIfPresent(String.self, forKey: .neutralTitleStatus)
+        neutralTitleReason = try container.decodeIfPresent(String.self, forKey: .neutralTitleReason)
+        neutralTitleClassification = try container.decodeIfPresent(String.self, forKey: .neutralTitleClassification)
+        neutralTitleConfidence = try container.decodeIfPresent(Double.self, forKey: .neutralTitleConfidence)
         link = try container.decodeIfPresent(String.self, forKey: .link)
         source = try container.decodeIfPresent(String.self, forKey: .source)
         publishedMs = try container.decodeIfPresent(Int64.self, forKey: .publishedMs) ?? 0
