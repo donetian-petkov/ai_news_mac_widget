@@ -68,6 +68,21 @@ npm run prisma:migrate
 npm run start:backend
 ```
 
+## AI Budget Plan
+
+Neutral title rewriting is one extra AI request for each story that gets rewritten. The current prompt sends the source, original title, optional Bulgarian/English titles, summary, and RSS context, then asks for strict JSON. Budget estimate:
+
+- About `250` AI tokens per neutralized story.
+- About `2.5k` tokens for 10 stories.
+- About `25k` tokens for 100 stories.
+- About `250k` tokens for 1,000 stories.
+
+Budget behavior:
+
+- `Low` - neutral titles are manual only.
+- `Standard` - neutral titles run for visible/on-demand stories only.
+- `High` - neutral titles also run in the background for newly fetched stories and backfills.
+
 ## Runtime Files And Logs
 
 - Runtime backend URL: `/tmp/ai-news-mac-widget-runtime.json`

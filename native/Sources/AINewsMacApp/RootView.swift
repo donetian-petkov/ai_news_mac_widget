@@ -2504,6 +2504,9 @@ private struct SettingsView: View {
                         Toggle("Neutral titles", isOn: $state.globalAiDefaults.neutralTitlesEnabled)
                     }
                     .toggleStyle(.switch)
+                    Text("Neutral titles add about 250 AI tokens per rewritten story. Low: manual only. Standard: visible/on-demand only. High: background neutralization for new stories.")
+                        .font(.caption)
+                        .foregroundStyle(AINewsTheme.textMuted)
                     Button("Apply to all feeds") {
                         Task { await state.saveGlobalAiDefaults() }
                     }
@@ -2999,6 +3002,9 @@ private struct CategoryAiControls: View {
                 Toggle("Research", isOn: $settings.researchEnabled)
                 Toggle("Translations", isOn: $settings.translationEnabled)
                 Toggle("Neutral titles", isOn: $settings.neutralTitlesEnabled)
+                Text("Neutral titles cost about +250 tokens/story. High budget enables background rewriting; Standard keeps it visible/on-demand; Low keeps it manual.")
+                    .font(.caption)
+                    .foregroundStyle(AINewsTheme.textMuted)
                 Button("Apply to \(feedCount) feed\(feedCount == 1 ? "" : "s")") {
                     Task { await state.applyAiSettings(to: category, settings: settings) }
                 }
@@ -3168,6 +3174,12 @@ private struct FeedSettingsCard: View {
             .toggleStyle(.switch)
             .disabled(!draft.settings.aiEnabled)
             .opacity(draft.settings.aiEnabled ? 1 : 0.55)
+
+            if draft.settings.neutralTitlesEnabled {
+                Text("Neutral titles: about +250 AI tokens per rewritten story. Low runs manual only; Standard runs visible/on-demand; High also runs background rewrites for new stories.")
+                    .font(.caption)
+                    .foregroundStyle(AINewsTheme.textMuted)
+            }
 
             if let progress = state.aiProgress[draft.url], progress.total > 0 {
                 VStack(alignment: .leading, spacing: 3) {

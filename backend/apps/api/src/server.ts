@@ -5149,6 +5149,16 @@ function budgetAllowsAutoResearch(b: BudgetMode) {
   return b !== 'low';
 }
 
+function budgetAllowsVisibleNeutralTitles(b: BudgetMode) {
+  // Low mode keeps neutral title rewrites strictly manual.
+  return b !== 'low';
+}
+
+function budgetAllowsBackgroundNeutralTitles(b: BudgetMode) {
+  // Neutral rewrites add one model call per story, so feed-wide background work is High only.
+  return b === 'high';
+}
+
 // --------------- Optional article fetch + extraction ---------------
 async function fetchWithTimeout(url: string, options: RequestInit, timeoutMs: number) {
   const ctrl = new AbortController();
@@ -6396,6 +6406,8 @@ function enqueueNeutralTitleBackfill(feedUrl?: string, manual = false, maxItems 
     if (hiddenIds.has(it.id)) continue;
     if (!shouldUseNeutralTitlesForItem(it)) continue;
     if (!needsTitleNeutralization(it)) continue;
+    const itemBudget = feedSettings.get(it.feedUrl)?.budget || 'standard';
+    if (!manual && !budgetAllowsBackgroundNeutralTitles(itemBudget)) continue;
     if (hasTitleNeutralizeJobQueuedOrRunning(it.id, it.feedUrl)) continue;
 
     enqueueJob({ kind: 'title_neutralize', id: it.id, feedUrl: it.feedUrl, manual });
@@ -6668,6 +6680,14 @@ async function runOneJob(job: AiJob) {
     }
 
     if (job.kind === 'title_neutralize') {
+      if (!job.manual && job.viewport && !budgetAllowsVisibleNeutralTitles(budget)) {
+        markSkip('neutral_title_budget_low');
+        return;
+      }
+      if (!job.manual && !job.viewport && !budgetAllowsBackgroundNeutralTitles(budget)) {
+        markSkip('budget_not_high');
+        return;
+      }
       if (!job.manual && !shouldUseNeutralTitlesForItem(it)) {
         markSkip('neutral_titles_disabled_for_feed');
         return;
