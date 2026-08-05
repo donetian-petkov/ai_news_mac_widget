@@ -29,6 +29,9 @@ model NewsItemRecord {
   title              String
   titleBg            String?
   titleEn            String?
+  neutralTitle       String?
+  neutralTitleBg     String?
+  neutralTitleEn     String?
   coverUrl           String?
   link               String
   source             String

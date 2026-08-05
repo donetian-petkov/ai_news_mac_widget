@@ -272,6 +272,7 @@ type FeedSettings = {
   summaryEnabled: boolean;
   translationEnabled: boolean;
   researchEnabled: boolean;
+  neutralTitlesEnabled: boolean;
   discordWebhookUrl?: string;
 
   // auto-research guardrails
@@ -294,6 +295,9 @@ type News = {
   title: string;
   titleBg?: string;
   titleEn?: string;
+  neutralTitle?: string;
+  neutralTitleBg?: string;
+  neutralTitleEn?: string;
   coverUrl?: string;
   link: string;
   source: string;
@@ -311,6 +315,7 @@ type News = {
   research?: string;
   researchPending?: boolean;
   titleTranslatePending?: boolean;
+  neutralTitlePending?: boolean;
   insightStatus?: InsightStatus;
   insights?: NewsInsights;
   topicHits?: string[];
@@ -909,6 +914,7 @@ app.put('/api/runtime/feed-settings', async (req, res) => {
       summaryEnabled: typeof body.summaryEnabled === 'boolean' ? body.summaryEnabled : current.summaryEnabled,
       translationEnabled: typeof body.translationEnabled === 'boolean' ? body.translationEnabled : current.translationEnabled,
       researchEnabled: typeof body.researchEnabled === 'boolean' ? body.researchEnabled : current.researchEnabled,
+      neutralTitlesEnabled: typeof body.neutralTitlesEnabled === 'boolean' ? body.neutralTitlesEnabled : current.neutralTitlesEnabled,
       discordWebhookUrl: body.discordWebhookUrl === null ? '' : String(body.discordWebhookUrl ?? current.discordWebhookUrl ?? ''),
       budget: body.budget === 'low' || body.budget === 'standard' || body.budget === 'high'
         ? body.budget
@@ -922,6 +928,9 @@ app.put('/api/runtime/feed-settings', async (req, res) => {
     feedSettings.set(feedUrl, next);
     customizedFeedUrls.add(feedUrl);
     broadcastConfig();
+    if (next.neutralTitlesEnabled) {
+      enqueueNeutralTitleBackfill(feedUrl, true, 80);
+    }
     markDirty();
 
     res.json({
@@ -944,10 +953,14 @@ app.put('/api/runtime/ai-defaults', async (req, res) => {
     globalAiDefaults = {
       summaryEnabled: typeof body.summaryEnabled === 'boolean' ? body.summaryEnabled : globalAiDefaults.summaryEnabled,
       researchEnabled: typeof body.researchEnabled === 'boolean' ? body.researchEnabled : globalAiDefaults.researchEnabled,
-      translationEnabled: typeof body.translationEnabled === 'boolean' ? body.translationEnabled : globalAiDefaults.translationEnabled
+      translationEnabled: typeof body.translationEnabled === 'boolean' ? body.translationEnabled : globalAiDefaults.translationEnabled,
+      neutralTitlesEnabled: typeof body.neutralTitlesEnabled === 'boolean' ? body.neutralTitlesEnabled : globalAiDefaults.neutralTitlesEnabled
     };
     // Push the new baseline onto every feed the user hasn't individually customized.
     applyGlobalAiDefaultsToFeeds();
+    if (globalAiDefaults.neutralTitlesEnabled) {
+      enqueueNeutralTitleBackfill(undefined, true, 120);
+    }
     broadcastConfig();
     markDirty();
     res.json({ ok: true, aiDefaults: globalAiDefaults });
@@ -1211,6 +1224,10 @@ productFeatures = registerProductFeatureApi({
       enqueueJob({ kind: 'title_translate', id: item.id, feedUrl: item.feedUrl, manual: true });
       return true;
     }
+    if (action === 'neutral_title') {
+      enqueueJob({ kind: 'title_neutralize', id: item.id, feedUrl: item.feedUrl, manual: true });
+      return true;
+    }
     return false;
   },
   refreshFeed: async feedUrl => {
@@ -1232,7 +1249,7 @@ app.post('/api/maintenance/regenerate', async (req, res) => {
 
   const body = (req.body || {}) as Record<string, unknown>;
   const kindRaw = String(body.kind || 'all').trim();
-  const kind = ['summary', 'translation', 'research', 'all'].includes(kindRaw) ? kindRaw as 'summary' | 'translation' | 'research' | 'all' : 'all';
+  const kind = ['summary', 'translation', 'neutral_title', 'research', 'all'].includes(kindRaw) ? kindRaw as 'summary' | 'translation' | 'neutral_title' | 'research' | 'all' : 'all';
   const feedUrl = String(body.feedUrl || '').trim();
   const limitRaw = Number(body.limit);
   const limit = Number.isFinite(limitRaw) ? Math.max(1, Math.min(6000, Math.floor(limitRaw))) : 80;
@@ -1240,6 +1257,7 @@ app.post('/api/maintenance/regenerate', async (req, res) => {
   const jobs = new Set<AiJobKind>();
   if (kind === 'summary' || kind === 'all') jobs.add('summary');
   if (kind === 'translation' || kind === 'all') jobs.add('title_translate');
+  if (kind === 'neutral_title' || kind === 'all') jobs.add('title_neutralize');
   if (kind === 'research' || kind === 'all') jobs.add('research');
 
   const selected = recent
@@ -1253,8 +1271,8 @@ app.post('/api/maintenance/regenerate', async (req, res) => {
     })
     .slice(0, limit);
 
-  const queued = { summary: 0, translation: 0, research: 0 };
-  const skipped = { summary: 0, translation: 0, research: 0 };
+  const queued = { summary: 0, translation: 0, neutralTitle: 0, research: 0 };
+  const skipped = { summary: 0, translation: 0, neutralTitle: 0, research: 0 };
   const writes: Array<Promise<unknown>> = [];
 
   for (const item of selected) {
@@ -1282,6 +1300,22 @@ app.post('/api/maintenance/regenerate', async (req, res) => {
         }
         enqueueJob({ kind: 'title_translate', id: item.id, feedUrl: item.feedUrl, manual: true });
         if (hasTitleTranslateJobQueuedOrRunning(item.id, item.feedUrl)) queued.translation += 1;
+        changed = true;
+      }
+    }
+
+    if (jobs.has('title_neutralize')) {
+      const hasNeutralTitle = hasNeutralTitleSet(item);
+      if (activeModel('summary') === 'none' || !shouldUseNeutralTitlesForItem(item) || hasTitleNeutralizeJobQueuedOrRunning(item.id, item.feedUrl) || (missingOnly && hasNeutralTitle)) {
+        skipped.neutralTitle += 1;
+      } else {
+        if (!missingOnly) {
+          item.neutralTitle = undefined;
+          item.neutralTitleBg = undefined;
+          item.neutralTitleEn = undefined;
+        }
+        enqueueJob({ kind: 'title_neutralize', id: item.id, feedUrl: item.feedUrl, manual: true });
+        if (hasTitleNeutralizeJobQueuedOrRunning(item.id, item.feedUrl)) queued.neutralTitle += 1;
         changed = true;
       }
     }
@@ -1344,7 +1378,7 @@ app.get('/api/ops/ai-jobs', (req, res) => {
   const limit = Number.isFinite(limitRaw) ? Math.max(1, Math.min(1000, Math.floor(limitRaw))) : 120;
   const deadLimit = Number.isFinite(deadLimitRaw) ? Math.max(1, Math.min(400, Math.floor(deadLimitRaw))) : 40;
 
-  const kinds: AiJobKind[] = ['summary', 'title_translate', 'research', 'mood', 'news_type'];
+  const kinds: AiJobKind[] = ['summary', 'title_translate', 'title_neutralize', 'research', 'mood', 'news_type'];
   const stages: AiJobLogStage[] = ['enqueue', 'start', 'success', 'skip', 'drop', 'error'];
   const kindFilter = kinds.includes(kindRaw as AiJobKind) ? (kindRaw as AiJobKind) : '';
   const stageFilter = stages.includes(stageRaw as AiJobLogStage) ? (stageRaw as AiJobLogStage) : '';
@@ -2268,6 +2302,9 @@ function newsFromPersistedRow(row: PersistedNewsRow): NewsInternal {
     title: row.title,
     titleBg: row.titleBg || undefined,
     titleEn: row.titleEn || undefined,
+    neutralTitle: row.neutralTitle || undefined,
+    neutralTitleBg: row.neutralTitleBg || undefined,
+    neutralTitleEn: row.neutralTitleEn || undefined,
     coverUrl: row.coverUrl || undefined,
     link: row.link,
     source: row.source,
@@ -2298,6 +2335,9 @@ function buildPersistedNewsUpdate(it: NewsInternal): Prisma.NewsItemRecordUnchec
     title: it.title,
     titleBg: it.titleBg || undefined,
     titleEn: it.titleEn || undefined,
+    neutralTitle: it.neutralTitle || undefined,
+    neutralTitleBg: it.neutralTitleBg || undefined,
+    neutralTitleEn: it.neutralTitleEn || undefined,
     coverUrl: it.coverUrl || undefined,
     link: it.link,
     source: it.source,
@@ -2697,11 +2737,13 @@ type GlobalAiDefaults = {
   summaryEnabled: boolean;
   researchEnabled: boolean;
   translationEnabled: boolean;
+  neutralTitlesEnabled: boolean;
 };
 let globalAiDefaults: GlobalAiDefaults = {
   summaryEnabled: SUMMARY_DEFAULT_ALL,
   researchEnabled: RESEARCH_DEFAULT_ALL,
-  translationEnabled: true
+  translationEnabled: true,
+  neutralTitlesEnabled: false
 };
 // Feed URLs whose AI settings the user set explicitly. Global changes leave these alone.
 const customizedFeedUrls = new Set<string>();
@@ -2715,6 +2757,7 @@ function applyGlobalAiDefaultsToFeeds() {
     current.summaryEnabled = globalAiDefaults.summaryEnabled;
     current.researchEnabled = globalAiDefaults.researchEnabled;
     current.translationEnabled = globalAiDefaults.translationEnabled;
+    current.neutralTitlesEnabled = globalAiDefaults.neutralTitlesEnabled;
     feedSettings.set(fi.url, current);
   }
   customizedFeedUrls.clear();
@@ -2779,11 +2822,24 @@ function normalizeDiscordTitleLanguage(value: unknown): TitleDisplayLanguage {
   return value === 'bg' || value === 'en' || value === 'original' ? value : 'original';
 }
 
-function chooseDiscordTitle(item: NewsInternal, preferred: TitleDisplayLanguage, translationEnabled: boolean): string {
+function chooseDiscordTitle(
+  item: NewsInternal,
+  preferred: TitleDisplayLanguage,
+  translationEnabled: boolean,
+  neutralTitlesEnabled = false
+): string {
   const original = compactDiscordText(item.title || '', 260) || '(untitled)';
   const bg = compactDiscordText(item.titleBg || '', 260);
   const en = compactDiscordText(item.titleEn || '', 260);
+  const neutralOriginal = compactDiscordText(item.neutralTitle || '', 260);
+  const neutralBg = compactDiscordText(item.neutralTitleBg || '', 260);
+  const neutralEn = compactDiscordText(item.neutralTitleEn || '', 260);
 
+  if (neutralTitlesEnabled) {
+    if (translationEnabled && preferred === 'bg') return neutralBg || neutralEn || neutralOriginal || bg || en || original;
+    if (translationEnabled && preferred === 'en') return neutralEn || neutralBg || neutralOriginal || en || bg || original;
+    return neutralOriginal || neutralBg || neutralEn || original;
+  }
   if (!translationEnabled) return original;
   if (preferred === 'bg') return bg || en || original;
   if (preferred === 'en') return en || bg || original;
@@ -2794,7 +2850,12 @@ function buildDiscordEmbed(item: NewsInternal, feed: FeedInfo, feedConfig: FeedS
   const source = String(item.source || feed.label || feed.url).trim() || 'Unknown source';
   const aiEnabledForFeed = feedConfig.aiEnabled !== false;
   const translationEnabled = aiEnabledForFeed && feedConfig.translationEnabled !== false;
-  const preferredTitle = chooseDiscordTitle(item, normalizeDiscordTitleLanguage(titleDisplayLanguage), translationEnabled);
+  const preferredTitle = chooseDiscordTitle(
+    item,
+    normalizeDiscordTitleLanguage(titleDisplayLanguage),
+    translationEnabled,
+    aiEnabledForFeed && feedConfig.neutralTitlesEnabled === true
+  );
   const summaryEnabled = aiEnabledForFeed && feedConfig.summaryEnabled !== false;
   const researchEnabled = aiEnabledForFeed && feedConfig.researchEnabled !== false;
   const fields: Array<{ name: string; value: string; inline?: boolean }> = [];
@@ -3087,12 +3148,15 @@ function defaultSettingsForFeed(fi: FeedInfo): FeedSettings {
     fi.url === FILTERED_FEED_URL ? RESEARCH_DEFAULT_FILTERED : globalAiDefaults.researchEnabled;
   const translationEnabled =
     fi.url === FILTERED_FEED_URL ? true : globalAiDefaults.translationEnabled;
+  const neutralTitlesEnabled =
+    fi.url === FILTERED_FEED_URL ? false : globalAiDefaults.neutralTitlesEnabled;
 
   return {
     aiEnabled: true,
     summaryEnabled,
     translationEnabled,
     researchEnabled,
+    neutralTitlesEnabled,
     discordWebhookUrl: undefined,
     budget: 'standard',
     sortMode: 'newest',
@@ -3112,6 +3176,7 @@ function normalizeFeedSettings(raw: Partial<FeedSettings> | undefined, fi: FeedI
     summaryEnabled: typeof raw?.summaryEnabled === 'boolean' ? raw.summaryEnabled : base.summaryEnabled,
     translationEnabled: raw?.translationEnabled !== false,
     researchEnabled: typeof raw?.researchEnabled === 'boolean' ? raw.researchEnabled : base.researchEnabled,
+    neutralTitlesEnabled: typeof raw?.neutralTitlesEnabled === 'boolean' ? raw.neutralTitlesEnabled : base.neutralTitlesEnabled,
     discordWebhookUrl: normalizeDiscordWebhookUrl(raw?.discordWebhookUrl),
     budget: raw?.budget === 'low' || raw?.budget === 'standard' || raw?.budget === 'high'
       ? raw.budget
@@ -4927,6 +4992,51 @@ function needsTitleTranslation(
   return !hasValidOppositeLanguageTitle(originalTitle, titleBgRaw, titleEnRaw);
 }
 
+type NeutralizedTitleSet = { original?: string; bg?: string; en?: string };
+
+function trimNeutralTitle(raw: unknown): string | undefined {
+  const text = normalizeTitleValue(raw);
+  if (!text) return undefined;
+  if (text.length <= 220) return text;
+  const clipped = text.slice(0, 220).replace(/\s+\S*$/, '').trim();
+  return clipped || text.slice(0, 220).trim();
+}
+
+function parseNeutralizedTitles(raw: string): NeutralizedTitleSet | undefined {
+  const text = String(raw || '').trim();
+  if (!text) return undefined;
+  const normalized = text
+    .replace(/^```(?:json)?\s*/i, '')
+    .replace(/\s*```$/i, '')
+    .trim();
+
+  const tryParse = (candidate: string): NeutralizedTitleSet | undefined => {
+    try {
+      const parsed = JSON.parse(candidate) as Record<string, unknown>;
+      const original = trimNeutralTitle(parsed.original);
+      const bg = trimNeutralTitle(parsed.bg);
+      const en = trimNeutralTitle(parsed.en);
+      if (!original && !bg && !en) return undefined;
+      return { original, bg, en };
+    } catch {
+      return undefined;
+    }
+  };
+
+  const direct = tryParse(normalized);
+  if (direct) return direct;
+  const match = normalized.match(/\{[\s\S]*\}/);
+  return match ? tryParse(match[0]) : undefined;
+}
+
+function hasNeutralTitleSet(it: NewsInternal): boolean {
+  return !!(trimNeutralTitle(it.neutralTitle) || trimNeutralTitle(it.neutralTitleBg) || trimNeutralTitle(it.neutralTitleEn));
+}
+
+function needsTitleNeutralization(it: NewsInternal): boolean {
+  return !hasNeutralTitleSet(it);
+}
+
 function normalizeMood(raw: string): Mood | undefined {
   const s = String(raw || '')
     .trim()
@@ -5403,6 +5513,40 @@ async function translateTitleBilingual(
   return { bg, en };
 }
 
+async function neutralizeTitleSet(item: NewsInternal, budget: BudgetMode): Promise<NeutralizedTitleSet | undefined> {
+  const originalTitle = normalizeTitleValue(item.title);
+  if (!originalTitle) return undefined;
+  const bgTitle = normalizeTitleValue(item.titleBg || '');
+  const enTitle = normalizeTitleValue(item.titleEn || '');
+  const maxTokens = Math.max(120, Math.min(260, budgetToTokensSummary(budget) + 90));
+
+  const input = [
+    'Rewrite news headlines into neutral, factual headlines.',
+    'Remove clickbait, rage-bait, hype, vague teasers, loaded adjectives, and emotional framing.',
+    'Preserve all concrete facts: names, places, numbers, dates, roles, outcomes, and uncertainty.',
+    'Do not invent facts. Do not make the headline longer than necessary.',
+    'Keep each output in the same language as the corresponding input title.',
+    'If a title is already neutral, return it unchanged.',
+    'Return strict JSON only with keys "original", "bg", and "en".',
+    `Source: ${item.source}`,
+    `Original headline: ${originalTitle}`,
+    bgTitle ? `Bulgarian headline: ${bgTitle}` : '',
+    enTitle ? `English headline: ${enTitle}` : '',
+    item.summary ? `Summary: ${item.summary}` : '',
+    item.__ctx ? `RSS context: ${item.__ctx}` : ''
+  ].filter(Boolean).join('\n');
+
+  const text = await generateAiText(
+    'summary',
+    input,
+    maxTokens,
+    0,
+    `Neutral title: ${item.source} - ${originalTitle}`,
+    { itemId: item.id, feedUrl: item.feedUrl, source: item.source, title: originalTitle }
+  );
+  return text ? parseNeutralizedTitles(text) : undefined;
+}
+
 async function oneItemResearch(
   title: string,
   source: string,
@@ -5565,6 +5709,9 @@ function toNewsWire(it: NewsInternal): News {
     title: it.title,
     titleBg: it.titleBg,
     titleEn: it.titleEn,
+    neutralTitle: it.neutralTitle,
+    neutralTitleBg: it.neutralTitleBg,
+    neutralTitleEn: it.neutralTitleEn,
     coverUrl: it.coverUrl,
     link: it.link,
     source: it.source,
@@ -5580,6 +5727,7 @@ function toNewsWire(it: NewsInternal): News {
     research: it.research,
     researchPending: hasResearchJobQueuedOrRunning(it.id, it.feedUrl),
     titleTranslatePending: hasTitleTranslateJobQueuedOrRunning(it.id, it.feedUrl),
+    neutralTitlePending: hasTitleNeutralizeJobQueuedOrRunning(it.id, it.feedUrl),
     insightStatus: it.insightStatus,
     insights: it.insights,
     topicHits: it.topicHits,
@@ -5672,8 +5820,18 @@ function shouldHaveResearch(it: NewsInternal): boolean {
   return ownFeedResearch || filteredResearch;
 }
 
+function shouldUseNeutralTitlesForItem(it: NewsInternal): boolean {
+  const ownFeedNeutral = isFeedAiEnabled(it.feedUrl) && feedSettings.get(it.feedUrl)?.neutralTitlesEnabled === true;
+  const filteredNeutral =
+    isFeedAiEnabled(FILTERED_FEED_URL) &&
+    feedSettings.get(FILTERED_FEED_URL)?.neutralTitlesEnabled === true &&
+    !!it.isMatch &&
+    it.filteredOk !== false;
+  return ownFeedNeutral || filteredNeutral;
+}
+
 // ---------------- AI JOB QUEUE (non-blocking) ----------------
-type AiJobKind = 'summary' | 'title_translate' | 'research' | 'mood' | 'news_type';
+type AiJobKind = 'summary' | 'title_translate' | 'title_neutralize' | 'research' | 'mood' | 'news_type';
 type AiJobInput = { kind: AiJobKind; id: string; feedUrl: string; manual?: boolean; viewport?: boolean };
 type AiJob = AiJobInput & { enqueuedAtMs: number };
 type DeadLetterAiJob = {
@@ -5784,9 +5942,12 @@ const AI_SUMMARY_BACKLOG_PAUSE_TITLE_TRANSLATE = Math.max(
 );
 const AI_TITLE_RECOVERY_INTERVAL_MS = Math.max(3_000, Number.parseInt(process.env.AI_TITLE_RECOVERY_INTERVAL_MS ?? '9_000', 10) || 9_000);
 const AI_TITLE_RECOVERY_BATCH = Math.max(1, Math.min(120, Number.parseInt(process.env.AI_TITLE_RECOVERY_BATCH ?? '32', 10) || 32));
+const AI_NEUTRAL_TITLE_RECOVERY_INTERVAL_MS = Math.max(3_000, Number.parseInt(process.env.AI_NEUTRAL_TITLE_RECOVERY_INTERVAL_MS ?? '10_000', 10) || 10_000);
+const AI_NEUTRAL_TITLE_RECOVERY_BATCH = Math.max(1, Math.min(120, Number.parseInt(process.env.AI_NEUTRAL_TITLE_RECOVERY_BATCH ?? '32', 10) || 32));
 const AI_RESEARCH_RECOVERY_INTERVAL_MS = Math.max(4_000, Number.parseInt(process.env.AI_RESEARCH_RECOVERY_INTERVAL_MS ?? '12_000', 10) || 12_000);
 const AI_RESEARCH_RECOVERY_BATCH = Math.max(1, Math.min(80, Number.parseInt(process.env.AI_RESEARCH_RECOVERY_BATCH ?? '18', 10) || 18));
 const AI_TITLE_TRANSLATE_TIMEOUT_MS = Math.max(6_000, Number.parseInt(process.env.AI_TITLE_TRANSLATE_TIMEOUT_MS ?? '24_000', 10) || 24_000);
+const AI_TITLE_NEUTRALIZE_TIMEOUT_MS = Math.max(6_000, Number.parseInt(process.env.AI_TITLE_NEUTRALIZE_TIMEOUT_MS ?? '24_000', 10) || 24_000);
 const AI_RESEARCH_TIMEOUT_MS = Math.max(8_000, Number.parseInt(process.env.AI_RESEARCH_TIMEOUT_MS ?? '45_000', 10) || 45_000);
 const AI_RESEARCH_TIMEOUT_MANUAL_MS = Math.max(
   AI_RESEARCH_TIMEOUT_MS,
@@ -5804,6 +5965,7 @@ const AI_CLASSIFY_TIMEOUT_MS = Math.max(6_000, Number.parseInt(process.env.AI_CL
 const AI_ERROR_TOAST_COOLDOWN_MS = Math.max(5_000, Number.parseInt(process.env.AI_ERROR_TOAST_COOLDOWN_MS ?? '20_000', 10) || 20_000);
 let lastSummaryRecoveryAtMs = 0;
 let lastTitleRecoveryAtMs = 0;
+let lastNeutralTitleRecoveryAtMs = 0;
 let lastResearchRecoveryAtMs = 0;
 const summaryRetryCooldownUntilMs = new Map<string, number>();
 const discordPostAttemptStartedAtMs = new Map<string, number>();
@@ -5926,6 +6088,12 @@ function hasTitleTranslateJobQueuedOrRunning(id: string, feedUrl: string): boole
   return aiQueue.some(job => job.kind === 'title_translate' && job.id === id && job.feedUrl === feedUrl);
 }
 
+function hasTitleNeutralizeJobQueuedOrRunning(id: string, feedUrl: string): boolean {
+  const k = `title_neutralize:${feedUrl || ''}::${id}`;
+  if (aiInFlight.has(k)) return true;
+  return aiQueue.some(job => job.kind === 'title_neutralize' && job.id === id && job.feedUrl === feedUrl);
+}
+
 function hasAiJobQueuedOrRunning(kind: AiJobKind, id: string, feedUrl: string): boolean {
   const k = `${kind}:${feedUrl || ''}::${id}`;
   if (aiInFlight.has(k)) return true;
@@ -5960,6 +6128,7 @@ function aiQueueCounts() {
   const counts: Record<AiJobKind, number> = {
     summary: 0,
     title_translate: 0,
+    title_neutralize: 0,
     research: 0,
     mood: 0,
     news_type: 0
@@ -6064,12 +6233,14 @@ function jobPriority(j: AiJob): number {
   if (j.manual) {
     if (j.kind === 'summary') return 0;
     if (j.kind === 'title_translate') return 1;
+    if (j.kind === 'title_neutralize') return 1;
     if (j.kind === 'research') return 2;
     if (j.kind === 'mood') return 6;
     return 7; // news_type
   }
   if (j.kind === 'summary') return 3;
   if (j.kind === 'title_translate') return 4;
+  if (j.kind === 'title_neutralize') return 4;
   if (j.kind === 'research') return 5;
   if (j.kind === 'mood') return 6;
   return 7; // news_type
@@ -6209,6 +6380,31 @@ function enqueueTitleTranslateBackfill(options?: {
   return done;
 }
 
+function enqueueNeutralTitleBackfill(feedUrl?: string, manual = false, maxItems = 320): number {
+  if (!aiEnabled || !aiAvailable) return 0;
+  if (activeModel('summary') === 'none') return 0;
+
+  const targetFeedUrl = String(feedUrl || '').trim();
+  const max = Math.max(1, Math.min(2_000, Math.floor(maxItems)));
+  if (!manual && hasSummaryBacklog()) return 0;
+  const list = recent.slice().sort((a, b) => b.publishedMs - a.publishedMs);
+  let done = 0;
+
+  for (const it of list) {
+    if (done >= max) break;
+    if (targetFeedUrl && !eligibleForFeed(it, targetFeedUrl)) continue;
+    if (hiddenIds.has(it.id)) continue;
+    if (!shouldUseNeutralTitlesForItem(it)) continue;
+    if (!needsTitleNeutralization(it)) continue;
+    if (hasTitleNeutralizeJobQueuedOrRunning(it.id, it.feedUrl)) continue;
+
+    enqueueJob({ kind: 'title_neutralize', id: it.id, feedUrl: it.feedUrl, manual });
+    done++;
+  }
+
+  return done;
+}
+
 function enqueueSummaryRecoveryPass(nowMs = Date.now()): number {
   if (!aiEnabled || !aiAvailable) return 0;
   if (activeModel('summary') === 'none') return 0;
@@ -6270,6 +6466,32 @@ function enqueueTitleTranslateRecoveryPass(nowMs = Date.now()): number {
 
     enqueueJob({ kind: 'title_translate', id: it.id, feedUrl: it.feedUrl });
     if (hasTitleTranslateJobQueuedOrRunning(it.id, it.feedUrl)) {
+      queued += 1;
+      broadcastNewsUpdate(it);
+    }
+  }
+  return queued;
+}
+
+function enqueueNeutralTitleRecoveryPass(nowMs = Date.now()): number {
+  if (!aiEnabled || !aiAvailable) return 0;
+  if (activeModel('summary') === 'none') return 0;
+  if (nowMs - lastNeutralTitleRecoveryAtMs < AI_NEUTRAL_TITLE_RECOVERY_INTERVAL_MS) return 0;
+  lastNeutralTitleRecoveryAtMs = nowMs;
+  if (hasSummaryBacklog()) return 0;
+
+  let queued = 0;
+  const list = recent.slice().sort((a, b) => b.publishedMs - a.publishedMs);
+  for (const it of list) {
+    if (queued >= AI_NEUTRAL_TITLE_RECOVERY_BATCH) break;
+    if (!it?.id || !it.feedUrl) continue;
+    if (hiddenIds.has(it.id)) continue;
+    if (!shouldUseNeutralTitlesForItem(it)) continue;
+    if (!needsTitleNeutralization(it)) continue;
+    if (hasTitleNeutralizeJobQueuedOrRunning(it.id, it.feedUrl)) continue;
+
+    enqueueJob({ kind: 'title_neutralize', id: it.id, feedUrl: it.feedUrl });
+    if (hasTitleNeutralizeJobQueuedOrRunning(it.id, it.feedUrl)) {
       queued += 1;
       broadcastNewsUpdate(it);
     }
@@ -6441,6 +6663,43 @@ async function runOneJob(job: AiJob) {
         markSuccess('title_translated');
       } else {
         markSkip('title_translate_empty_or_invalid');
+      }
+      return;
+    }
+
+    if (job.kind === 'title_neutralize') {
+      if (!job.manual && !shouldUseNeutralTitlesForItem(it)) {
+        markSkip('neutral_titles_disabled_for_feed');
+        return;
+      }
+      if (activeModel('summary') === 'none') {
+        markSkip('summary_model_disabled');
+        return;
+      }
+      if (!job.manual && !needsTitleNeutralization(it)) {
+        markSkip('neutral_title_exists');
+        return;
+      }
+
+      const neutralized = await withTimeout(
+        neutralizeTitleSet(it, budget),
+        AI_TITLE_NEUTRALIZE_TIMEOUT_MS,
+        `title_neutralize:${it.id}`
+      );
+      if (neutralized) {
+        it.neutralTitle = neutralized.original || it.neutralTitle;
+        it.neutralTitleBg = neutralized.bg || it.neutralTitleBg;
+        it.neutralTitleEn = neutralized.en || it.neutralTitleEn;
+        clearTimeoutAttempts(job);
+        refreshDerivedDataForItem(it);
+        await upsertPersistedNewsItem(it);
+        broadcastNewsUpdate(it);
+        scheduleDiscordPost(it);
+        didBroadcastUpdate = true;
+        markDirty();
+        markSuccess('title_neutralized');
+      } else {
+        markSkip('title_neutralize_empty_or_invalid');
       }
       return;
     }
@@ -6622,7 +6881,7 @@ async function runOneJob(job: AiJob) {
     aiInFlight.delete(k);
     if (!didBroadcastUpdate && itemForError && !hiddenIds.has(itemForError.id)) {
       // Push final pending=false state when jobs finish without producing output.
-      if (job.kind === 'summary' || job.kind === 'research' || job.kind === 'title_translate') {
+      if (job.kind === 'summary' || job.kind === 'research' || job.kind === 'title_translate' || job.kind === 'title_neutralize') {
         broadcastNewsUpdate(itemForError);
       }
     }
@@ -6942,6 +7201,10 @@ async function enqueueAiForFetchedItem(item: NewsInternal) {
       && activeModel('summary') !== 'none' && !hasTitleTranslateJobQueuedOrRunning(item.id, item.feedUrl)) {
     enqueueJob({ kind: 'title_translate', id: item.id, feedUrl: item.feedUrl });
   }
+  if (shouldUseNeutralTitlesForItem(item) && needsTitleNeutralization(item)
+      && activeModel('summary') !== 'none' && !hasTitleNeutralizeJobQueuedOrRunning(item.id, item.feedUrl)) {
+    enqueueJob({ kind: 'title_neutralize', id: item.id, feedUrl: item.feedUrl });
+  }
 }
 
 async function processFeed(fi: FeedInfo) {
@@ -7152,6 +7415,14 @@ async function schedulerTick() {
   const now = Date.now();
   await prunePersistedNewsArchive(now);
   if (isNewsAccessLocked()) return;
+
+  const recoveredAiJobs =
+    enqueueSummaryRecoveryPass(now) +
+    enqueueTitleTranslateRecoveryPass(now) +
+    enqueueNeutralTitleRecoveryPass(now) +
+    enqueueResearchRecoveryPass(now);
+  if (recoveredAiJobs > 0) markDirty();
+
   for (const fi of feedsList) {
     // skip filtered pseudo-feed
     if (fi.url === FILTERED_FEED_URL) continue;
@@ -7214,7 +7485,8 @@ async function applyLoadedState(st: PersistedState | null) {
     globalAiDefaults = {
       summaryEnabled: st.globalAiDefaults.summaryEnabled === true,
       researchEnabled: st.globalAiDefaults.researchEnabled === true,
-      translationEnabled: st.globalAiDefaults.translationEnabled !== false
+      translationEnabled: st.globalAiDefaults.translationEnabled !== false,
+      neutralTitlesEnabled: st.globalAiDefaults.neutralTitlesEnabled === true
     };
   }
   if (Array.isArray(st.customizedFeedUrls)) {
@@ -7783,6 +8055,33 @@ socketServer.on('connection', (ws: WebSocket) => {
       return;
     }
 
+    if (msg.type === 'set_feed_neutral_titles') {
+      const feedUrl = String(msg.feedUrl || '').trim();
+      const enabled = !!msg.enabled;
+      if (!feedUrl) return;
+
+      if (!feedSettings.has(feedUrl)) {
+        feedSettings.set(feedUrl, defaultSettingsForFeed({ url: feedUrl, label: feedUrl, kind: 'rss', intervalSec: 120 }));
+      }
+
+      feedSettings.get(feedUrl)!.neutralTitlesEnabled = enabled;
+      broadcastConfig();
+
+      if (enabled) {
+        enqueueNeutralTitleBackfill(feedUrl, true, 80);
+      }
+
+      ws.send(JSON.stringify({
+        type: 'ok',
+        message: enabled
+          ? 'Neutral titles enabled. Existing and newly visible stories will be rewritten into factual headlines.'
+          : 'Neutral titles disabled. Existing neutral headlines are preserved, and future neutralization is paused for this column.'
+      }));
+
+      markDirty();
+      return;
+    }
+
     if (msg.type === 'set_feed_research') {
       const feedUrl = String(msg.feedUrl || '').trim();
       const enabled = !!msg.enabled;
@@ -8014,6 +8313,11 @@ socketServer.on('connection', (ws: WebSocket) => {
       if (msg.titleTranslate && summaryModelReady && isTranslationEnabledForFeed(it.feedUrl) && needsTitleTranslation(it.title, it.titleBg, it.titleEn) && !hasTitleTranslateJobQueuedOrRunning(it.id, it.feedUrl)) {
         enqueueJob({ kind: 'title_translate', id: it.id, feedUrl: it.feedUrl, viewport: true });
         queuedSomething = hasTitleTranslateJobQueuedOrRunning(it.id, it.feedUrl) || queuedSomething;
+      }
+
+      if (msg.neutralTitle && summaryModelReady && shouldUseNeutralTitlesForItem(it) && needsTitleNeutralization(it) && !hasTitleNeutralizeJobQueuedOrRunning(it.id, it.feedUrl)) {
+        enqueueJob({ kind: 'title_neutralize', id: it.id, feedUrl: it.feedUrl, viewport: true });
+        queuedSomething = hasTitleNeutralizeJobQueuedOrRunning(it.id, it.feedUrl) || queuedSomething;
       }
 
       if (msg.mood && researchModelReady && !it.mood) {

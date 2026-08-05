@@ -28,6 +28,9 @@ type ProductNews = {
   title: string;
   titleBg?: string;
   titleEn?: string;
+  neutralTitle?: string;
+  neutralTitleBg?: string;
+  neutralTitleEn?: string;
   link?: string;
   source?: string;
   publishedMs?: number;
@@ -40,6 +43,7 @@ type ProductNews = {
   summaryPending?: boolean;
   researchPending?: boolean;
   titleTranslatePending?: boolean;
+  neutralTitlePending?: boolean;
   coverUrl?: string;
 };
 
@@ -49,6 +53,9 @@ type PersistedProductNews = {
   title: string;
   titleBg: string | null;
   titleEn: string | null;
+  neutralTitle: string | null;
+  neutralTitleBg: string | null;
+  neutralTitleEn: string | null;
   link: string;
   source: string;
   publishedMs: bigint | number;
@@ -128,7 +135,7 @@ const collectionPayloadSchema = z.object({
   pinnedFeedUrl: z.string().trim().max(1000).default('')
 });
 
-type WidgetStoryActionKind = 'summary' | 'research' | 'translation' | 'refresh';
+type WidgetStoryActionKind = 'summary' | 'research' | 'translation' | 'neutral_title' | 'refresh';
 
 type WidgetCollectionPayload = z.infer<typeof collectionPayloadSchema>;
 
@@ -164,6 +171,9 @@ function persistedNewsToProductNews(row: PersistedProductNews): ProductNews {
     title: row.title,
     titleBg: row.titleBg || undefined,
     titleEn: row.titleEn || undefined,
+    neutralTitle: row.neutralTitle || undefined,
+    neutralTitleBg: row.neutralTitleBg || undefined,
+    neutralTitleEn: row.neutralTitleEn || undefined,
     link: row.link,
     source: row.source,
     publishedMs: Number(row.publishedMs),
@@ -257,11 +267,14 @@ function trimStoryText(raw: unknown, fallback = '') {
 }
 
 function toWidgetStory(news: ProductNews) {
-  const translatedTitle = trimStoryText(news.titleBg) || trimStoryText(news.titleEn);
+  const neutralOriginal = trimStoryText(news.neutralTitle);
+  const neutralTranslated = trimStoryText(news.neutralTitleBg) || trimStoryText(news.neutralTitleEn);
+  const translatedTitle = neutralTranslated || trimStoryText(news.titleBg) || trimStoryText(news.titleEn);
+  const displayTitle = neutralOriginal || neutralTranslated || trimStoryText(news.title);
   return {
     id: news.id,
     feedUrl: news.feedUrl,
-    title: trimStoryText(news.title),
+    title: displayTitle,
     translatedTitle: translatedTitle || null,
     link: trimStoryText(news.link) || null,
     source: trimStoryText(news.source) || null,
@@ -275,9 +288,11 @@ function toWidgetStory(news: ProductNews) {
     summaryPending: !!news.summaryPending,
     researchPending: !!news.researchPending,
     translationPending: !!news.titleTranslatePending,
+    neutralTitlePending: !!news.neutralTitlePending,
     hasSummary: !!trimStoryText(news.summary),
     hasResearch: !!trimStoryText(news.research),
     hasTranslation: !!translatedTitle,
+    hasNeutralTitle: !!(neutralOriginal || neutralTranslated),
     coverUrl: trimStoryText(news.coverUrl) || null,
     imagesEnabled: false
   };
@@ -987,7 +1002,7 @@ export function registerProductFeatureApi({
     const action = String(body.action || '').trim() as WidgetStoryActionKind;
     const itemId = String(body.itemId || '').trim();
     const feedUrl = String(body.feedUrl || '').trim();
-    if (!itemId || !feedUrl || !['summary', 'research', 'translation', 'refresh'].includes(action)) {
+    if (!itemId || !feedUrl || !['summary', 'research', 'translation', 'neutral_title', 'refresh'].includes(action)) {
       res.status(400).json({ error: 'Invalid story action payload.' });
       return;
     }

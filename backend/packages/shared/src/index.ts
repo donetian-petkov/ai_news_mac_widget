@@ -135,6 +135,7 @@ export const clientMsgSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('remove_feed'), feedUrl: z.string() }),
   z.object({ type: z.literal('set_feed_summary'), feedUrl: z.string(), enabled: z.boolean() }),
   z.object({ type: z.literal('set_feed_translation'), feedUrl: z.string(), enabled: z.boolean() }),
+  z.object({ type: z.literal('set_feed_neutral_titles'), feedUrl: z.string(), enabled: z.boolean() }),
   z.object({ type: z.literal('set_feed_research'), feedUrl: z.string(), enabled: z.boolean() }),
   z.object({ type: z.literal('set_feed_discord_webhook'), feedUrl: z.string(), webhookUrl: z.string() }),
   z.object({ type: z.literal('set_feed_budget'), feedUrl: z.string(), budget: budgetModeSchema }),
@@ -159,6 +160,7 @@ export const clientMsgSchema = z.discriminatedUnion('type', [
     summary: z.boolean().optional(),
     research: z.boolean().optional(),
     titleTranslate: z.boolean().optional(),
+    neutralTitle: z.boolean().optional(),
     mood: z.boolean().optional(),
     newsType: z.boolean().optional()
   }),

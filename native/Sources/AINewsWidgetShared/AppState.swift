@@ -504,6 +504,7 @@ public final class WidgetAppState: ObservableObject {
                             case .summary: return .openSummary
                             case .research: return .openResearch
                             case .translation: return .openTranslation
+                            case .neutralTitle: return .openNeutralTitle
                             case .refresh: return .refreshCategory
                             }
                         }(),
@@ -523,6 +524,7 @@ public final class WidgetAppState: ObservableObject {
             case .summary: return !(s.summary ?? "").isEmpty
             case .research: return !(s.research ?? "").isEmpty
             case .translation: return !(s.translatedTitle ?? "").isEmpty
+            case .neutralTitle: return s.hasNeutralTitle || !s.neutralTitlePending
             case .refresh: return true
             }
         }
@@ -691,7 +693,8 @@ public final class WidgetAppState: ObservableObject {
                     feedUrl: feedUrl,
                     summaryEnabled: settings.summaryEnabled,
                     researchEnabled: settings.researchEnabled,
-                    translationEnabled: settings.translationEnabled
+                    translationEnabled: settings.translationEnabled,
+                    neutralTitlesEnabled: settings.neutralTitlesEnabled
                 )
             }
             await self.loadRuntimeContext()
@@ -754,6 +757,8 @@ public final class WidgetAppState: ObservableObject {
             await triggerStoryAction(.research, story: story, recordCommand: false)
         case .translation:
             await triggerStoryAction(.translation, story: story, recordCommand: false)
+        case .neutralTitle:
+            await triggerStoryAction(.neutralTitle, story: story, recordCommand: false)
         }
     }
 
@@ -833,6 +838,7 @@ public final class WidgetAppState: ObservableObject {
             if story.summaryPending { total += 1 }
             if story.researchPending { total += 1 }
             if story.translationPending { total += 1 }
+            if story.neutralTitlePending { total += 1 }
         }
     }
 
@@ -883,6 +889,9 @@ public final class WidgetAppState: ObservableObject {
         case .openTranslation:
             guard let story = story(for: command) else { return }
             await triggerStoryAction(.translation, story: story, recordCommand: false)
+        case .openNeutralTitle:
+            guard let story = story(for: command) else { return }
+            await triggerStoryAction(.neutralTitle, story: story, recordCommand: false)
         case .openShare:
             guard let story = story(for: command) else { return }
             await shareStory(story)

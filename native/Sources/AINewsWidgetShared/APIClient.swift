@@ -90,6 +90,7 @@ public struct APIClient: Sendable {
             var aiEnabled: Bool
             var summaryEnabled: Bool
             var translationEnabled: Bool
+            var neutralTitlesEnabled: Bool
             var researchEnabled: Bool
             var discordWebhookUrl: String?
             var budget: String
@@ -104,6 +105,7 @@ public struct APIClient: Sendable {
                 aiEnabled: feed.settings.aiEnabled,
                 summaryEnabled: feed.settings.summaryEnabled,
                 translationEnabled: feed.settings.translationEnabled,
+                neutralTitlesEnabled: feed.settings.neutralTitlesEnabled,
                 researchEnabled: feed.settings.researchEnabled,
                 discordWebhookUrl: feed.settings.discordWebhookUrl,
                 budget: feed.settings.budget,
@@ -119,6 +121,7 @@ public struct APIClient: Sendable {
             var summaryEnabled: Bool
             var researchEnabled: Bool
             var translationEnabled: Bool
+            var neutralTitlesEnabled: Bool
         }
         let _: RuntimeAiDefaultsResponse = try await send(
             path: "/api/runtime/ai-defaults",
@@ -126,7 +129,8 @@ public struct APIClient: Sendable {
             body: Body(
                 summaryEnabled: defaults.summaryEnabled,
                 researchEnabled: defaults.researchEnabled,
-                translationEnabled: defaults.translationEnabled
+                translationEnabled: defaults.translationEnabled,
+                neutralTitlesEnabled: defaults.neutralTitlesEnabled
             )
         )
     }
@@ -137,7 +141,8 @@ public struct APIClient: Sendable {
         feedUrl: String,
         summaryEnabled: Bool,
         researchEnabled: Bool,
-        translationEnabled: Bool
+        translationEnabled: Bool,
+        neutralTitlesEnabled: Bool
     ) async throws {
         struct Body: Codable {
             var feedUrl: String
@@ -145,21 +150,23 @@ public struct APIClient: Sendable {
             var summaryEnabled: Bool
             var researchEnabled: Bool
             var translationEnabled: Bool
+            var neutralTitlesEnabled: Bool
         }
         let _: RuntimeFeedMutationResponse = try await send(
             path: "/api/runtime/feed-settings",
             method: "PUT",
             body: Body(
                 feedUrl: feedUrl,
-                aiEnabled: summaryEnabled || researchEnabled || translationEnabled,
+                aiEnabled: summaryEnabled || researchEnabled || translationEnabled || neutralTitlesEnabled,
                 summaryEnabled: summaryEnabled,
                 researchEnabled: researchEnabled,
-                translationEnabled: translationEnabled
+                translationEnabled: translationEnabled,
+                neutralTitlesEnabled: neutralTitlesEnabled
             )
         )
     }
 
-    /// Ask the backend to generate any missing AI outputs (summary/research/translation)
+    /// Ask the backend to generate any missing AI outputs (summary/research/translation/neutral titles)
     /// for stories whose feeds have those actions enabled. Used on launch so enabled
     /// outputs get backfilled instead of only generating for newly fetched items.
     @discardableResult

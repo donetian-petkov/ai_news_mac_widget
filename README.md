@@ -18,7 +18,8 @@ It ships as an installed macOS app that supervises its own local Node/Prisma bac
 - Per-feed controls from the main page: turn feed fetching off/on and pause/resume AI.
 - Filtered Feed as its own first-class feed driven by keyword rules.
 - Fast keyword matching for filtered stories before slower semantic work finishes.
-- AI actions for summaries, research, translations, model/provider settings, usage totals, and budget/pending counts.
+- AI actions for summaries, research, translations, neutral title rewrites, model/provider settings, usage totals, and budget/pending counts.
+- Optional neutral-title filter for English and Bulgarian headlines, with global, per-feed, and per-category controls plus an on-demand story action.
 - Story cards with images, summaries, research state, translation state, share action, save/pin actions, and source links.
 - Sidebar health indicators showing loaded, pending, budget-blocked, hidden, and active feed state.
 - Native floating widgets with:
@@ -89,4 +90,3 @@ curl -s http://127.0.0.1:3000/api/categories
 - API request failures are logged with method, path, and URL so cancellation/timeout/connectivity errors are diagnosable.
 - Hidden categories are presentation-level visibility; use feed controls to stop fetching or pause AI.
 - Images are supported in the companion app and floating widgets when enabled.
-

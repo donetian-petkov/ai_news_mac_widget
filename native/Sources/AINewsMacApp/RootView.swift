@@ -819,6 +819,10 @@ private struct StoryCardView: View {
                 actionButton("Translate", systemImage: "globe", tint: AINewsTheme.accentGold) {
                     Task { await state.triggerStoryAction(.translation, story: story) }
                 }
+                actionButton(story.neutralTitlePending ? "Neutralizing" : "Neutral title", systemImage: "text.quote", tint: AINewsTheme.accentCyan) {
+                    Task { await state.triggerStoryAction(.neutralTitle, story: story) }
+                }
+                .disabled(story.neutralTitlePending)
                 actionButton("Save", systemImage: "bookmark", tint: AINewsTheme.accentCyan) {
                     Task { await state.saveStory(story) }
                 }
@@ -2449,6 +2453,7 @@ private struct SettingsView: View {
                         Toggle("Summary", isOn: $state.globalAiDefaults.summaryEnabled)
                         Toggle("Translation", isOn: $state.globalAiDefaults.translationEnabled)
                         Toggle("Research", isOn: $state.globalAiDefaults.researchEnabled)
+                        Toggle("Neutral titles", isOn: $state.globalAiDefaults.neutralTitlesEnabled)
                     }
                     .toggleStyle(.switch)
                     Button("Apply to all feeds") {
@@ -2945,6 +2950,7 @@ private struct CategoryAiControls: View {
                 Toggle("Summaries", isOn: $settings.summaryEnabled)
                 Toggle("Research", isOn: $settings.researchEnabled)
                 Toggle("Translations", isOn: $settings.translationEnabled)
+                Toggle("Neutral titles", isOn: $settings.neutralTitlesEnabled)
                 Button("Apply to \(feedCount) feed\(feedCount == 1 ? "" : "s")") {
                     Task { await state.applyAiSettings(to: category, settings: settings) }
                 }
@@ -3100,6 +3106,13 @@ private struct FeedSettingsCard: View {
                     get: { draft.settings.researchEnabled },
                     set: { enabled in
                         draft.settings.researchEnabled = enabled
+                        persist()
+                    }
+                ))
+                Toggle("Neutral titles", isOn: Binding(
+                    get: { draft.settings.neutralTitlesEnabled },
+                    set: { enabled in
+                        draft.settings.neutralTitlesEnabled = enabled
                         persist()
                     }
                 ))

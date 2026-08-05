@@ -166,9 +166,11 @@ public struct WidgetStory: Codable, Equatable, Hashable, Identifiable, Sendable 
     public var summaryPending: Bool
     public var researchPending: Bool
     public var translationPending: Bool
+    public var neutralTitlePending: Bool
     public var hasSummary: Bool
     public var hasResearch: Bool
     public var hasTranslation: Bool
+    public var hasNeutralTitle: Bool
     public var coverUrl: String?
     public var imagesEnabled: Bool
 
@@ -189,9 +191,11 @@ public struct WidgetStory: Codable, Equatable, Hashable, Identifiable, Sendable 
         summaryPending: Bool = false,
         researchPending: Bool = false,
         translationPending: Bool = false,
+        neutralTitlePending: Bool = false,
         hasSummary: Bool = false,
         hasResearch: Bool = false,
         hasTranslation: Bool = false,
+        hasNeutralTitle: Bool = false,
         coverUrl: String? = nil,
         imagesEnabled: Bool = false
     ) {
@@ -211,11 +215,46 @@ public struct WidgetStory: Codable, Equatable, Hashable, Identifiable, Sendable 
         self.summaryPending = summaryPending
         self.researchPending = researchPending
         self.translationPending = translationPending
+        self.neutralTitlePending = neutralTitlePending
         self.hasSummary = hasSummary
         self.hasResearch = hasResearch
         self.hasTranslation = hasTranslation
+        self.hasNeutralTitle = hasNeutralTitle
         self.coverUrl = coverUrl
         self.imagesEnabled = imagesEnabled
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case id, feedUrl, title, translatedTitle, link, source, publishedMs, summary, research, mood, newsType
+        case isMatch, filteredOk, summaryPending, researchPending, translationPending, neutralTitlePending
+        case hasSummary, hasResearch, hasTranslation, hasNeutralTitle, coverUrl, imagesEnabled
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(String.self, forKey: .id)
+        feedUrl = try container.decode(String.self, forKey: .feedUrl)
+        title = try container.decode(String.self, forKey: .title)
+        translatedTitle = try container.decodeIfPresent(String.self, forKey: .translatedTitle)
+        link = try container.decodeIfPresent(String.self, forKey: .link)
+        source = try container.decodeIfPresent(String.self, forKey: .source)
+        publishedMs = try container.decodeIfPresent(Int64.self, forKey: .publishedMs) ?? 0
+        summary = try container.decodeIfPresent(String.self, forKey: .summary)
+        research = try container.decodeIfPresent(String.self, forKey: .research)
+        mood = try container.decodeIfPresent(String.self, forKey: .mood)
+        newsType = try container.decodeIfPresent(String.self, forKey: .newsType)
+        isMatch = try container.decodeIfPresent(Bool.self, forKey: .isMatch) ?? true
+        filteredOk = try container.decodeIfPresent(Bool.self, forKey: .filteredOk) ?? true
+        summaryPending = try container.decodeIfPresent(Bool.self, forKey: .summaryPending) ?? false
+        researchPending = try container.decodeIfPresent(Bool.self, forKey: .researchPending) ?? false
+        translationPending = try container.decodeIfPresent(Bool.self, forKey: .translationPending) ?? false
+        neutralTitlePending = try container.decodeIfPresent(Bool.self, forKey: .neutralTitlePending) ?? false
+        hasSummary = try container.decodeIfPresent(Bool.self, forKey: .hasSummary) ?? false
+        hasResearch = try container.decodeIfPresent(Bool.self, forKey: .hasResearch) ?? false
+        hasTranslation = try container.decodeIfPresent(Bool.self, forKey: .hasTranslation) ?? false
+        hasNeutralTitle = try container.decodeIfPresent(Bool.self, forKey: .hasNeutralTitle) ?? false
+        coverUrl = try container.decodeIfPresent(String.self, forKey: .coverUrl)
+        imagesEnabled = try container.decodeIfPresent(Bool.self, forKey: .imagesEnabled) ?? false
     }
 
     public var storyKey: String {
@@ -618,15 +657,18 @@ public struct GlobalAiDefaults: Codable, Equatable, Sendable {
     public var summaryEnabled: Bool
     public var researchEnabled: Bool
     public var translationEnabled: Bool
+    public var neutralTitlesEnabled: Bool
 
     public init(
         summaryEnabled: Bool = false,
         researchEnabled: Bool = false,
-        translationEnabled: Bool = true
+        translationEnabled: Bool = true,
+        neutralTitlesEnabled: Bool = false
     ) {
         self.summaryEnabled = summaryEnabled
         self.researchEnabled = researchEnabled
         self.translationEnabled = translationEnabled
+        self.neutralTitlesEnabled = neutralTitlesEnabled
     }
 }
 
@@ -709,6 +751,7 @@ public struct RuntimeFeedSettings: Codable, Equatable, Hashable, Sendable {
     public var aiEnabled: Bool
     public var summaryEnabled: Bool
     public var translationEnabled: Bool
+    public var neutralTitlesEnabled: Bool
     public var researchEnabled: Bool
     public var discordWebhookUrl: String?
     public var budget: String
@@ -850,6 +893,7 @@ public enum WidgetStoryAction: String, CaseIterable, Codable, Sendable {
     case summary
     case research
     case translation
+    case neutralTitle = "neutral_title"
     case refresh
 }
 
@@ -858,6 +902,7 @@ public enum WidgetDeepLinkAction: String, Codable, Sendable {
     case summary
     case research
     case translation
+    case neutralTitle = "neutral_title"
 }
 
 public struct WidgetCommand: Codable, Equatable, Hashable, Identifiable, Sendable {
@@ -870,6 +915,7 @@ public struct WidgetCommand: Codable, Equatable, Hashable, Identifiable, Sendabl
         case openSummary
         case openResearch
         case openTranslation
+        case openNeutralTitle
         case openShare
     }
 
