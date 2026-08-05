@@ -1387,25 +1387,31 @@ private struct FloatingWidgetView: View {
     private var miniatureStackContent: some View {
         VStack(alignment: .leading, spacing: 8) {
             if let current = currentStackStory {
-                Text(current.title)
-                    .font(widgetFont(15.5, weight: .bold))
-                    .foregroundStyle(AINewsTheme.accentBlue)
-                    .lineLimit(3)
-                    .minimumScaleFactor(0.78)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(10)
-                    .background(
-                        RoundedRectangle(cornerRadius: 14, style: .continuous)
-                            .fill(AINewsTheme.backgroundAlt.opacity(0.94))
-                    )
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 14, style: .continuous)
-                            .stroke(AINewsTheme.panelBorder.opacity(0.72), lineWidth: 1)
-                    )
-                    .contentShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-                    .onTapGesture {
-                        openStory(current)
+                VStack(alignment: .leading, spacing: 6) {
+                    if current.hasNeutralTitle {
+                        neutralizedTitleBadge(compact: true)
                     }
+                    Text(current.title)
+                        .font(widgetFont(15.5, weight: .bold))
+                        .foregroundStyle(AINewsTheme.accentBlue)
+                        .underline(current.hasNeutralTitle, color: AINewsTheme.accentCyan.opacity(0.85))
+                        .lineLimit(3)
+                        .minimumScaleFactor(0.78)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                .padding(10)
+                .background(
+                    RoundedRectangle(cornerRadius: 14, style: .continuous)
+                        .fill(AINewsTheme.backgroundAlt.opacity(0.94))
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 14, style: .continuous)
+                        .stroke(AINewsTheme.panelBorder.opacity(0.72), lineWidth: 1)
+                )
+                .contentShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                .onTapGesture {
+                    openStory(current)
+                }
             }
 
             stackNavigationControls(spacing: 6, horizontalPadding: 0, bottomPadding: 0, iconOnly: true)
@@ -1641,6 +1647,9 @@ private struct FloatingWidgetView: View {
                         if showsNewBadge(for: story) {
                             newBadge
                         }
+                        if story.hasNeutralTitle {
+                            neutralizedTitleBadge(compact: true)
+                        }
                         if let mood = story.mood, !mood.isEmpty {
                             MoodChip(mood: mood)
                         }
@@ -1654,6 +1663,7 @@ private struct FloatingWidgetView: View {
                     Text(story.title)
                         .font(widgetHeadline(weight: .bold))
                         .foregroundStyle(AINewsTheme.accentBlue)
+                        .underline(story.hasNeutralTitle, color: AINewsTheme.accentCyan.opacity(0.85))
                         .fixedSize(horizontal: false, vertical: true)
 
                     if let translated = story.translatedTitle, !translated.isEmpty, translated != story.title {
@@ -1711,6 +1721,7 @@ private struct FloatingWidgetView: View {
                     Text(story.title)
                         .font(widgetHeadline(weight: .bold))
                         .foregroundStyle(AINewsTheme.accentBlue)
+                        .underline(story.hasNeutralTitle, color: AINewsTheme.accentCyan.opacity(0.85))
                         .lineLimit(3)
                     if let summary = story.summary, !summary.isEmpty {
                         Text(summary)
@@ -1905,6 +1916,30 @@ private struct FloatingWidgetView: View {
                 Capsule(style: .continuous)
                     .fill(AINewsTheme.accentGold.opacity(0.98))
             )
+    }
+
+    private func neutralizedTitleBadge(compact: Bool = false) -> some View {
+        HStack(spacing: 4) {
+            Image(systemName: "checkmark.seal.fill")
+            if !compact {
+                Text("Neutral title")
+            } else {
+                Text("Neutral")
+            }
+        }
+        .font(widgetCaption2(weight: .bold))
+        .foregroundStyle(AINewsTheme.accentCyan)
+        .padding(.horizontal, compact ? 6 : 8)
+        .padding(.vertical, 2)
+        .background(
+            Capsule(style: .continuous)
+                .fill(AINewsTheme.accentCyan.opacity(0.15))
+        )
+        .overlay(
+            Capsule(style: .continuous)
+                .stroke(AINewsTheme.accentCyan.opacity(0.55), lineWidth: 1)
+        )
+        .help("This headline was neutralized by AI.")
     }
 
     private func switchLayoutMode(to mode: FloatingWidgetLayoutMode) {

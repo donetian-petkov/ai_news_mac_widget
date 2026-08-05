@@ -764,8 +764,12 @@ private struct StoryCardView: View {
                         Text(story.source ?? story.feedUrl)
                             .font(.headline)
                             .foregroundStyle(AINewsTheme.textPrimary)
+                            .lineLimit(1)
                         if let mood = story.mood, !mood.isEmpty {
                             MoodChip(mood: mood)
+                        }
+                        if story.hasNeutralTitle {
+                            neutralizedTitleBadge
                         }
                     }
                     if let date = story.publishedDate {
@@ -785,6 +789,7 @@ private struct StoryCardView: View {
             Text(story.title)
                 .font(AINewsTheme.font(28, weight: .bold))
                 .foregroundStyle(AINewsTheme.accentBlue)
+                .underline(story.hasNeutralTitle, color: AINewsTheme.accentCyan.opacity(0.8))
 
             if let translated = story.translatedTitle, !translated.isEmpty, translated != story.title {
                 Text(translated)
@@ -894,6 +899,23 @@ private struct StoryCardView: View {
             return nil
         }
         return translated
+    }
+
+    private var neutralizedTitleBadge: some View {
+        Label("Neutral title", systemImage: "checkmark.seal.fill")
+            .font(.caption.weight(.bold))
+            .foregroundStyle(AINewsTheme.accentCyan)
+            .padding(.horizontal, 9)
+            .padding(.vertical, 4)
+            .background(
+                Capsule(style: .continuous)
+                    .fill(AINewsTheme.accentCyan.opacity(0.14))
+            )
+            .overlay(
+                Capsule(style: .continuous)
+                    .stroke(AINewsTheme.accentCyan.opacity(0.5), lineWidth: 1)
+            )
+            .help("This headline was neutralized by AI.")
     }
 
     private func actionButton(_ title: String, systemImage: String, tint: Color, action: @escaping () -> Void) -> some View {

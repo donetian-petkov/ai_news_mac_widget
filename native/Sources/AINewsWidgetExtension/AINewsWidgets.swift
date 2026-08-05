@@ -189,7 +189,11 @@ struct CategoryWidgetView: View {
                                     Text(story.title)
                                         .font(.subheadline.weight(.semibold))
                                         .foregroundStyle(AINewsTheme.accentBlue)
+                                        .underline(story.hasNeutralTitle, color: AINewsTheme.accentCyan.opacity(0.85))
                                         .lineLimit(2)
+                                    if story.hasNeutralTitle {
+                                        NeutralTitleMarker(compact: family == .systemSmall)
+                                    }
                                     Text(story.summary ?? story.source ?? story.feedUrl)
                                         .font(.caption)
                                         .foregroundStyle(AINewsTheme.textSecondary)
@@ -510,7 +514,11 @@ struct KeywordWidgetView: View {
                                 Text(story.title)
                                     .font(.subheadline.weight(.semibold))
                                     .foregroundStyle(AINewsTheme.accentBlue)
+                                    .underline(story.hasNeutralTitle, color: AINewsTheme.accentCyan.opacity(0.85))
                                     .lineLimit(2)
+                                if story.hasNeutralTitle {
+                                    NeutralTitleMarker(compact: family == .systemSmall)
+                                }
                                 if family != .systemSmall {
                                     Text(story.summary ?? story.source ?? story.feedUrl)
                                         .font(.caption)
@@ -564,6 +572,31 @@ struct KeywordWidget: Widget {
         .configurationDisplayName("AI News Keywords")
         .description("Show the latest stories that match your tracked topics.")
         .supportedFamilies([.systemSmall, .systemMedium, .systemLarge])
+    }
+}
+
+private struct NeutralTitleMarker: View {
+    let compact: Bool
+
+    var body: some View {
+        HStack(spacing: 3) {
+            Image(systemName: "checkmark.seal.fill")
+            if !compact {
+                Text("Neutral")
+            }
+        }
+        .font(.caption2.weight(.bold))
+        .foregroundStyle(AINewsTheme.accentCyan)
+        .padding(.horizontal, compact ? 5 : 7)
+        .padding(.vertical, 2)
+        .background(
+            Capsule(style: .continuous)
+                .fill(AINewsTheme.accentCyan.opacity(0.14))
+        )
+        .overlay(
+            Capsule(style: .continuous)
+                .stroke(AINewsTheme.accentCyan.opacity(0.55), lineWidth: 1)
+        )
     }
 }
 
