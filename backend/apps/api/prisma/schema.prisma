@@ -32,6 +32,9 @@ model NewsItemRecord {
   neutralTitle       String?
   neutralTitleBg     String?
   neutralTitleEn     String?
+  neutralTitleStatus String?
+  neutralTitleReason String?
+  neutralTitleCheckedAtMs BigInt?
   coverUrl           String?
   link               String
   source             String

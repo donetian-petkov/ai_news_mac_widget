@@ -266,11 +266,46 @@ function trimStoryText(raw: unknown, fallback = '') {
   return String(raw || fallback).replace(/\s+/g, ' ').trim();
 }
 
+function canonicalStoryTitle(raw: unknown) {
+  return trimStoryText(raw)
+    .normalize('NFKC')
+    .toLocaleLowerCase()
+    .replace(/[^\p{L}\p{N}]+/gu, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function changedStoryTitle(original: unknown, rewritten: unknown) {
+  const source = canonicalStoryTitle(original);
+  const candidate = canonicalStoryTitle(rewritten);
+  return !!source && !!candidate && source !== candidate;
+}
+
+function summaryAddsInformationComparedToTitle(titleRaw: unknown, summaryRaw: unknown) {
+  const title = canonicalStoryTitle(titleRaw);
+  const summary = canonicalStoryTitle(summaryRaw);
+  if (!summary) return false;
+  if (!title) return true;
+  if (title.includes(summary) || summary.includes(title)) return false;
+
+  const titleTokens = new Set(title.split(' ').filter(token => token.length > 2));
+  const summaryTokens = Array.from(new Set(summary.split(' ').filter(token => token.length > 2)));
+  if (summaryTokens.length <= 3) return false;
+
+  const overlap = summaryTokens.filter(token => titleTokens.has(token)).length;
+  const novel = summaryTokens.length - overlap;
+  return novel >= 2 || overlap / summaryTokens.length < 0.75;
+}
+
 function toWidgetStory(news: ProductNews) {
-  const neutralOriginal = trimStoryText(news.neutralTitle);
-  const neutralTranslated = trimStoryText(news.neutralTitleBg) || trimStoryText(news.neutralTitleEn);
+  const originalTitle = trimStoryText(news.title);
+  const neutralOriginal = changedStoryTitle(originalTitle, news.neutralTitle) ? trimStoryText(news.neutralTitle) : '';
+  const neutralBg = changedStoryTitle(news.titleBg || originalTitle, news.neutralTitleBg) ? trimStoryText(news.neutralTitleBg) : '';
+  const neutralEn = changedStoryTitle(news.titleEn || originalTitle, news.neutralTitleEn) ? trimStoryText(news.neutralTitleEn) : '';
+  const neutralTranslated = neutralBg || neutralEn;
   const translatedTitle = neutralTranslated || trimStoryText(news.titleBg) || trimStoryText(news.titleEn);
   const displayTitle = neutralOriginal || neutralTranslated || trimStoryText(news.title);
+  const summary = summaryAddsInformationComparedToTitle(displayTitle, news.summary) ? trimStoryText(news.summary) : '';
   return {
     id: news.id,
     feedUrl: news.feedUrl,
@@ -278,12 +313,12 @@ function toWidgetStory(news: ProductNews) {
     originalTitle: trimStoryText(news.title) || null,
     translatedTitle: translatedTitle || null,
     neutralTitle: neutralOriginal || null,
-    neutralTitleBg: trimStoryText(news.neutralTitleBg) || null,
-    neutralTitleEn: trimStoryText(news.neutralTitleEn) || null,
+    neutralTitleBg: neutralBg || null,
+    neutralTitleEn: neutralEn || null,
     link: trimStoryText(news.link) || null,
     source: trimStoryText(news.source) || null,
     publishedMs: Number(news.publishedMs || 0) || 0,
-    summary: trimStoryText(news.summary) || null,
+    summary: summary || null,
     research: trimStoryText(news.research) || null,
     mood: trimStoryText(news.mood) || null,
     newsType: trimStoryText(news.newsType) || null,
@@ -293,7 +328,7 @@ function toWidgetStory(news: ProductNews) {
     researchPending: !!news.researchPending,
     translationPending: !!news.titleTranslatePending,
     neutralTitlePending: !!news.neutralTitlePending,
-    hasSummary: !!trimStoryText(news.summary),
+    hasSummary: !!summary,
     hasResearch: !!trimStoryText(news.research),
     hasTranslation: !!translatedTitle,
     hasNeutralTitle: !!(neutralOriginal || neutralTranslated),

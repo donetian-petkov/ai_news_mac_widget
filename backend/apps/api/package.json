@@ -8,7 +8,7 @@
     "test": "vitest run src/server.integration.test.ts",
     "start": "node dist/server.js",
     "prisma:generate": "prisma generate",
-    "prisma:migrate": "mkdir -p prisma && touch prisma/dev.db && DATABASE_URL=${DATABASE_URL:-file:./prisma/dev.db} prisma migrate deploy"
+    "prisma:migrate": "node ../../../scripts/ensure-local-db.mjs"
   },
   "dependencies": {
     "@ai-news/shared": "1.0.0",

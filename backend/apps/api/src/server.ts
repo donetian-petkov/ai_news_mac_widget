@@ -298,6 +298,9 @@ type News = {
   neutralTitle?: string;
   neutralTitleBg?: string;
   neutralTitleEn?: string;
+  neutralTitleStatus?: string;
+  neutralTitleReason?: string;
+  neutralTitleCheckedAtMs?: number;
   coverUrl?: string;
   link: string;
   source: string;
@@ -1313,6 +1316,9 @@ app.post('/api/maintenance/regenerate', async (req, res) => {
           item.neutralTitle = undefined;
           item.neutralTitleBg = undefined;
           item.neutralTitleEn = undefined;
+          item.neutralTitleStatus = undefined;
+          item.neutralTitleReason = undefined;
+          item.neutralTitleCheckedAtMs = undefined;
         }
         enqueueJob({ kind: 'title_neutralize', id: item.id, feedUrl: item.feedUrl, manual: true });
         if (hasTitleNeutralizeJobQueuedOrRunning(item.id, item.feedUrl)) queued.neutralTitle += 1;
@@ -2305,6 +2311,9 @@ function newsFromPersistedRow(row: PersistedNewsRow): NewsInternal {
     neutralTitle: row.neutralTitle || undefined,
     neutralTitleBg: row.neutralTitleBg || undefined,
     neutralTitleEn: row.neutralTitleEn || undefined,
+    neutralTitleStatus: row.neutralTitleStatus || undefined,
+    neutralTitleReason: row.neutralTitleReason || undefined,
+    neutralTitleCheckedAtMs: row.neutralTitleCheckedAtMs ? Number(row.neutralTitleCheckedAtMs) : undefined,
     coverUrl: row.coverUrl || undefined,
     link: row.link,
     source: row.source,
@@ -2338,6 +2347,9 @@ function buildPersistedNewsUpdate(it: NewsInternal): Prisma.NewsItemRecordUnchec
     neutralTitle: it.neutralTitle || undefined,
     neutralTitleBg: it.neutralTitleBg || undefined,
     neutralTitleEn: it.neutralTitleEn || undefined,
+    neutralTitleStatus: it.neutralTitleStatus || undefined,
+    neutralTitleReason: it.neutralTitleReason || undefined,
+    neutralTitleCheckedAtMs: it.neutralTitleCheckedAtMs ? BigInt(Math.floor(it.neutralTitleCheckedAtMs)) : undefined,
     coverUrl: it.coverUrl || undefined,
     link: it.link,
     source: it.source,
@@ -4992,7 +5004,80 @@ function needsTitleTranslation(
   return !hasValidOppositeLanguageTitle(originalTitle, titleBgRaw, titleEnRaw);
 }
 
-type NeutralizedTitleSet = { original?: string; bg?: string; en?: string };
+type NeutralizedTitleSet = { needsRewrite?: boolean; reason?: string; original?: string; bg?: string; en?: string };
+
+function canonicalTitleForCompare(raw: unknown): string {
+  return String(raw || '')
+    .normalize('NFKC')
+    .toLocaleLowerCase()
+    .replace(/[^\p{L}\p{N}]+/gu, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function titleMateriallyChanged(original: unknown, rewritten: unknown): boolean {
+  const source = canonicalTitleForCompare(original);
+  const candidate = canonicalTitleForCompare(rewritten);
+  return !!source && !!candidate && source !== candidate;
+}
+
+function titleNeutralizationSignals(...parts: unknown[]): string[] {
+  const text = parts
+    .map(part => String(part || ''))
+    .join(' ')
+    .normalize('NFKC')
+    .toLocaleLowerCase();
+
+  const rules: Array<[RegExp, string]> = [
+    [/\b(clickbait|shocking|you won'?t believe|rage[-\s]?bait|slammed|attacks?|crisis|scandal|dramatic|bombshell|tension rises|big problem|what happened)\b/iu, 'loaded English headline framing'],
+    [/(обрат|психологическа граница|напрежението расте|голям проблем|какво направи|проплака|на седмото небе|скандал|атакува|шок|драма|сензац|взриви|извънреден ход|разкри|горещо|важно|кой пази|мина|спасило кариерата|втрещи|ужас|кошмар)/iu, 'loaded Bulgarian headline framing']
+  ];
+
+  return Array.from(new Set(rules.filter(([rx]) => rx.test(text)).map(([, reason]) => reason)));
+}
+
+function titleNeedsRewriteBySignal(it: NewsInternal): boolean {
+  return titleNeutralizationSignals(it.title, it.titleBg, it.titleEn).length > 0;
+}
+
+function neutralTitleFallbackFromSummary(summaryRaw: unknown): string | undefined {
+  const summary = trimNeutralTitle(summaryRaw);
+  if (!summary) return undefined;
+  const firstSentence = summary.split(/(?<=[.!?])\s+/u)[0]?.trim() || summary;
+  return trimNeutralTitle(firstSentence);
+}
+
+function summaryAddsInformationComparedToTitle(titleRaw: unknown, summaryRaw: unknown): boolean {
+  const title = canonicalTitleForCompare(titleRaw);
+  const summary = canonicalTitleForCompare(summaryRaw);
+  if (!summary) return false;
+  if (!title) return true;
+  if (title.includes(summary) || summary.includes(title)) return false;
+
+  const titleTokens = new Set(title.split(' ').filter(token => token.length > 2));
+  const summaryTokens = Array.from(new Set(summary.split(' ').filter(token => token.length > 2)));
+  if (summaryTokens.length <= 3) return false;
+
+  const overlap = summaryTokens.filter(token => titleTokens.has(token)).length;
+  const novel = summaryTokens.length - overlap;
+  return novel >= 2 || overlap / summaryTokens.length < 0.75;
+}
+
+function displayTitleForSummaryCompare(it: NewsInternal): string {
+  return trimNeutralTitle(it.neutralTitle)
+    || trimNeutralTitle(it.neutralTitleBg)
+    || trimNeutralTitle(it.neutralTitleEn)
+    || normalizeTitleValue(it.titleBg)
+    || normalizeTitleValue(it.titleEn)
+    || normalizeTitleValue(it.title)
+    || '';
+}
+
+function wireSummaryForItem(it: NewsInternal): string | undefined {
+  return summaryAddsInformationComparedToTitle(displayTitleForSummaryCompare(it), it.summary)
+    ? it.summary
+    : undefined;
+}
 
 function trimNeutralTitle(raw: unknown): string | undefined {
   const text = normalizeTitleValue(raw);
@@ -5016,8 +5101,10 @@ function parseNeutralizedTitles(raw: string): NeutralizedTitleSet | undefined {
       const original = trimNeutralTitle(parsed.original);
       const bg = trimNeutralTitle(parsed.bg);
       const en = trimNeutralTitle(parsed.en);
-      if (!original && !bg && !en) return undefined;
-      return { original, bg, en };
+      const needsRewrite = typeof parsed.needsRewrite === 'boolean' ? parsed.needsRewrite : undefined;
+      const reason = trimNeutralTitle(parsed.reason);
+      if (!original && !bg && !en && typeof needsRewrite !== 'boolean') return undefined;
+      return { needsRewrite, reason, original, bg, en };
     } catch {
       return undefined;
     }
@@ -5030,10 +5117,17 @@ function parseNeutralizedTitles(raw: string): NeutralizedTitleSet | undefined {
 }
 
 function hasNeutralTitleSet(it: NewsInternal): boolean {
-  return !!(trimNeutralTitle(it.neutralTitle) || trimNeutralTitle(it.neutralTitleBg) || trimNeutralTitle(it.neutralTitleEn));
+  if (it.neutralTitleStatus === 'rewritten') return true;
+  return titleMateriallyChanged(it.title, it.neutralTitle)
+    || titleMateriallyChanged(it.titleBg || it.title, it.neutralTitleBg)
+    || titleMateriallyChanged(it.titleEn || it.title, it.neutralTitleEn);
 }
 
 function needsTitleNeutralization(it: NewsInternal): boolean {
+  if (it.neutralTitleStatus === 'rewritten') return false;
+  if (hasNeutralTitleSet(it)) return false;
+  if (titleNeedsRewriteBySignal(it)) return true;
+  if (it.neutralTitleStatus === 'unchanged' || it.neutralTitleStatus === 'rewrite_failed') return false;
   return !hasNeutralTitleSet(it);
 }
 
@@ -5528,6 +5622,7 @@ async function neutralizeTitleSet(item: NewsInternal, budget: BudgetMode): Promi
   if (!originalTitle) return undefined;
   const bgTitle = normalizeTitleValue(item.titleBg || '');
   const enTitle = normalizeTitleValue(item.titleEn || '');
+  const signals = titleNeutralizationSignals(originalTitle, bgTitle, enTitle);
   const maxTokens = Math.max(120, Math.min(260, budgetToTokensSummary(budget) + 90));
 
   const input = [
@@ -5536,8 +5631,12 @@ async function neutralizeTitleSet(item: NewsInternal, budget: BudgetMode): Promi
     'Preserve all concrete facts: names, places, numbers, dates, roles, outcomes, and uncertainty.',
     'Do not invent facts. Do not make the headline longer than necessary.',
     'Keep each output in the same language as the corresponding input title.',
-    'If a title is already neutral, return it unchanged.',
-    'Return strict JSON only with keys "original", "bg", and "en".',
+    signals.length ? `Rewrite is required because these headline signals were detected: ${signals.join(', ')}.` : '',
+    signals.length ? 'When rewrite is required, do not return unchanged wording; remove rhetorical questions, vague suspense, dramatic framing, and conflict verbs used only for attention.' : '',
+    signals.length && item.summary ? 'If the summary contains the factual core, use that factual core as the neutral headline.' : '',
+    'Set "needsRewrite" to true only if the original uses clickbait, rage-bait, vague teasers, loaded adjectives, emotional framing, or unnecessary drama.',
+    'If a title is already neutral or simply states concrete facts, set "needsRewrite" to false and return the original wording unchanged.',
+    'Return strict JSON only with keys "needsRewrite", "reason", "original", "bg", and "en".',
     `Source: ${item.source}`,
     `Original headline: ${originalTitle}`,
     bgTitle ? `Bulgarian headline: ${bgTitle}` : '',
@@ -5731,7 +5830,7 @@ function toNewsWire(it: NewsInternal): News {
     isMatch: it.isMatch,
     matchScore: it.matchScore,
     filteredOk: it.filteredOk,
-    summary: it.summary,
+    summary: wireSummaryForItem(it),
     summaryEligible: isPublishedInRecentSummaryWindow(it.publishedMs),
     summaryPending: hasSummaryJobQueuedOrRunning(it.id, it.feedUrl),
     research: it.research,
@@ -6707,9 +6806,31 @@ async function runOneJob(job: AiJob) {
         `title_neutralize:${it.id}`
       );
       if (neutralized) {
-        it.neutralTitle = neutralized.original || it.neutralTitle;
-        it.neutralTitleBg = neutralized.bg || it.neutralTitleBg;
-        it.neutralTitleEn = neutralized.en || it.neutralTitleEn;
+        const signals = titleNeutralizationSignals(it.title, it.titleBg, it.titleEn);
+        const summaryFallback = signals.length ? neutralTitleFallbackFromSummary(it.summary) : undefined;
+        const bgFallback = summaryFallback && looksBulgarianTitle(summaryFallback) ? summaryFallback : undefined;
+        const changedOriginal = titleMateriallyChanged(it.title, neutralized.original);
+        const changedBg = titleMateriallyChanged(it.titleBg || it.title, neutralized.bg);
+        const changedEn = titleMateriallyChanged(it.titleEn || it.title, neutralized.en);
+        const fallbackOriginal = !changedOriginal && bgFallback && looksBulgarianTitle(it.title) && titleMateriallyChanged(it.title, bgFallback)
+          ? bgFallback
+          : undefined;
+        const fallbackBg = !changedBg && bgFallback && titleMateriallyChanged(it.titleBg || it.title, bgFallback)
+          ? bgFallback
+          : undefined;
+        const finalNeutralTitle = changedOriginal ? neutralized.original : fallbackOriginal;
+        const finalNeutralTitleBg = changedBg ? neutralized.bg : fallbackBg;
+        const finalNeutralTitleEn = changedEn ? neutralized.en : undefined;
+        const hasChangedTitle = !!(finalNeutralTitle || finalNeutralTitleBg || finalNeutralTitleEn);
+        it.neutralTitle = finalNeutralTitle;
+        it.neutralTitleBg = finalNeutralTitleBg;
+        it.neutralTitleEn = finalNeutralTitleEn;
+        it.neutralTitleStatus = hasChangedTitle ? 'rewritten' : (signals.length ? 'rewrite_failed' : 'unchanged');
+        it.neutralTitleReason = neutralized.reason
+          || (hasChangedTitle
+            ? (summaryFallback && (fallbackOriginal || fallbackBg) ? 'Rewritten from summary because bait framing was detected.' : 'Rewritten for neutral factual tone.')
+            : (signals.length ? `Rewrite required but no usable neutral title was returned: ${signals.join(', ')}` : 'Already neutral or fact-stating.'));
+        it.neutralTitleCheckedAtMs = Date.now();
         clearTimeoutAttempts(job);
         refreshDerivedDataForItem(it);
         await upsertPersistedNewsItem(it);
@@ -6717,7 +6838,7 @@ async function runOneJob(job: AiJob) {
         scheduleDiscordPost(it);
         didBroadcastUpdate = true;
         markDirty();
-        markSuccess('title_neutralized');
+        markSuccess(hasChangedTitle ? 'title_neutralized' : (signals.length ? 'title_neutralize_failed_no_change' : 'title_neutral_checked_unchanged'));
       } else {
         markSkip('title_neutralize_empty_or_invalid');
       }
