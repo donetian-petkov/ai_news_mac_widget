@@ -326,6 +326,57 @@ public struct WidgetStory: Codable, Equatable, Hashable, Identifiable, Sendable 
         return translated
     }
 
+    public func visibleSummary(showOriginalTitle: Bool) -> String? {
+        guard let cleanedSummary = Self.cleanTitle(summary) else { return nil }
+        return shouldOmitSummary(showOriginalTitle: showOriginalTitle) ? nil : cleanedSummary
+    }
+
+    public func shouldOmitSummary(showOriginalTitle: Bool) -> Bool {
+        guard let cleanedSummary = Self.cleanTitle(summary),
+              !showOriginalTitle,
+              let neutral = preferredNeutralTitle
+        else {
+            return false
+        }
+        return Self.summaryIsRedundant(cleanedSummary, withTitle: neutral)
+    }
+
+    private static func summaryIsRedundant(_ summary: String, withTitle title: String) -> Bool {
+        let summaryKey = comparableKey(summary)
+        let titleKey = comparableKey(title)
+        guard !summaryKey.isEmpty, !titleKey.isEmpty else { return false }
+        if summaryKey == titleKey || titleKey.contains(summaryKey) || summaryKey.contains(titleKey) {
+            return true
+        }
+
+        let summaryWords = Set(comparableWords(summary).filter { $0.count > 2 })
+        let titleWords = Set(comparableWords(title).filter { $0.count > 2 })
+        guard summaryWords.count >= 3, !titleWords.isEmpty else { return false }
+
+        let overlap = summaryWords.intersection(titleWords).count
+        let novelWords = summaryWords.subtracting(titleWords).count
+        let overlapRatio = Double(overlap) / Double(summaryWords.count)
+        return overlapRatio >= 0.78 && novelWords <= 2
+    }
+
+    private static func comparableKey(_ value: String) -> String {
+        comparableWords(value).joined(separator: " ")
+    }
+
+    private static func comparableWords(_ value: String) -> [String] {
+        var normalized = ""
+        for scalar in value.lowercased().unicodeScalars {
+            if CharacterSet.alphanumerics.contains(scalar) {
+                normalized.unicodeScalars.append(scalar)
+            } else {
+                normalized.append(" ")
+            }
+        }
+        return normalized
+            .split(separator: " ")
+            .map(String.init)
+    }
+
     public var publishedDate: Date? {
         publishedMs > 0 ? Date(timeIntervalSince1970: TimeInterval(publishedMs) / 1000.0) : nil
     }

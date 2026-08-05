@@ -713,13 +713,14 @@ private struct FloatingWidgetView: View {
             ? Double(secondaryTitle(for: story)?.count ?? 0)
             : 0
         let secondaryLines = ceil(secondaryLength / (lineWidth + 4.0))
-        let summaryLength = story.summary?.count ?? 0
-        let summaryLines = max(1.0, ceil(Double(summaryLength) / (lineWidth + 4.0)))
+        let omitSummary = story.shouldOmitSummary(showOriginalTitle: showOriginalTitles)
+        let summaryLength = visibleSummary(for: story)?.count ?? 0
+        let summaryLines = omitSummary ? 0 : max(1.0, ceil(Double(summaryLength) / (lineWidth + 4.0)))
         let researchLength = story.research?.count ?? 0
         let researchLines = max(1.0, ceil(Double(researchLength) / (lineWidth + 4.0)))
         let sourceLines = ceil(Double((story.source ?? story.feedUrl).count) / 28.0)
         let secondaryHeight = secondaryLines > 0 ? secondaryLines * 19.0 * scale + 8.0 : 0
-        let summaryHeight = state.globalAiDefaults.summaryEnabled ? (summaryLines * 21.0 * scale + 28.0) : 0
+        let summaryHeight = state.globalAiDefaults.summaryEnabled && !omitSummary ? (summaryLines * 21.0 * scale + 28.0) : 0
         let researchHeight = state.globalAiDefaults.researchEnabled ? (researchLines * 21.0 * scale + 28.0) : 0
         let cardHeight = max(
             214.0,
@@ -742,7 +743,7 @@ private struct FloatingWidgetView: View {
     private var estimatedStackWindowWidth: CGFloat {
         guard let story = currentStackStory else { return 436 }
         let titleWeight = min(CGFloat(displayTitle(for: story).count) * 0.38, 40)
-        let summaryWeight = min(CGFloat(story.summary?.count ?? 0) * 0.1, 22)
+        let summaryWeight = min(CGFloat(visibleSummary(for: story)?.count ?? 0) * 0.1, 22)
         return min(max(406 + titleWeight + summaryWeight, 430), 468)
     }
 
@@ -777,7 +778,10 @@ private struct FloatingWidgetView: View {
             ? Double(secondaryTitle(for: story)?.count ?? 0)
             : 0
         let secondaryLines = ceil(secondaryLength / 34.0)
-        let summaryLines = ceil(Double((story.summary ?? "").count) / 34.0)
+        let summaryLength = visibleSummary(for: story)?.count ?? 0
+        let summaryLines = story.shouldOmitSummary(showOriginalTitle: showOriginalTitles)
+            ? 0
+            : max(1.0, ceil(Double(summaryLength) / 34.0))
         let sourceLines = ceil(Double((story.source ?? story.feedUrl).count) / 26.0)
         let baseHeight = coversEnabled ? 138.0 : 118.0
         let dynamicHeight = (titleLines * 20.0) + (secondaryLines * 14.0) + (summaryLines * 16.0) + (sourceLines * 8.0)
@@ -1641,6 +1645,10 @@ private struct FloatingWidgetView: View {
         story.secondaryTitle(showOriginalTitle: showOriginalTitles)
     }
 
+    private func visibleSummary(for story: WidgetStory) -> String? {
+        story.visibleSummary(showOriginalTitle: showOriginalTitles)
+    }
+
     private func storyRow(_ story: WidgetStory, draggable: Bool = true, minCardHeight: CGFloat? = nil) -> some View {
         ZStack(alignment: .topTrailing) {
             HStack(alignment: .top, spacing: 12) {
@@ -1682,7 +1690,9 @@ private struct FloatingWidgetView: View {
                             .fixedSize(horizontal: false, vertical: true)
                     }
 
-                    block("Summary", story.summary, pending: story.summaryPending, enabled: state.globalAiDefaults.summaryEnabled, accent: AINewsTheme.accentBlue)
+                    if !story.shouldOmitSummary(showOriginalTitle: showOriginalTitles) {
+                        block("Summary", visibleSummary(for: story), pending: story.summaryPending, enabled: state.globalAiDefaults.summaryEnabled, accent: AINewsTheme.accentBlue)
+                    }
                     block("Research", story.research, pending: story.researchPending, enabled: state.globalAiDefaults.researchEnabled, accent: AINewsTheme.accentCyan)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -1732,7 +1742,7 @@ private struct FloatingWidgetView: View {
                         .foregroundStyle(AINewsTheme.accentBlue)
                         .underline(story.hasNeutralTitle, color: AINewsTheme.accentCyan.opacity(0.85))
                         .lineLimit(3)
-                    if let summary = story.summary, !summary.isEmpty {
+                    if let summary = visibleSummary(for: story), !summary.isEmpty {
                         Text(summary)
                             .font(widgetCaption())
                             .foregroundStyle(AINewsTheme.textSecondary)

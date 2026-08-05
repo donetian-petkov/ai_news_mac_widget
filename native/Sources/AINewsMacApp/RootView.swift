@@ -801,7 +801,9 @@ private struct StoryCardView: View {
 
             Divider().overlay(AINewsTheme.panelBorder.opacity(0.55))
 
-            storyBlock(title: "Summary", text: story.summary, pending: story.summaryPending, accent: AINewsTheme.accentBlue)
+            if !story.shouldOmitSummary(showOriginalTitle: showOriginalTitles) {
+                storyBlock(title: "Summary", text: story.visibleSummary(showOriginalTitle: showOriginalTitles), pending: story.summaryPending, accent: AINewsTheme.accentBlue)
+            }
             storyBlock(title: "Research", text: story.research, pending: story.researchPending, accent: AINewsTheme.accentCyan)
             // Only show Translation when one exists or is in progress. For stories already
             // in the display language (e.g. Bulgarian feeds), translation isn't needed, so
@@ -1036,7 +1038,7 @@ private struct KeywordsWorkspaceTab: View {
                                 Text(story.displayTitle(showOriginalTitle: showOriginalTitles))
                                     .font(.headline).foregroundStyle(AINewsTheme.accentBlue)
                                     .fixedSize(horizontal: false, vertical: true)
-                                if let summary = story.summary, !summary.isEmpty {
+                                if let summary = story.visibleSummary(showOriginalTitle: showOriginalTitles), !summary.isEmpty {
                                     Text(summary).font(.body).foregroundStyle(AINewsTheme.textSecondary)
                                         .fixedSize(horizontal: false, vertical: true)
                                 }
