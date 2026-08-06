@@ -8,6 +8,33 @@ private enum FloatingWidgetLayoutMode: String, CaseIterable {
     case stack
 }
 
+private func floatingWidgetMinimumSize(for mode: FloatingWidgetLayoutMode) -> NSSize {
+    mode == .stack
+        ? NSSize(width: 300, height: 190)
+        : NSSize(width: 400, height: 260)
+}
+
+private func floatingWidgetUsesMiniatureStackLayout(size: CGSize) -> Bool {
+    size.width < 360 || size.height < 300
+}
+
+private func floatingWidgetAutomaticLayoutMode(for size: CGSize) -> FloatingWidgetLayoutMode {
+    if floatingWidgetUsesMiniatureStackLayout(size: size) {
+        return .stack
+    }
+    if size.height >= 760, size.width >= 400 {
+        return .column
+    }
+    if size.width >= 760, size.height >= 560 {
+        return .column
+    }
+    return .stack
+}
+
+private func floatingWidgetFrameIsCompatible(_ frame: NSRect, with mode: FloatingWidgetLayoutMode) -> Bool {
+    mode != .stack || floatingWidgetAutomaticLayoutMode(for: frame.size) == .stack
+}
+
 struct SavedWidgetEntry: Codable, Equatable, Identifiable {
     var id: String = UUID().uuidString
     var categoryID: Int
@@ -513,7 +540,8 @@ final class FloatingWidgetManager: NSObject, NSWindowDelegate {
         // Keep the panel object around when closed so reopening the same category
         // just brings it back instead of leaking a new one.
         panel.isReleasedWhenClosed = false
-        panel.minSize = NSSize(width: 400, height: 260)
+        let initialMode = FloatingWidgetPreferences.layoutMode(categoryID: categoryID, isFiltered: isFiltered)
+        panel.minSize = floatingWidgetMinimumSize(for: initialMode)
         // Remember each widget's size/position across launches, per category.
         // We persist the frame ourselves (windowDidMove/Resize/WillClose) rather
         // than relying on AppKit's autosave, which is unreliable for panels.
@@ -522,11 +550,18 @@ final class FloatingWidgetManager: NSObject, NSWindowDelegate {
         } else if let savedFrame = FloatingWidgetPreferences.frame(
             categoryID: categoryID,
             isFiltered: isFiltered,
-            mode: FloatingWidgetPreferences.layoutMode(categoryID: categoryID, isFiltered: isFiltered)
-        ) {
+            mode: initialMode
+        ), floatingWidgetFrameIsCompatible(savedFrame, with: initialMode) {
             panel.setFrame(savedFrame, display: false)
         } else if let saved = UserDefaults.standard.string(forKey: Self.frameKey(categoryID)) {
-            panel.setFrame(NSRectFromString(saved), display: false)
+            let legacyFrame = NSRectFromString(saved)
+            if floatingWidgetFrameIsCompatible(legacyFrame, with: initialMode) {
+                panel.setFrame(legacyFrame, display: false)
+            } else {
+                FloatingWidgetPreferences.removeFrame(categoryID: categoryID, isFiltered: isFiltered, mode: initialMode)
+                UserDefaults.standard.removeObject(forKey: Self.frameKey(categoryID))
+                panel.center()
+            }
         } else {
             panel.center()
             // Offset each new panel so multiple widgets don't stack exactly on top.
@@ -752,20 +787,11 @@ private struct FloatingWidgetView: View {
     }
 
     private func usesMiniatureStackLayout(size: CGSize) -> Bool {
-        size.width < 360 || size.height < 300
+        floatingWidgetUsesMiniatureStackLayout(size: size)
     }
 
     private func automaticLayoutMode(for size: CGSize) -> FloatingWidgetLayoutMode {
-        if usesMiniatureStackLayout(size: size) {
-            return .stack
-        }
-        if size.height >= 760, size.width >= 400 {
-            return .column
-        }
-        if size.width >= 760, size.height >= 560 {
-            return .column
-        }
-        return .stack
+        floatingWidgetAutomaticLayoutMode(for: size)
     }
 
     private var estimatedColumnWindowWidth: CGFloat {
@@ -876,6 +902,17 @@ private struct FloatingWidgetView: View {
                 windowSize = window.frame.size
             }
         }
+        .onReceive(NotificationCenter.default.publisher(for: NSWindow.didEndLiveResizeNotification)) { notification in
+            guard let window = notification.object as? NSWindow,
+                  currentWidgetWindow() === window else {
+                return
+            }
+            guard !suppressResizeDrivenLayoutSwitch else {
+                windowSize = window.frame.size
+                return
+            }
+            _ = updateWindowSize(window.frame.size, isUserResize: true)
+        }
         .task {
             // Load now, then auto-refresh so the widget picks up new stories and
             // freshly generated summaries/translations without clicking reload.
@@ -925,10 +962,8 @@ private struct FloatingWidgetView: View {
         }
         .onAppear {
             if let window = currentWidgetWindow() {
-                let switchedLayout = updateWindowSize(window.frame.size, isUserResize: false)
-                if !switchedLayout {
-                    resizeWindowForCurrentLayout(force: true)
-                }
+                windowSize = window.frame.size
+                updateMinimumWindowSize()
             } else {
                 resizeWindowForCurrentLayout(force: true)
             }
@@ -954,9 +989,10 @@ private struct FloatingWidgetView: View {
     private func updateWindowSize(_ size: CGSize, isUserResize: Bool = false) -> Bool {
         guard size.width > 0, size.height > 0 else { return false }
         windowSize = size
+        guard isUserResize else { return false }
         let preferred = automaticLayoutMode(for: size)
         if let explicitLayoutMode {
-            if !isUserResize || preferred == explicitLayoutMode {
+            if preferred == explicitLayoutMode {
                 return false
             }
             self.explicitLayoutMode = nil
@@ -1345,24 +1381,23 @@ private struct FloatingWidgetView: View {
     }
 
     private var stackContent: some View {
-        GeometryReader { proxy in
-            let availableViewportHeight = max(proxy.size.height - 94, 214)
-            let measuredSize = windowSize == .zero ? proxy.size : windowSize
-            let isMiniature = usesMiniatureStackLayout(size: measuredSize)
+        let measuredSize = windowSize == .zero
+            ? CGSize(width: estimatedStackWindowWidth, height: estimatedStackWindowHeight)
+            : windowSize
+        let isMiniature = usesMiniatureStackLayout(size: measuredSize)
 
-            Group {
-                if isMiniature {
-                    miniatureStackContent
-                } else {
-                    fullStackContent(availableViewportHeight: availableViewportHeight)
-                }
+        return Group {
+            if isMiniature {
+                miniatureStackContent
+            } else {
+                fullStackContent
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         }
+        .frame(maxWidth: .infinity, alignment: .top)
     }
 
-    private func fullStackContent(availableViewportHeight: CGFloat) -> some View {
-        let cardHeight = min(estimatedStackCardHeight, availableViewportHeight)
+    private var fullStackContent: some View {
+        let cardHeight = estimatedStackCardHeight
         return VStack(spacing: 12) {
             ZStack(alignment: .topLeading) {
                 if let tertiary = stackStory(offsetBy: 2) {
@@ -2007,7 +2042,7 @@ private struct FloatingWidgetView: View {
         DispatchQueue.main.async {
             guard let window = currentWidgetWindow() else { return }
             suppressProgrammaticResizeSwitch()
-            window.minSize = mode == .stack ? NSSize(width: 300, height: 190) : NSSize(width: 400, height: 260)
+            window.minSize = floatingWidgetMinimumSize(for: mode)
             window.setFrame(savedFrame, display: true, animate: true)
             windowSize = savedFrame.size
         }
@@ -2017,7 +2052,7 @@ private struct FloatingWidgetView: View {
     private func updateMinimumWindowSize() {
         DispatchQueue.main.async {
             guard let window = currentWidgetWindow() else { return }
-            window.minSize = layoutMode == .stack ? NSSize(width: 300, height: 190) : NSSize(width: 400, height: 260)
+            window.minSize = floatingWidgetMinimumSize(for: layoutMode)
             windowSize = window.frame.size
         }
     }
@@ -2067,7 +2102,7 @@ private struct FloatingWidgetView: View {
             frame.origin.x -= deltaWidth / 2
             frame.size.height = targetHeight
             frame.size.width = targetWidth
-            window.minSize = layoutMode == .stack ? NSSize(width: 300, height: 190) : NSSize(width: 400, height: 260)
+            window.minSize = floatingWidgetMinimumSize(for: layoutMode)
             window.setFrame(frame, display: true, animate: true)
         }
     }
