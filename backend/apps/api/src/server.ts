@@ -5031,6 +5031,8 @@ type NeutralizedTitleSet = {
   en?: string;
 };
 
+const AI_NEUTRAL_TITLE_RULESET_VERSION = 'neutral-title-rules-2026-08-06';
+
 function canonicalTitleForCompare(raw: unknown): string {
   return String(raw || '')
     .normalize('NFKC')
@@ -5055,10 +5057,18 @@ function titleNeutralizationSignals(...parts: unknown[]): string[] {
 
   const rules: Array<[RegExp, string]> = [
     [/\b(clickbait|shocking|you won'?t believe|rage[-\s]?bait|slammed|attacks?|crisis|scandal|dramatic|bombshell|tension rises|big problem|what happened)\b/iu, 'loaded English headline framing'],
-    [/(обрат|психологическа граница|напрежението расте|голям проблем|какво направи|проплака|на седмото небе|скандал|атакува|шок|драма|сензац|взриви|извънреден ход|разкри|горещо|важно|кой пази|мина|спасило кариерата|втрещи|ужас|кошмар)/iu, 'loaded Bulgarian headline framing']
+    [/\b(important news|one neighborhood rejoices|neighborhood rejoices|residents rejoice|locals celebrate)\b/iu, 'vague importance/reaction framing'],
+    [/(обрат|психологическа граница|напрежението расте|голям проблем|какво направи|проплака|на седмото небе|скандал|атакува|шок|драма|сензац|взриви|извънреден ход|разкри|горещо|важно|кой пази|мина|спасило кариерата|втрещи|ужас|кошмар)/iu, 'loaded Bulgarian headline framing'],
+    [/(важна новина|важно за|един квартал ликува|квартал ликува|\bликува\b)/iu, 'vague importance/reaction framing']
   ];
 
   return Array.from(new Set(rules.filter(([rx]) => rx.test(text)).map(([, reason]) => reason)));
+}
+
+function fallbackClassificationFromNeutralSignals(signals: string[]): NeutralTitleClassification | undefined {
+  if (signals.includes('vague importance/reaction framing')) return 'clickbait';
+  if (signals.includes('loaded English headline framing') || signals.includes('loaded Bulgarian headline framing')) return 'emotional_framing';
+  return undefined;
 }
 
 function normalizeNeutralTitleClassification(raw: unknown): NeutralTitleClassification | undefined {
@@ -5191,14 +5201,17 @@ function hasNeutralTitleSet(it: NewsInternal): boolean {
 
 function needsTitleNeutralization(it: NewsInternal): boolean {
   const status = String(it.neutralTitleStatus || '').trim();
+  const reason = String(it.neutralTitleReason || '').trim();
   const classification = normalizeNeutralTitleClassification(it.neutralTitleClassification);
   const confidence = normalizeNeutralTitleConfidence(it.neutralTitleConfidence);
   const checkedAt = Number(it.neutralTitleCheckedAtMs || 0);
+  const signals = titleNeutralizationSignals(it.title, it.titleBg, it.titleEn);
+  const shouldRecheckForNewSignals = signals.length > 0 && !reason.includes(AI_NEUTRAL_TITLE_RULESET_VERSION);
 
   if (status === 'rewritten' && hasNeutralTitleSet(it)) return false;
   if (hasNeutralTitleSet(it)) return false;
   if (status === 'unchanged' && classification && typeof confidence === 'number' && confidence >= 0.5 && checkedAt > 0) {
-    return false;
+    return shouldRecheckForNewSignals;
   }
   if (status === 'rewrite_failed' && checkedAt > 0 && Date.now() - checkedAt < AI_NEUTRAL_TITLE_RETRY_COOLDOWN_MS) {
     return false;
@@ -5705,6 +5718,7 @@ async function neutralizeTitleSet(item: NewsInternal, budget: BudgetMode): Promi
     'Allowed classifications only: neutral, clickbait, rage_bait, emotional_framing, vague_teaser, sensational, fact_stating_but_emotional_event.',
     'Use the classification as the primary decision. Heuristic signal hints are only hints, not a mandate.',
     'Judge the framing and intent, not only exact trigger words.',
+    'Classify generic importance claims and audience-reaction framing as clickbait or emotional_framing when the headline withholds the actual fact. Examples: "Important news for the metro", "One neighborhood rejoices", "Важна новина за метрото", "Един квартал ликува".',
     'Rewrite only for clickbait, rage_bait, emotional_framing, vague_teaser, or sensational.',
     'Do not rewrite neutral headlines or headlines that simply state facts about an emotional event.',
     'If you rewrite, make the headline neutral, factual, shorter where possible, and preserve names, places, numbers, dates, roles, outcomes, and uncertainty.',
@@ -6914,12 +6928,20 @@ async function runOneJob(job: AiJob) {
         `title_neutralize:${it.id}`
       );
       if (neutralized) {
-        const classification = normalizeNeutralTitleClassification(neutralized.classification);
-        const confidence = normalizeNeutralTitleConfidence(neutralized.confidence);
+        const signals = titleNeutralizationSignals(it.title, it.titleBg, it.titleEn);
+        const fallbackClassification = fallbackClassificationFromNeutralSignals(signals);
+        let classification = normalizeNeutralTitleClassification(neutralized.classification);
+        let confidence = normalizeNeutralTitleConfidence(neutralized.confidence);
+        if (
+          fallbackClassification &&
+          (!classification || (classification === 'neutral' && (typeof confidence !== 'number' || confidence < 0.8)))
+        ) {
+          classification = fallbackClassification;
+          confidence = Math.max(confidence || 0, 0.72);
+        }
         const needsRewrite = classification
           ? classificationNeedsNeutralRewrite(classification)
           : neutralized.needsRewrite === true;
-        const signals = titleNeutralizationSignals(it.title, it.titleBg, it.titleEn);
         const summaryFallback = needsRewrite ? neutralTitleFallbackFromSummary(it.summary) : undefined;
         const bgFallback = summaryFallback && looksBulgarianTitle(summaryFallback) ? summaryFallback : undefined;
         const changedOriginal = titleMateriallyChanged(it.title, neutralized.original);
@@ -6941,14 +6963,17 @@ async function runOneJob(job: AiJob) {
         it.neutralTitleStatus = !needsRewrite
           ? 'unchanged'
           : (hasChangedTitle ? 'rewritten' : 'rewrite_failed');
-        it.neutralTitleReason = neutralized.reason
+        const neutralTitleReason = neutralized.reason
           || (!needsRewrite
             ? (classification === 'fact_stating_but_emotional_event'
-              ? 'Headline states facts about an emotional event without bait framing.'
-              : 'Headline is already neutral enough and does not require rewriting.')
+              ? `Headline states facts about an emotional event without bait framing. ${AI_NEUTRAL_TITLE_RULESET_VERSION}`
+              : `Headline is already neutral enough and does not require rewriting. ${AI_NEUTRAL_TITLE_RULESET_VERSION}`)
             : (hasChangedTitle
-              ? (summaryFallback && (fallbackOriginal || fallbackBg) ? 'Rewritten from summary to remove baiting while preserving the facts.' : 'Rewritten for a more neutral factual tone.')
-              : (signals.length ? `Rewrite was warranted but no materially better neutral title was returned: ${signals.join(', ')}` : 'Rewrite was warranted but no materially better neutral title was returned.')));
+              ? (summaryFallback && (fallbackOriginal || fallbackBg) ? `Rewritten from summary to remove baiting while preserving the facts. ${AI_NEUTRAL_TITLE_RULESET_VERSION}` : `Rewritten for a more neutral factual tone. ${AI_NEUTRAL_TITLE_RULESET_VERSION}`)
+              : (signals.length ? `Rewrite was warranted but no materially better neutral title was returned: ${signals.join(', ')}. ${AI_NEUTRAL_TITLE_RULESET_VERSION}` : `Rewrite was warranted but no materially better neutral title was returned. ${AI_NEUTRAL_TITLE_RULESET_VERSION}`)));
+        it.neutralTitleReason = neutralTitleReason.includes(AI_NEUTRAL_TITLE_RULESET_VERSION)
+          ? neutralTitleReason
+          : `${neutralTitleReason} ${AI_NEUTRAL_TITLE_RULESET_VERSION}`;
         it.neutralTitleClassification = classification;
         it.neutralTitleConfidence = confidence;
         it.neutralTitleCheckedAtMs = Date.now();
