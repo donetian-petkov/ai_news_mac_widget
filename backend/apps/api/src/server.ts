@@ -5190,9 +5190,17 @@ function hasNeutralTitleSet(it: NewsInternal): boolean {
 }
 
 function needsTitleNeutralization(it: NewsInternal): boolean {
-  if (it.neutralTitleStatus === 'rewritten') return false;
+  const status = String(it.neutralTitleStatus || '').trim();
+  const classification = normalizeNeutralTitleClassification(it.neutralTitleClassification);
+  const confidence = normalizeNeutralTitleConfidence(it.neutralTitleConfidence);
+  const checkedAt = Number(it.neutralTitleCheckedAtMs || 0);
+
+  if (status === 'rewritten' && hasNeutralTitleSet(it)) return false;
   if (hasNeutralTitleSet(it)) return false;
-  if (it.neutralTitleClassification) {
+  if (status === 'unchanged' && classification && typeof confidence === 'number' && confidence >= 0.5 && checkedAt > 0) {
+    return false;
+  }
+  if (status === 'rewrite_failed' && checkedAt > 0 && Date.now() - checkedAt < AI_NEUTRAL_TITLE_RETRY_COOLDOWN_MS) {
     return false;
   }
   return true;
@@ -5690,12 +5698,13 @@ async function neutralizeTitleSet(item: NewsInternal, budget: BudgetMode): Promi
   const bgTitle = normalizeTitleValue(item.titleBg || '');
   const enTitle = normalizeTitleValue(item.titleEn || '');
   const signals = titleNeutralizationSignals(originalTitle, bgTitle, enTitle);
-  const maxTokens = Math.max(180, Math.min(360, budgetToTokensSummary(budget) + 220));
+  const maxTokens = Math.max(260, Math.min(520, budgetToTokensSummary(budget) + 260));
 
   const input = [
     'Classify this headline set first, then rewrite only if the classification requires neutralization.',
     'Allowed classifications only: neutral, clickbait, rage_bait, emotional_framing, vague_teaser, sensational, fact_stating_but_emotional_event.',
     'Use the classification as the primary decision. Heuristic signal hints are only hints, not a mandate.',
+    'Judge the framing and intent, not only exact trigger words.',
     'Rewrite only for clickbait, rage_bait, emotional_framing, vague_teaser, or sensational.',
     'Do not rewrite neutral headlines or headlines that simply state facts about an emotional event.',
     'If you rewrite, make the headline neutral, factual, shorter where possible, and preserve names, places, numbers, dates, roles, outcomes, and uncertainty.',
@@ -6072,11 +6081,20 @@ const summaryDebugEvents: SummaryDebugEvent[] = [];
 const lastAiJobErrorAtMs = new Map<string, number>();
 const aiTimeoutCounts = new Map<string, number>();
 
+function parseEnvInt(envKey: string, fallback: number): number {
+  const raw = process.env[envKey];
+  if (typeof raw !== 'string') return fallback;
+  const normalized = raw.trim().replace(/_/g, '');
+  if (!normalized) return fallback;
+  const parsed = Number.parseInt(normalized, 10);
+  return Number.isFinite(parsed) ? parsed : fallback;
+}
+
 const AI_MAX_CONCURRENCY = Math.max(1, parseInt(process.env.AI_MAX_CONCURRENCY || '1', 10));
 const AI_QUEUE_MAX = Math.max(200, parseInt(process.env.AI_QUEUE_MAX || '600', 10));
-const AI_JOB_TTL_MS = Math.max(15_000, Number.parseInt(process.env.AI_JOB_TTL_MS ?? '180_000', 10) || 180_000);
-const AI_DEAD_LETTER_MAX = Math.max(50, Number.parseInt(process.env.AI_DEAD_LETTER_MAX ?? '400', 10) || 400);
-const AI_JOB_LOG_MAX = Math.max(100, Number.parseInt(process.env.AI_JOB_LOG_MAX ?? '1200', 10) || 1200);
+const AI_JOB_TTL_MS = Math.max(15_000, parseEnvInt('AI_JOB_TTL_MS', 180_000));
+const AI_DEAD_LETTER_MAX = Math.max(50, parseEnvInt('AI_DEAD_LETTER_MAX', 400));
+const AI_JOB_LOG_MAX = Math.max(100, parseEnvInt('AI_JOB_LOG_MAX', 1200));
 const AI_JOB_LOG_VERBOSE = String(process.env.AI_JOB_LOG_VERBOSE || '').trim().toLowerCase() === 'true';
 const AI_JOB_LOG_PERSIST = String(process.env.AI_JOB_LOG_PERSIST || 'true').trim().toLowerCase() !== 'false';
 const API_ROOT_DIR = (() => {
@@ -6092,58 +6110,66 @@ const AI_JOB_LOG_DIR = (() => {
 const AI_JOB_LOG_FILE_PATH = path.join(AI_JOB_LOG_DIR, 'ai-jobs.jsonl');
 const AI_JOB_LOG_ROTATE_BYTES = Math.max(
   128 * 1024,
-  Number.parseInt(process.env.AI_JOB_LOG_ROTATE_BYTES ?? '5242880', 10) || 5 * 1024 * 1024
+  parseEnvInt('AI_JOB_LOG_ROTATE_BYTES', 5 * 1024 * 1024)
 );
 const AI_JOB_LOG_ROTATE_FILES = Math.max(
   1,
-  Number.parseInt(process.env.AI_JOB_LOG_ROTATE_FILES ?? '10', 10) || 10
+  parseEnvInt('AI_JOB_LOG_ROTATE_FILES', 10)
 );
 const AI_JOB_LOG_FLUSH_INTERVAL_MS = Math.max(
   250,
-  Number.parseInt(process.env.AI_JOB_LOG_FLUSH_INTERVAL_MS ?? '1500', 10) || 1500
+  parseEnvInt('AI_JOB_LOG_FLUSH_INTERVAL_MS', 1500)
 );
 const AI_SUMMARY_DEBUG_MAX = Math.max(
   50,
-  Number.parseInt(process.env.AI_SUMMARY_DEBUG_MAX ?? '240', 10) || 240
+  parseEnvInt('AI_SUMMARY_DEBUG_MAX', 240)
 );
 const AI_TIMEOUT_RETRY_LIMIT = Math.max(
   1,
-  Number.parseInt(process.env.AI_TIMEOUT_RETRY_LIMIT ?? '4', 10) || 4
+  parseEnvInt('AI_TIMEOUT_RETRY_LIMIT', 4)
 );
 const aiJobLogFileBuffer: string[] = [];
 let aiJobLogFlushTimer: NodeJS.Timeout | null = null;
 let aiJobLogFlushInProgress = false;
-const AI_SUMMARY_TIMEOUT_MS = Math.max(4_000, Number.parseInt(process.env.AI_SUMMARY_TIMEOUT_MS ?? '22_000', 10) || 22_000);
-const AI_SUMMARY_RETRY_COOLDOWN_MS = Math.max(5_000, Number.parseInt(process.env.AI_SUMMARY_RETRY_COOLDOWN_MS ?? '20_000', 10) || 20_000);
-const AI_SUMMARY_RECOVERY_INTERVAL_MS = Math.max(2_000, Number.parseInt(process.env.AI_SUMMARY_RECOVERY_INTERVAL_MS ?? '8_000', 10) || 8_000);
-const AI_SUMMARY_RECOVERY_BATCH = Math.max(1, Math.min(100, Number.parseInt(process.env.AI_SUMMARY_RECOVERY_BATCH ?? '24', 10) || 24));
+const AI_SUMMARY_TIMEOUT_MS = Math.max(4_000, parseEnvInt('AI_SUMMARY_TIMEOUT_MS', 22_000));
+const AI_SUMMARY_RETRY_COOLDOWN_MS = Math.max(5_000, parseEnvInt('AI_SUMMARY_RETRY_COOLDOWN_MS', 20_000));
+const AI_SUMMARY_RECOVERY_INTERVAL_MS = Math.max(2_000, parseEnvInt('AI_SUMMARY_RECOVERY_INTERVAL_MS', 8_000));
+const AI_SUMMARY_RECOVERY_BATCH = Math.max(1, Math.min(100, parseEnvInt('AI_SUMMARY_RECOVERY_BATCH', 24)));
 const AI_SUMMARY_BACKLOG_PAUSE_TITLE_TRANSLATE = Math.max(
   1,
-  Number.parseInt(process.env.AI_SUMMARY_BACKLOG_PAUSE_TITLE_TRANSLATE ?? '8', 10) || 8
+  parseEnvInt('AI_SUMMARY_BACKLOG_PAUSE_TITLE_TRANSLATE', 8)
 );
-const AI_TITLE_RECOVERY_INTERVAL_MS = Math.max(3_000, Number.parseInt(process.env.AI_TITLE_RECOVERY_INTERVAL_MS ?? '9_000', 10) || 9_000);
-const AI_TITLE_RECOVERY_BATCH = Math.max(1, Math.min(120, Number.parseInt(process.env.AI_TITLE_RECOVERY_BATCH ?? '32', 10) || 32));
-const AI_NEUTRAL_TITLE_RECOVERY_INTERVAL_MS = Math.max(3_000, Number.parseInt(process.env.AI_NEUTRAL_TITLE_RECOVERY_INTERVAL_MS ?? '10_000', 10) || 10_000);
-const AI_NEUTRAL_TITLE_RECOVERY_BATCH = Math.max(1, Math.min(120, Number.parseInt(process.env.AI_NEUTRAL_TITLE_RECOVERY_BATCH ?? '32', 10) || 32));
-const AI_RESEARCH_RECOVERY_INTERVAL_MS = Math.max(4_000, Number.parseInt(process.env.AI_RESEARCH_RECOVERY_INTERVAL_MS ?? '12_000', 10) || 12_000);
-const AI_RESEARCH_RECOVERY_BATCH = Math.max(1, Math.min(80, Number.parseInt(process.env.AI_RESEARCH_RECOVERY_BATCH ?? '18', 10) || 18));
-const AI_TITLE_TRANSLATE_TIMEOUT_MS = Math.max(6_000, Number.parseInt(process.env.AI_TITLE_TRANSLATE_TIMEOUT_MS ?? '24_000', 10) || 24_000);
-const AI_TITLE_NEUTRALIZE_TIMEOUT_MS = Math.max(6_000, Number.parseInt(process.env.AI_TITLE_NEUTRALIZE_TIMEOUT_MS ?? '24_000', 10) || 24_000);
-const AI_RESEARCH_TIMEOUT_MS = Math.max(8_000, Number.parseInt(process.env.AI_RESEARCH_TIMEOUT_MS ?? '45_000', 10) || 45_000);
+const AI_NEUTRAL_TITLE_SUMMARY_BACKLOG_PAUSE = Math.max(
+  AI_SUMMARY_BACKLOG_PAUSE_TITLE_TRANSLATE,
+  parseEnvInt('AI_NEUTRAL_TITLE_SUMMARY_BACKLOG_PAUSE', 32)
+);
+const AI_TITLE_RECOVERY_INTERVAL_MS = Math.max(3_000, parseEnvInt('AI_TITLE_RECOVERY_INTERVAL_MS', 9_000));
+const AI_TITLE_RECOVERY_BATCH = Math.max(1, Math.min(120, parseEnvInt('AI_TITLE_RECOVERY_BATCH', 32)));
+const AI_NEUTRAL_TITLE_RECOVERY_INTERVAL_MS = Math.max(3_000, parseEnvInt('AI_NEUTRAL_TITLE_RECOVERY_INTERVAL_MS', 10_000));
+const AI_NEUTRAL_TITLE_RECOVERY_BATCH = Math.max(1, Math.min(120, parseEnvInt('AI_NEUTRAL_TITLE_RECOVERY_BATCH', 32)));
+const AI_NEUTRAL_TITLE_RETRY_COOLDOWN_MS = Math.max(
+  60_000,
+  parseEnvInt('AI_NEUTRAL_TITLE_RETRY_COOLDOWN_MS', 30 * 60_000)
+);
+const AI_RESEARCH_RECOVERY_INTERVAL_MS = Math.max(4_000, parseEnvInt('AI_RESEARCH_RECOVERY_INTERVAL_MS', 12_000));
+const AI_RESEARCH_RECOVERY_BATCH = Math.max(1, Math.min(80, parseEnvInt('AI_RESEARCH_RECOVERY_BATCH', 18)));
+const AI_TITLE_TRANSLATE_TIMEOUT_MS = Math.max(6_000, parseEnvInt('AI_TITLE_TRANSLATE_TIMEOUT_MS', 24_000));
+const AI_TITLE_NEUTRALIZE_TIMEOUT_MS = Math.max(6_000, parseEnvInt('AI_TITLE_NEUTRALIZE_TIMEOUT_MS', 24_000));
+const AI_RESEARCH_TIMEOUT_MS = Math.max(8_000, parseEnvInt('AI_RESEARCH_TIMEOUT_MS', 45_000));
 const AI_RESEARCH_TIMEOUT_MANUAL_MS = Math.max(
   AI_RESEARCH_TIMEOUT_MS,
-  Number.parseInt(process.env.AI_RESEARCH_TIMEOUT_MANUAL_MS ?? '60_000', 10) || 60_000
+  parseEnvInt('AI_RESEARCH_TIMEOUT_MANUAL_MS', 60_000)
 );
 const AI_RESEARCH_ARTICLE_MAX_CHARS = Math.max(
   800,
-  Number.parseInt(process.env.AI_RESEARCH_ARTICLE_MAX_CHARS ?? '1600', 10) || 1600
+  parseEnvInt('AI_RESEARCH_ARTICLE_MAX_CHARS', 1600)
 );
 const AI_SUMMARY_ARTICLE_MAX_CHARS = Math.max(
   600,
-  Number.parseInt(process.env.AI_SUMMARY_ARTICLE_MAX_CHARS ?? '2200', 10) || 2200
+  parseEnvInt('AI_SUMMARY_ARTICLE_MAX_CHARS', 2200)
 );
-const AI_CLASSIFY_TIMEOUT_MS = Math.max(6_000, Number.parseInt(process.env.AI_CLASSIFY_TIMEOUT_MS ?? '22_000', 10) || 22_000);
-const AI_ERROR_TOAST_COOLDOWN_MS = Math.max(5_000, Number.parseInt(process.env.AI_ERROR_TOAST_COOLDOWN_MS ?? '20_000', 10) || 20_000);
+const AI_CLASSIFY_TIMEOUT_MS = Math.max(6_000, parseEnvInt('AI_CLASSIFY_TIMEOUT_MS', 22_000));
+const AI_ERROR_TOAST_COOLDOWN_MS = Math.max(5_000, parseEnvInt('AI_ERROR_TOAST_COOLDOWN_MS', 20_000));
 let lastSummaryRecoveryAtMs = 0;
 let lastTitleRecoveryAtMs = 0;
 let lastNeutralTitleRecoveryAtMs = 0;
@@ -6329,6 +6355,11 @@ function hasSummaryBacklog(): boolean {
   return false;
 }
 
+function hasSummaryBacklogForNeutralTitles(): boolean {
+  const counts = aiQueueCounts();
+  return counts.summary >= AI_NEUTRAL_TITLE_SUMMARY_BACKLOG_PAUSE;
+}
+
 function timeoutAttemptKey(job: Pick<AiJob, 'kind' | 'id' | 'feedUrl'>): string {
   return `${job.kind}:${job.feedUrl || ''}::${job.id}`;
 }
@@ -6419,6 +6450,9 @@ function jobPriority(j: AiJob): number {
     if (j.kind === 'mood') return 6;
     return 7; // news_type
   }
+  if (j.viewport && j.kind === 'title_neutralize') return 2;
+  if (j.viewport && j.kind === 'summary') return 3;
+  if (j.viewport && j.kind === 'title_translate') return 4;
   if (j.kind === 'summary') return 3;
   if (j.kind === 'title_translate') return 4;
   if (j.kind === 'title_neutralize') return 4;
@@ -6567,7 +6601,7 @@ function enqueueNeutralTitleBackfill(feedUrl?: string, manual = false, maxItems 
 
   const targetFeedUrl = String(feedUrl || '').trim();
   const max = Math.max(1, Math.min(2_000, Math.floor(maxItems)));
-  if (!manual && hasSummaryBacklog()) return 0;
+  if (!manual && hasSummaryBacklogForNeutralTitles()) return 0;
   const list = recent.slice().sort((a, b) => b.publishedMs - a.publishedMs);
   let done = 0;
 
@@ -6661,7 +6695,7 @@ function enqueueNeutralTitleRecoveryPass(nowMs = Date.now()): number {
   if (activeModel('summary') === 'none') return 0;
   if (nowMs - lastNeutralTitleRecoveryAtMs < AI_NEUTRAL_TITLE_RECOVERY_INTERVAL_MS) return 0;
   lastNeutralTitleRecoveryAtMs = nowMs;
-  if (hasSummaryBacklog()) return 0;
+  if (hasSummaryBacklogForNeutralTitles()) return 0;
 
   let queued = 0;
   const list = recent.slice().sort((a, b) => b.publishedMs - a.publishedMs);
@@ -6671,6 +6705,8 @@ function enqueueNeutralTitleRecoveryPass(nowMs = Date.now()): number {
     if (hiddenIds.has(it.id)) continue;
     if (!shouldUseNeutralTitlesForItem(it)) continue;
     if (!needsTitleNeutralization(it)) continue;
+    const budget = feedSettings.get(it.feedUrl)?.budget || 'standard';
+    if (!budgetAllowsBackgroundNeutralTitles(budget)) continue;
     if (hasTitleNeutralizeJobQueuedOrRunning(it.id, it.feedUrl)) continue;
 
     enqueueJob({ kind: 'title_neutralize', id: it.id, feedUrl: it.feedUrl });
@@ -6880,9 +6916,9 @@ async function runOneJob(job: AiJob) {
       if (neutralized) {
         const classification = normalizeNeutralTitleClassification(neutralized.classification);
         const confidence = normalizeNeutralTitleConfidence(neutralized.confidence);
-        const needsRewrite = typeof neutralized.needsRewrite === 'boolean'
-          ? neutralized.needsRewrite
-          : classificationNeedsNeutralRewrite(classification);
+        const needsRewrite = classification
+          ? classificationNeedsNeutralRewrite(classification)
+          : neutralized.needsRewrite === true;
         const signals = titleNeutralizationSignals(it.title, it.titleBg, it.titleEn);
         const summaryFallback = needsRewrite ? neutralTitleFallbackFromSummary(it.summary) : undefined;
         const bgFallback = summaryFallback && looksBulgarianTitle(summaryFallback) ? summaryFallback : undefined;
