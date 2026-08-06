@@ -571,6 +571,10 @@ final class FloatingWidgetManager: NSObject, NSWindowDelegate {
         // just brings it back instead of leaking a new one.
         panel.isReleasedWhenClosed = false
         panel.minSize = floatingWidgetMinimumSize(for: initialMode)
+        panel.maxSize = NSSize(
+            width: CGFloat.greatestFiniteMagnitude,
+            height: CGFloat.greatestFiniteMagnitude
+        )
         // Remember each widget's size/position across launches, per category.
         // We persist the frame ourselves (windowDidMove/Resize/WillClose) rather
         // than relying on AppKit's autosave, which is unreliable for panels.
@@ -677,6 +681,7 @@ private struct FloatingWidgetView: View {
     @State private var automaticLayoutSwitchInProgress = false
     @State private var suppressResizeDrivenLayoutSwitch = false
     @State private var suppressResizeDuringRefresh = false
+    @State private var lastUserResizeAt = Date.distantPast
     @State private var lastSourceRefreshAt: Date?
     /// How many stories to show. Grows by `pageStep` via "Show More", resets to
     /// `pageStep` via "Reset". Mirrors ai_news_deploy_ready's column behaviour.
@@ -984,11 +989,11 @@ private struct FloatingWidgetView: View {
         }
         .onChange(of: stackIndex) { _, _ in
             guard !suppressResizeDuringRefresh else { return }
-            resizeWindowForCurrentLayout(force: true)
+            resizeWindowForCurrentLayout(force: true, allowShrink: false)
         }
         .onChange(of: currentStackStory?.storyKey) { _, _ in
             guard !suppressResizeDuringRefresh else { return }
-            resizeWindowForCurrentLayout(force: true)
+            resizeWindowForCurrentLayout(force: true, allowShrink: false)
         }
         .onAppear {
             if let window = currentWidgetWindow() {
@@ -1020,6 +1025,7 @@ private struct FloatingWidgetView: View {
         guard size.width > 0, size.height > 0 else { return false }
         windowSize = size
         guard isUserResize else { return false }
+        lastUserResizeAt = Date()
         let preferred = automaticLayoutMode(for: size)
         guard preferred != layoutMode else { return false }
         automaticLayoutSwitchInProgress = true
@@ -2076,6 +2082,10 @@ private struct FloatingWidgetView: View {
     private func resizeWindowForCurrentLayout(force: Bool = false, allowShrink: Bool = true) {
         DispatchQueue.main.async {
             guard let window = currentWidgetWindow() else { return }
+            guard !window.inLiveResize else { return }
+            if Date().timeIntervalSince(lastUserResizeAt) < 0.8 {
+                return
+            }
             suppressProgrammaticResizeSwitch()
             var frame = window.frame
             let targetWidth: CGFloat
@@ -2089,8 +2099,8 @@ private struct FloatingWidgetView: View {
                     abs(frame.height - lastAutoSizedStackSize.height) < 14
 
                 if force || lastAutoSizedStackSize == .zero || (allowShrink && isNearLastAutoSize) {
-                    targetWidth = estimatedWidth
-                    targetHeight = estimatedHeight
+                    targetWidth = allowShrink ? estimatedWidth : max(frame.width, estimatedWidth)
+                    targetHeight = allowShrink ? estimatedHeight : max(frame.height, estimatedHeight)
                 } else {
                     targetWidth = max(frame.width, estimatedWidth)
                     targetHeight = max(frame.height, estimatedHeight)
