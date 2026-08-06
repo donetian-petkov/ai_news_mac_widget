@@ -331,8 +331,7 @@ public struct WidgetStory: Codable, Equatable, Hashable, Identifiable, Sendable 
     public func secondaryTitle(showOriginalTitle: Bool) -> String? {
         let primary = displayTitle(showOriginalTitle: showOriginalTitle)
         if showOriginalTitle {
-            guard let neutral = preferredNeutralTitle, neutral != primary else { return nil }
-            return neutral
+            return nil
         }
         guard let translated = Self.cleanTitle(translatedTitle),
               translated != primary,
