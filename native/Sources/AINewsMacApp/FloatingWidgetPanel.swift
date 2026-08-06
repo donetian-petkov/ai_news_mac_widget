@@ -8,34 +8,6 @@ private enum FloatingWidgetLayoutMode: String, CaseIterable {
     case stack
 }
 
-private func floatingWidgetMinimumSize(for mode: FloatingWidgetLayoutMode) -> NSSize {
-    mode == .stack
-        ? NSSize(width: 300, height: 190)
-        : NSSize(width: 400, height: 260)
-}
-
-private func floatingWidgetUsesMiniatureStackLayout(size: CGSize) -> Bool {
-    size.width < 360 || size.height < 300
-}
-
-private func floatingWidgetAutomaticLayoutMode(for size: CGSize) -> FloatingWidgetLayoutMode {
-    if floatingWidgetUsesMiniatureStackLayout(size: size) {
-        return .stack
-    }
-    if size.height >= 760, size.width >= 400 {
-        return .column
-    }
-    if size.width >= 760, size.height >= 560 {
-        return .column
-    }
-    return .stack
-}
-
-private func floatingWidgetFrameIsCompatible(_ frame: NSRect, with mode: FloatingWidgetLayoutMode) -> Bool {
-    let minimum = floatingWidgetMinimumSize(for: mode)
-    return frame.width >= minimum.width && frame.height >= minimum.height
-}
-
 struct SavedWidgetEntry: Codable, Equatable, Identifiable {
     var id: String = UUID().uuidString
     var categoryID: Int
@@ -509,46 +481,17 @@ final class FloatingWidgetManager: NSObject, NSWindowDelegate {
             return
         }
 
-        let preferredMode = FloatingWidgetPreferences.layoutMode(categoryID: categoryID, isFiltered: isFiltered)
-        let legacyFrame = UserDefaults.standard.string(forKey: Self.frameKey(categoryID)).map(NSRectFromString)
-        let preferredModeFrame = FloatingWidgetPreferences.frame(
-            categoryID: categoryID,
-            isFiltered: isFiltered,
-            mode: preferredMode
-        )
-        let alternateMode: FloatingWidgetLayoutMode = preferredMode == .stack ? .column : .stack
-        let alternateModeFrame = FloatingWidgetPreferences.frame(
-            categoryID: categoryID,
-            isFiltered: isFiltered,
-            mode: alternateMode
-        )
-        let savedCandidateFrame = preferredModeFrame ?? alternateModeFrame
-        let initialMode: FloatingWidgetLayoutMode
-        if let frameOverride {
-            initialMode = floatingWidgetAutomaticLayoutMode(for: frameOverride.size)
-        } else if let savedCandidateFrame {
-            initialMode = floatingWidgetAutomaticLayoutMode(for: savedCandidateFrame.size)
-        } else if let legacyFrame, floatingWidgetFrameIsCompatible(legacyFrame, with: preferredMode) {
-            initialMode = floatingWidgetAutomaticLayoutMode(for: legacyFrame.size)
-        } else {
-            initialMode = preferredMode
-        }
-        FloatingWidgetPreferences.setLayoutMode(initialMode, categoryID: categoryID, isFiltered: isFiltered)
-
         let hostingController = makeHostingController(
             categoryID: categoryID,
             categoryName: categoryName,
             isFiltered: isFiltered,
-            mergedCategoryIDs: mergedCategoryIDs,
-            initialLayoutMode: initialMode
+            mergedCategoryIDs: mergedCategoryIDs
         )
         hostingController.view.wantsLayer = true
         hostingController.view.layer?.backgroundColor = NSColor.clear.cgColor
 
         let panel = NSPanel(
-            contentRect: initialMode == .column
-                ? NSRect(x: 0, y: 0, width: 760, height: 720)
-                : NSRect(x: 0, y: 0, width: 420, height: 560),
+            contentRect: NSRect(x: 0, y: 0, width: 420, height: 560),
             styleMask: [.titled, .closable, .resizable],
             backing: .buffered,
             defer: false
@@ -570,11 +513,7 @@ final class FloatingWidgetManager: NSObject, NSWindowDelegate {
         // Keep the panel object around when closed so reopening the same category
         // just brings it back instead of leaking a new one.
         panel.isReleasedWhenClosed = false
-        panel.minSize = floatingWidgetMinimumSize(for: initialMode)
-        panel.maxSize = NSSize(
-            width: CGFloat.greatestFiniteMagnitude,
-            height: CGFloat.greatestFiniteMagnitude
-        )
+        panel.minSize = NSSize(width: 400, height: 260)
         // Remember each widget's size/position across launches, per category.
         // We persist the frame ourselves (windowDidMove/Resize/WillClose) rather
         // than relying on AppKit's autosave, which is unreliable for panels.
@@ -583,19 +522,11 @@ final class FloatingWidgetManager: NSObject, NSWindowDelegate {
         } else if let savedFrame = FloatingWidgetPreferences.frame(
             categoryID: categoryID,
             isFiltered: isFiltered,
-            mode: initialMode
-        ), floatingWidgetFrameIsCompatible(savedFrame, with: initialMode) {
+            mode: FloatingWidgetPreferences.layoutMode(categoryID: categoryID, isFiltered: isFiltered)
+        ) {
             panel.setFrame(savedFrame, display: false)
-        } else if let savedCandidateFrame, floatingWidgetFrameIsCompatible(savedCandidateFrame, with: initialMode) {
-            panel.setFrame(savedCandidateFrame, display: false)
-        } else if let legacyFrame {
-            if floatingWidgetFrameIsCompatible(legacyFrame, with: initialMode) {
-                panel.setFrame(legacyFrame, display: false)
-            } else {
-                FloatingWidgetPreferences.removeFrame(categoryID: categoryID, isFiltered: isFiltered, mode: initialMode)
-                UserDefaults.standard.removeObject(forKey: Self.frameKey(categoryID))
-                panel.center()
-            }
+        } else if let saved = UserDefaults.standard.string(forKey: Self.frameKey(categoryID)) {
+            panel.setFrame(NSRectFromString(saved), display: false)
         } else {
             panel.center()
             // Offset each new panel so multiple widgets don't stack exactly on top.
@@ -613,8 +544,7 @@ final class FloatingWidgetManager: NSObject, NSWindowDelegate {
         categoryID: Int,
         categoryName: String,
         isFiltered: Bool,
-        mergedCategoryIDs: [Int],
-        initialLayoutMode: FloatingWidgetLayoutMode? = nil
+        mergedCategoryIDs: [Int]
     ) -> NSHostingController<AnyView> {
         NSHostingController(
             rootView: AnyView(
@@ -623,7 +553,6 @@ final class FloatingWidgetManager: NSObject, NSWindowDelegate {
                     categoryName: categoryName,
                     isFiltered: isFiltered,
                     mergedCategoryIDs: mergedCategoryIDs,
-                    initialLayoutMode: initialLayoutMode,
                     onUnmerge: { [weak self] in
                         self?.unmergeWidget(categoryID: categoryID)
                     }
@@ -679,9 +608,9 @@ private struct FloatingWidgetView: View {
     @State private var lastAutoSizedStackSize: CGSize = .zero
     @State private var lastAutoSizedColumnSize: CGSize = .zero
     @State private var automaticLayoutSwitchInProgress = false
+    @State private var explicitLayoutMode: FloatingWidgetLayoutMode?
     @State private var suppressResizeDrivenLayoutSwitch = false
     @State private var suppressResizeDuringRefresh = false
-    @State private var lastUserResizeAt = Date.distantPast
     @State private var lastSourceRefreshAt: Date?
     /// How many stories to show. Grows by `pageStep` via "Show More", resets to
     /// `pageStep` via "Reset". Mirrors ai_news_deploy_ready's column behaviour.
@@ -696,7 +625,6 @@ private struct FloatingWidgetView: View {
         categoryName: String,
         isFiltered: Bool = false,
         mergedCategoryIDs: [Int] = [],
-        initialLayoutMode: FloatingWidgetLayoutMode? = nil,
         onUnmerge: @escaping () -> Void = {}
     ) {
         self.categoryID = categoryID
@@ -704,7 +632,7 @@ private struct FloatingWidgetView: View {
         self.isFiltered = isFiltered
         self.mergedCategoryIDs = mergedCategoryIDs
         self.onUnmerge = onUnmerge
-        _layoutMode = State(initialValue: initialLayoutMode ?? FloatingWidgetPreferences.layoutMode(categoryID: categoryID, isFiltered: isFiltered))
+        _layoutMode = State(initialValue: FloatingWidgetPreferences.layoutMode(categoryID: categoryID, isFiltered: isFiltered))
         _seenStoryKeys = State(initialValue: FloatingWidgetPreferences.seenStories(categoryID: categoryID, isFiltered: isFiltered))
     }
 
@@ -824,11 +752,20 @@ private struct FloatingWidgetView: View {
     }
 
     private func usesMiniatureStackLayout(size: CGSize) -> Bool {
-        floatingWidgetUsesMiniatureStackLayout(size: size)
+        size.width < 360 || size.height < 300
     }
 
     private func automaticLayoutMode(for size: CGSize) -> FloatingWidgetLayoutMode {
-        floatingWidgetAutomaticLayoutMode(for: size)
+        if usesMiniatureStackLayout(size: size) {
+            return .stack
+        }
+        if size.height >= 760, size.width >= 400 {
+            return .column
+        }
+        if size.width >= 760, size.height >= 560 {
+            return .column
+        }
+        return .stack
     }
 
     private var estimatedColumnWindowWidth: CGFloat {
@@ -926,11 +863,6 @@ private struct FloatingWidgetView: View {
                   currentWidgetWindow() === window else {
                 return
             }
-            if window.inLiveResize {
-                suppressResizeDrivenLayoutSwitch = false
-                _ = updateWindowSize(window.frame.size, isUserResize: true)
-                return
-            }
             if suppressResizeDrivenLayoutSwitch {
                 windowSize = window.frame.size
                 AINewsDebugLog.log(
@@ -938,15 +870,11 @@ private struct FloatingWidgetView: View {
                 )
                 return
             }
-            _ = updateWindowSize(window.frame.size, isUserResize: true)
-        }
-        .onReceive(NotificationCenter.default.publisher(for: NSWindow.didEndLiveResizeNotification)) { notification in
-            guard let window = notification.object as? NSWindow,
-                  currentWidgetWindow() === window else {
-                return
+            if window.inLiveResize {
+                _ = updateWindowSize(window.frame.size, isUserResize: true)
+            } else {
+                windowSize = window.frame.size
             }
-            suppressResizeDrivenLayoutSwitch = false
-            _ = updateWindowSize(window.frame.size, isUserResize: true)
         }
         .task {
             // Load now, then auto-refresh so the widget picks up new stories and
@@ -989,16 +917,18 @@ private struct FloatingWidgetView: View {
         }
         .onChange(of: stackIndex) { _, _ in
             guard !suppressResizeDuringRefresh else { return }
-            resizeWindowForCurrentLayout(force: true, allowShrink: false)
+            resizeWindowForCurrentLayout(force: true)
         }
         .onChange(of: currentStackStory?.storyKey) { _, _ in
             guard !suppressResizeDuringRefresh else { return }
-            resizeWindowForCurrentLayout(force: true, allowShrink: false)
+            resizeWindowForCurrentLayout(force: true)
         }
         .onAppear {
             if let window = currentWidgetWindow() {
-                windowSize = window.frame.size
-                updateMinimumWindowSize()
+                let switchedLayout = updateWindowSize(window.frame.size, isUserResize: false)
+                if !switchedLayout {
+                    resizeWindowForCurrentLayout(force: true)
+                }
             } else {
                 resizeWindowForCurrentLayout(force: true)
             }
@@ -1024,10 +954,15 @@ private struct FloatingWidgetView: View {
     private func updateWindowSize(_ size: CGSize, isUserResize: Bool = false) -> Bool {
         guard size.width > 0, size.height > 0 else { return false }
         windowSize = size
-        guard isUserResize else { return false }
-        lastUserResizeAt = Date()
         let preferred = automaticLayoutMode(for: size)
+        if let explicitLayoutMode {
+            if !isUserResize || preferred == explicitLayoutMode {
+                return false
+            }
+            self.explicitLayoutMode = nil
+        }
         guard preferred != layoutMode else { return false }
+        explicitLayoutMode = nil
         automaticLayoutSwitchInProgress = true
         layoutMode = preferred
         AINewsDebugLog.log(
@@ -1410,24 +1345,24 @@ private struct FloatingWidgetView: View {
     }
 
     private var stackContent: some View {
-        let measuredSize = windowSize == .zero
-            ? CGSize(width: estimatedStackWindowWidth, height: estimatedStackWindowHeight)
-            : windowSize
-        let isMiniature = usesMiniatureStackLayout(size: measuredSize)
+        GeometryReader { proxy in
+            let availableViewportHeight = max(proxy.size.height - 94, 214)
+            let measuredSize = windowSize == .zero ? proxy.size : windowSize
+            let isMiniature = usesMiniatureStackLayout(size: measuredSize)
 
-        return Group {
-            if isMiniature {
-                miniatureStackContent
-            } else {
-                fullStackContent
+            Group {
+                if isMiniature {
+                    miniatureStackContent
+                } else {
+                    fullStackContent(availableViewportHeight: availableViewportHeight)
+                }
             }
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         }
-        .frame(maxWidth: .infinity, alignment: .top)
     }
 
-    private var fullStackContent: some View {
-        let liveHeight = windowSize == .zero ? estimatedStackWindowHeight : windowSize.height
-        let cardHeight = max(liveHeight - 178.0, estimatedStackCardHeight)
+    private func fullStackContent(availableViewportHeight: CGFloat) -> some View {
+        let cardHeight = min(estimatedStackCardHeight, availableViewportHeight)
         return VStack(spacing: 12) {
             ZStack(alignment: .topLeading) {
                 if let tertiary = stackStory(offsetBy: 2) {
@@ -2038,6 +1973,7 @@ private struct FloatingWidgetView: View {
     private func switchLayoutMode(to mode: FloatingWidgetLayoutMode) {
         guard mode != layoutMode else { return }
         persistCurrentWindowFrame(for: layoutMode)
+        explicitLayoutMode = mode
         automaticLayoutSwitchInProgress = false
         suppressProgrammaticResizeSwitch()
         layoutMode = mode
@@ -2061,10 +1997,17 @@ private struct FloatingWidgetView: View {
         guard let savedFrame = FloatingWidgetPreferences.frame(categoryID: categoryID, isFiltered: isFiltered, mode: mode) else {
             return false
         }
+        guard mode != .stack || automaticLayoutMode(for: savedFrame.size) == .stack else {
+            FloatingWidgetPreferences.removeFrame(categoryID: categoryID, isFiltered: isFiltered, mode: mode)
+            AINewsDebugLog.log(
+                "floating ignored invalid saved \(mode.rawValue) frame size=\(Int(savedFrame.width))x\(Int(savedFrame.height)) scope=\(displayCategoryName)"
+            )
+            return false
+        }
         DispatchQueue.main.async {
             guard let window = currentWidgetWindow() else { return }
             suppressProgrammaticResizeSwitch()
-            window.minSize = floatingWidgetMinimumSize(for: mode)
+            window.minSize = mode == .stack ? NSSize(width: 300, height: 190) : NSSize(width: 400, height: 260)
             window.setFrame(savedFrame, display: true, animate: true)
             windowSize = savedFrame.size
         }
@@ -2074,7 +2017,7 @@ private struct FloatingWidgetView: View {
     private func updateMinimumWindowSize() {
         DispatchQueue.main.async {
             guard let window = currentWidgetWindow() else { return }
-            window.minSize = floatingWidgetMinimumSize(for: layoutMode)
+            window.minSize = layoutMode == .stack ? NSSize(width: 300, height: 190) : NSSize(width: 400, height: 260)
             windowSize = window.frame.size
         }
     }
@@ -2082,10 +2025,6 @@ private struct FloatingWidgetView: View {
     private func resizeWindowForCurrentLayout(force: Bool = false, allowShrink: Bool = true) {
         DispatchQueue.main.async {
             guard let window = currentWidgetWindow() else { return }
-            guard !window.inLiveResize else { return }
-            if Date().timeIntervalSince(lastUserResizeAt) < 0.8 {
-                return
-            }
             suppressProgrammaticResizeSwitch()
             var frame = window.frame
             let targetWidth: CGFloat
@@ -2099,8 +2038,8 @@ private struct FloatingWidgetView: View {
                     abs(frame.height - lastAutoSizedStackSize.height) < 14
 
                 if force || lastAutoSizedStackSize == .zero || (allowShrink && isNearLastAutoSize) {
-                    targetWidth = allowShrink ? estimatedWidth : max(frame.width, estimatedWidth)
-                    targetHeight = allowShrink ? estimatedHeight : max(frame.height, estimatedHeight)
+                    targetWidth = estimatedWidth
+                    targetHeight = estimatedHeight
                 } else {
                     targetWidth = max(frame.width, estimatedWidth)
                     targetHeight = max(frame.height, estimatedHeight)
@@ -2128,7 +2067,7 @@ private struct FloatingWidgetView: View {
             frame.origin.x -= deltaWidth / 2
             frame.size.height = targetHeight
             frame.size.width = targetWidth
-            window.minSize = floatingWidgetMinimumSize(for: layoutMode)
+            window.minSize = layoutMode == .stack ? NSSize(width: 300, height: 190) : NSSize(width: 400, height: 260)
             window.setFrame(frame, display: true, animate: true)
         }
     }
