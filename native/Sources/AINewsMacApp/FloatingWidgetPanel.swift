@@ -643,7 +643,6 @@ private struct FloatingWidgetView: View {
     @State private var lastAutoSizedStackSize: CGSize = .zero
     @State private var lastAutoSizedColumnSize: CGSize = .zero
     @State private var automaticLayoutSwitchInProgress = false
-    @State private var explicitLayoutMode: FloatingWidgetLayoutMode?
     @State private var suppressResizeDrivenLayoutSwitch = false
     @State private var suppressResizeDuringRefresh = false
     @State private var lastSourceRefreshAt: Date?
@@ -991,14 +990,7 @@ private struct FloatingWidgetView: View {
         windowSize = size
         guard isUserResize else { return false }
         let preferred = automaticLayoutMode(for: size)
-        if let explicitLayoutMode {
-            if preferred == explicitLayoutMode {
-                return false
-            }
-            self.explicitLayoutMode = nil
-        }
         guard preferred != layoutMode else { return false }
-        explicitLayoutMode = nil
         automaticLayoutSwitchInProgress = true
         layoutMode = preferred
         AINewsDebugLog.log(
@@ -2008,7 +2000,6 @@ private struct FloatingWidgetView: View {
     private func switchLayoutMode(to mode: FloatingWidgetLayoutMode) {
         guard mode != layoutMode else { return }
         persistCurrentWindowFrame(for: layoutMode)
-        explicitLayoutMode = mode
         automaticLayoutSwitchInProgress = false
         suppressProgrammaticResizeSwitch()
         layoutMode = mode
