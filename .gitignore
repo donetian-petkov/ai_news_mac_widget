@@ -24,3 +24,6 @@ native/.build
 
 # Xcode / SwiftPM build output
 .build/
+
+# Local diagnostic evidence packs
+diagnostics/

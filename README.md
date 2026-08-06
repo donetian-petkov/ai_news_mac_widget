@@ -97,6 +97,22 @@ curl -s http://127.0.0.1:3000/api/health
 curl -s http://127.0.0.1:3000/api/categories
 ```
 
+## Diagnostics And Visual Verification
+
+Before changing code for a reported bug, generate an evidence pack:
+
+```bash
+npm run diagnose:quick
+```
+
+For widget layout, window size, mode switching, stale UI, or icon problems:
+
+```bash
+npm run diagnose:visual
+```
+
+The diagnostic pack is written under `diagnostics/` and includes `REPORT.md`, command logs, backend/widget log tails, runtime config, API probes, AI queue probes, and optional desktop/window screenshots. See `docs/diagnostics.md` for the full runbook.
+
 ## Operational Notes
 
 - The app follows the backend runtime file when the backend port changes.
