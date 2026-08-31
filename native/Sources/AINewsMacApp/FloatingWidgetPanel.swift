@@ -755,11 +755,15 @@ private struct FloatingWidgetView: View {
         size.width < 360 || size.height < 300
     }
 
+    private var stackToColumnHeightThreshold: CGFloat {
+        min(max(estimatedStackWindowHeight + 96, 600), 700)
+    }
+
     private func automaticLayoutMode(for size: CGSize) -> FloatingWidgetLayoutMode {
         if usesMiniatureStackLayout(size: size) {
             return .stack
         }
-        if size.height >= 760, size.width >= 400 {
+        if size.height >= stackToColumnHeightThreshold, size.width >= 400 {
             return .column
         }
         if size.width >= 760, size.height >= 560 {

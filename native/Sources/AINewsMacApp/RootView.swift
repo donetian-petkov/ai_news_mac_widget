@@ -1100,6 +1100,7 @@ private struct DiagnosticsWorkspaceTab: View {
     @EnvironmentObject private var state: WidgetAppState
     @State private var ops: OpsAiJobsResponse?
     @State private var loading = false
+    @State private var actionInFlight: String?
 
     private func stageColor(_ stage: String) -> Color {
         switch stage {
@@ -1145,17 +1146,47 @@ private struct DiagnosticsWorkspaceTab: View {
 
                 // Queue
                 if let q = ops?.queue {
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("AI job queue").font(.headline).foregroundStyle(AINewsTheme.textSecondary)
+                    VStack(alignment: .leading, spacing: 12) {
+                        HStack {
+                            Text("AI job queue").font(.headline).foregroundStyle(AINewsTheme.textSecondary)
+                            Spacer()
+                            if q.pausedAll == true {
+                                Text("Paused").font(.caption.weight(.bold)).foregroundStyle(AINewsTheme.accentRose)
+                            } else if let paused = q.pausedKinds, !paused.isEmpty {
+                                Text("Paused: \(paused.map(kindLabel).joined(separator: ", "))")
+                                    .font(.caption.weight(.semibold))
+                                    .foregroundStyle(AINewsTheme.accentRose)
+                            }
+                        }
                         HStack(spacing: 24) {
                             metric("Queued", "\(q.size)")
                             metric("In flight", "\(q.inFlight)")
+                            metric("Bulk", "\(q.bulkQueued ?? 0) queued / \(q.bulkInFlight ?? 0) running")
                             metric("Dead", "\(q.deadLetters)")
                         }
-                        HStack(spacing: 14) {
-                            ForEach(q.countsByKind.keys.sorted(), id: \.self) { k in
-                                if let v = q.countsByKind[k], v > 0 {
-                                    Text("\(k) \(v)").font(.caption).foregroundStyle(AINewsTheme.textMuted)
+                        LazyVGrid(columns: [GridItem(.adaptive(minimum: 120), spacing: 8)], alignment: .leading, spacing: 8) {
+                            queueKindChip("summary", counts: q.countsByKind)
+                            queueKindChip("title_translate", counts: q.countsByKind)
+                            queueKindChip("title_neutralize", counts: q.countsByKind)
+                            queueKindChip("research", counts: q.countsByKind)
+                            queueKindChip("mood", counts: q.countsByKind)
+                            queueKindChip("news_type", counts: q.countsByKind)
+                        }
+                        Divider().opacity(0.25)
+                        LazyVGrid(columns: [GridItem(.adaptive(minimum: 170), spacing: 8)], alignment: .leading, spacing: 8) {
+                            queueButton("Pause all", action: "pause", kind: "all", icon: "pause.fill")
+                            queueButton("Resume all", action: "resume", kind: "all", icon: "play.fill")
+                            queueButton("Prioritize summaries", action: "prioritize_summaries", kind: "summary", icon: "arrow.up.to.line.compact")
+                            queueButton("Pause neutral titles", action: "pause", kind: "title_neutralize", icon: "pause")
+                            queueButton("Resume neutral titles", action: "resume", kind: "title_neutralize", icon: "play")
+                            queueButton("Clear bulk title jobs", action: "cancel", kind: "title", bulkOnly: true, icon: "xmark.bin")
+                            queueButton("Retry failed", action: "retry_dead_letters", kind: "all", icon: "arrow.clockwise")
+                        }
+                        if let queuedJobs = q.queuedJobs, !queuedJobs.isEmpty {
+                            VStack(alignment: .leading, spacing: 6) {
+                                Text("Queued preview").font(.caption.weight(.bold)).foregroundStyle(AINewsTheme.textMuted)
+                                ForEach(Array(queuedJobs.prefix(8).enumerated()), id: \.offset) { _, job in
+                                    queuedJobRow(job)
                                 }
                             }
                         }
@@ -1182,6 +1213,25 @@ private struct DiagnosticsWorkspaceTab: View {
                     }
                     .padding(16).aiNewsPanelStyle()
                 }
+
+                VStack(alignment: .leading, spacing: 10) {
+                    Text("Database").font(.headline).foregroundStyle(AINewsTheme.textSecondary)
+                    HStack {
+                        Button {
+                            Task { await runDatabaseBackup() }
+                        } label: {
+                            Label("Backup database", systemImage: "externaldrive.badge.plus")
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .controlSize(.small)
+                        .disabled(actionInFlight != nil)
+
+                        Text("Saved under Application Support/AINewsMacWidget/backups.")
+                            .font(.caption)
+                            .foregroundStyle(AINewsTheme.textMuted)
+                    }
+                }
+                .padding(16).aiNewsPanelStyle()
 
                 // Issues
                 VStack(alignment: .leading, spacing: 8) {
@@ -1234,6 +1284,89 @@ private struct DiagnosticsWorkspaceTab: View {
                     .font(.caption2).foregroundStyle(AINewsTheme.textMuted).lineLimit(1)
             }
         }
+    }
+
+    private func kindLabel(_ raw: String) -> String {
+        switch raw {
+        case "summary": return "Summaries"
+        case "title_translate": return "Translations"
+        case "title_neutralize": return "Neutral titles"
+        case "research": return "Research"
+        case "mood": return "Mood"
+        case "news_type": return "News type"
+        case "title": return "Title jobs"
+        default: return raw.replacingOccurrences(of: "_", with: " ")
+        }
+    }
+
+    @ViewBuilder
+    private func queueKindChip(_ kind: String, counts: [String: Int]) -> some View {
+        if let value = counts[kind], value > 0 {
+            Text("\(kindLabel(kind)) \(value)")
+                .font(.caption.weight(.semibold))
+                .padding(.horizontal, 8)
+                .padding(.vertical, 4)
+                .background(AINewsTheme.panel.opacity(0.7), in: Capsule())
+                .foregroundStyle(AINewsTheme.textMuted)
+        }
+    }
+
+    private func queueButton(
+        _ title: String,
+        action: String,
+        kind: String,
+        bulkOnly: Bool = false,
+        backgroundOnly: Bool = false,
+        icon: String
+    ) -> some View {
+        Button {
+            Task { await runQueueAction(action, kind: kind, bulkOnly: bulkOnly, backgroundOnly: backgroundOnly) }
+        } label: {
+            Label(title, systemImage: icon)
+        }
+        .buttonStyle(.bordered)
+        .controlSize(.small)
+        .disabled(actionInFlight != nil)
+    }
+
+    private func queuedJobRow(_ job: OpsQueuedAiJob) -> some View {
+        HStack(spacing: 8) {
+            Text(kindLabel(job.kind))
+                .font(.caption2.weight(.bold))
+                .foregroundStyle(AINewsTheme.accentCyan)
+                .frame(width: 92, alignment: .leading)
+            Text(job.bulk == true ? "bulk" : (job.manual ? "manual" : "background"))
+                .font(.caption2.weight(.semibold))
+                .foregroundStyle(job.bulk == true ? AINewsTheme.textMuted : AINewsTheme.accentBlue)
+                .frame(width: 72, alignment: .leading)
+            Text("\(Int(job.ageMs / 1000))s")
+                .font(.caption2)
+                .foregroundStyle(AINewsTheme.textMuted)
+                .frame(width: 42, alignment: .trailing)
+            Text(job.id)
+                .font(.caption2)
+                .foregroundStyle(AINewsTheme.textMuted)
+                .lineLimit(1)
+        }
+    }
+
+    private func runQueueAction(
+        _ action: String,
+        kind: String,
+        bulkOnly: Bool = false,
+        backgroundOnly: Bool = false
+    ) async {
+        actionInFlight = "\(action):\(kind)"
+        defer { actionInFlight = nil }
+        await state.controlAiQueue(action: action, kind: kind, bulkOnly: bulkOnly, backgroundOnly: backgroundOnly)
+        await reload()
+    }
+
+    private func runDatabaseBackup() async {
+        actionInFlight = "database_backup"
+        defer { actionInFlight = nil }
+        await state.createDatabaseBackup(reason: "manual")
+        await reload()
     }
 
     private func reload() async {
@@ -2324,6 +2457,7 @@ private struct SettingsView: View {
     @AppStorage("ai_news_show_original_titles") private var showOriginalTitles = false
     @State private var regionDraft = ""
     @State private var topicsDraft = ""
+    @State private var globalBudgetDraft = "mixed"
     @State private var newCategoryName = ""
     @State private var newCategoryDescription = ""
     @State private var newCategoryFeedURLs = Set<String>()
@@ -2461,6 +2595,15 @@ private struct SettingsView: View {
         return SettingsView.modelOptionsByProvider[provider]?[keyPath: kind] ?? []
     }
 
+    private func globalBudgetValue(for feeds: [RuntimeFeed]) -> String {
+        let budgets = Set(feeds.map { $0.settings.budget })
+        return budgets.count == 1 ? (budgets.first ?? "standard") : "mixed"
+    }
+
+    private func budgetSignature(for feeds: [RuntimeFeed]) -> String {
+        feeds.map { "\($0.url)=\($0.settings.budget)" }.joined(separator: "|")
+    }
+
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
@@ -2504,10 +2647,26 @@ private struct SettingsView: View {
                         Toggle("Neutral titles", isOn: $state.globalAiDefaults.neutralTitlesEnabled)
                     }
                     .toggleStyle(.switch)
-                    Text("Neutral titles add about 500-900 AI tokens per judged story. Low: manual only. Standard: visible/on-demand only. High: background neutralization for new stories.")
+                    Text("Neutral titles add about 500-900 AI tokens per judged story. Low: manual only. Standard and High run background neutralization for new stories.")
                         .font(.caption)
                         .foregroundStyle(AINewsTheme.textMuted)
-                    Button("Apply to all feeds") {
+                    HStack(spacing: 12) {
+                        Picker("Budget", selection: $globalBudgetDraft) {
+                            Text("Mixed").tag("mixed")
+                            Text("Low").tag("low")
+                            Text("Standard").tag("standard")
+                            Text("High").tag("high")
+                        }
+                        .pickerStyle(.segmented)
+                        .frame(maxWidth: 420)
+
+                        Button("Apply budget to all feeds") {
+                            Task { await state.applyBudgetToAllFeeds(globalBudgetDraft) }
+                        }
+                        .buttonStyle(.bordered)
+                        .disabled(globalBudgetDraft == "mixed")
+                    }
+                    Button("Apply toggles to all feeds") {
                         Task { await state.saveGlobalAiDefaults() }
                     }
                     .buttonStyle(.borderedProminent)
@@ -2515,6 +2674,10 @@ private struct SettingsView: View {
                 }
                 .padding(16)
                 .aiNewsPanelStyle()
+                .onAppear { globalBudgetDraft = globalBudgetValue(for: runtimeConfig.feeds) }
+                .onChange(of: budgetSignature(for: runtimeConfig.feeds)) { _, _ in
+                    globalBudgetDraft = globalBudgetValue(for: runtimeConfig.feeds)
+                }
 
                 VStack(alignment: .leading, spacing: 12) {
                     Text("Feed AI controls")
@@ -3002,7 +3165,7 @@ private struct CategoryAiControls: View {
                 Toggle("Research", isOn: $settings.researchEnabled)
                 Toggle("Translations", isOn: $settings.translationEnabled)
                 Toggle("Neutral titles", isOn: $settings.neutralTitlesEnabled)
-                Text("Neutral titles cost about +500-900 tokens/story. High budget enables background rewriting; Standard keeps it visible/on-demand; Low keeps it manual.")
+                Text("Neutral titles cost about +500-900 tokens/story. Low keeps it manual; Standard and High run background rewriting.")
                     .font(.caption)
                     .foregroundStyle(AINewsTheme.textMuted)
                 Button("Apply to \(feedCount) feed\(feedCount == 1 ? "" : "s")") {
@@ -3176,7 +3339,7 @@ private struct FeedSettingsCard: View {
             .opacity(draft.settings.aiEnabled ? 1 : 0.55)
 
             if draft.settings.neutralTitlesEnabled {
-                Text("Neutral titles: about +500-900 AI tokens per judged story. Low runs manual only; Standard runs visible/on-demand; High also runs background rewrites for new stories.")
+                Text("Neutral titles: about +500-900 AI tokens per judged story. Low runs manual only; Standard and High run background rewrites for new stories.")
                     .font(.caption)
                     .foregroundStyle(AINewsTheme.textMuted)
             }
@@ -3191,7 +3354,7 @@ private struct FeedSettingsCard: View {
                         .font(.caption2)
                         .foregroundStyle(AINewsTheme.textMuted)
                     if progress.blocked > 0 {
-                        Text("\(progress.blocked) waiting on manual trigger or high budget")
+                        Text("\(progress.blocked) waiting on manual trigger or higher budget")
                             .font(.caption2)
                             .foregroundStyle(AINewsTheme.textMuted)
                     }

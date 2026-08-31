@@ -166,16 +166,16 @@ public struct APIClient: Sendable {
         )
     }
 
-    /// Ask the backend to generate any missing AI outputs (summary/research/translation/neutral titles)
-    /// for stories whose feeds have those actions enabled. Used on launch so enabled
-    /// outputs get backfilled instead of only generating for newly fetched items.
+    /// Ask the backend to generate missing AI outputs for stories whose feeds have
+    /// those actions enabled. Launch uses this conservatively; neutral-title
+    /// normalization is handled by visible-story requests and the throttled queue.
     @discardableResult
-    public func regenerateMissingAI(limit: Int = 200) async throws -> RegenerateResponse {
+    public func regenerateMissingAI(kind: String = "summary", limit: Int = 200) async throws -> RegenerateResponse {
         struct Body: Codable { var kind: String; var missingOnly: Bool; var limit: Int }
         return try await send(
             path: "/api/maintenance/regenerate",
             method: "POST",
-            body: Body(kind: "all", missingOnly: true, limit: limit)
+            body: Body(kind: kind, missingOnly: true, limit: limit)
         )
     }
 
@@ -193,6 +193,36 @@ public struct APIClient: Sendable {
 
     public func fetchOpsAiJobs(limit: Int = 150) async throws -> OpsAiJobsResponse {
         try await send(path: "/api/ops/ai-jobs?limit=\(limit)")
+    }
+
+    @discardableResult
+    public func controlOpsAiQueue(
+        action: String,
+        kind: String = "all",
+        bulkOnly: Bool = false,
+        backgroundOnly: Bool = false
+    ) async throws -> OpsAiQueueControlResponse {
+        struct Body: Codable {
+            var action: String
+            var kind: String
+            var bulkOnly: Bool
+            var backgroundOnly: Bool
+        }
+        return try await send(
+            path: "/api/ops/ai-jobs/control",
+            method: "POST",
+            body: Body(action: action, kind: kind, bulkOnly: bulkOnly, backgroundOnly: backgroundOnly)
+        )
+    }
+
+    @discardableResult
+    public func createDatabaseBackup(reason: String = "manual") async throws -> DatabaseBackupResponse {
+        struct Body: Codable { var reason: String }
+        return try await send(
+            path: "/api/ops/database/backup",
+            method: "POST",
+            body: Body(reason: reason)
+        )
     }
 
     public func fetchAiProgress() async throws -> [AiFeedProgress] {

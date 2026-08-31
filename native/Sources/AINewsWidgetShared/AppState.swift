@@ -150,7 +150,7 @@ public final class WidgetAppState: ObservableObject {
         guard runtimeConfig?.aiEnabled == true else { return }
         do {
             let api = try makeAPIClient()
-            let result = try await api.regenerateMissingAI(limit: 5000)
+            let result = try await api.regenerateMissingAI(kind: "summary", limit: 240)
             let q = result.queued
             AINewsDebugLog.log("backfill queued summary=\(q.summary) research=\(q.research) translation=\(q.translation) skipped summary=\(result.skipped.summary)")
             let total = q.summary + q.research + q.translation
@@ -675,6 +675,58 @@ public final class WidgetAppState: ObservableObject {
             try await api.saveGlobalAiDefaults(self.globalAiDefaults)
             await self.loadRuntimeContext()
             self.statusMessage = "Applied global AI settings to every feed."
+        }
+    }
+
+    public func applyBudgetToAllFeeds(_ budget: String) async {
+        guard ["low", "standard", "high"].contains(budget) else {
+            errorMessage = "Choose Low, Standard, or High budget."
+            return
+        }
+        guard let feeds = runtimeConfig?.feeds, !feeds.isEmpty else {
+            errorMessage = "No feeds available to update."
+            return
+        }
+        await runBusy("Applying \(budget.capitalized) budget to all feeds...") {
+            let api = try self.makeAPIClient()
+            for var feed in feeds {
+                feed.settings.budget = budget
+                _ = try await api.saveFeedSettings(feed)
+            }
+            await self.loadRuntimeContext()
+            await self.refreshAiProgress()
+            self.statusMessage = "Applied \(budget.capitalized) budget to \(feeds.count) feed\(feeds.count == 1 ? "" : "s")."
+        }
+    }
+
+    public func controlAiQueue(
+        action: String,
+        kind: String = "all",
+        bulkOnly: Bool = false,
+        backgroundOnly: Bool = false
+    ) async {
+        await runBusy("Updating AI queue...") {
+            let api = try self.makeAPIClient()
+            let response = try await api.controlOpsAiQueue(
+                action: action,
+                kind: kind,
+                bulkOnly: bulkOnly,
+                backgroundOnly: backgroundOnly
+            )
+            self.backendOps = try? await api.fetchOpsAiJobs(limit: 150)
+            await self.refreshAiProgress()
+            let queued = response.queued ?? 0
+            let suffix = queued > 0 ? ", requeued \(queued)" : ""
+            self.statusMessage = "AI queue \(action.replacingOccurrences(of: "_", with: " ")) affected \(response.affected)\(suffix)."
+        }
+    }
+
+    public func createDatabaseBackup(reason: String = "manual") async {
+        await runBusy("Creating database backup...") {
+            let api = try self.makeAPIClient()
+            let response = try await api.createDatabaseBackup(reason: reason)
+            let sizeMb = Double(response.backup.sizeBytes) / 1_048_576.0
+            self.statusMessage = String(format: "Database backup created: %@ (%.1f MB).", response.backup.filename, sizeMb)
         }
     }
 

@@ -310,7 +310,6 @@ public struct WidgetStory: Codable, Equatable, Hashable, Identifiable, Sendable 
             neutralTitle,
             neutralTitleBg,
             neutralTitleEn,
-            hasNeutralTitle ? translatedTitle : nil,
             hasNeutralTitle && title.trimmingCharacters(in: .whitespacesAndNewlines) != original ? title : nil
         ]
         for candidate in candidates {
@@ -822,13 +821,30 @@ public struct OpsAiJobEvent: Codable, Sendable {
     public var reason: String?
     public var isoTime: String?
     public var manual: Bool?
+    public var bulk: Bool?
+}
+
+public struct OpsQueuedAiJob: Codable, Sendable {
+    public var kind: String
+    public var id: String
+    public var feedUrl: String
+    public var manual: Bool
+    public var bulk: Bool?
+    public var enqueuedAtMs: Double
+    public var ageMs: Double
 }
 
 public struct OpsAiJobsQueue: Codable, Sendable {
     public var size: Int
     public var inFlight: Int
+    public var bulkQueued: Int?
+    public var bulkInFlight: Int?
     public var deadLetters: Int
     public var countsByKind: [String: Int]
+    public var pausedAll: Bool?
+    public var pausedKinds: [String]?
+    public var queuedJobs: [OpsQueuedAiJob]?
+    public var inFlightKeys: [String]?
 }
 
 public struct OpsBackendHealth: Codable, Sendable {
@@ -847,6 +863,28 @@ public struct OpsAiJobsResponse: Codable, Sendable {
     public var queue: OpsAiJobsQueue
     public var events: [OpsAiJobEvent]
     public var health: OpsBackendHealth?
+}
+
+public struct OpsAiQueueControlResponse: Codable, Sendable {
+    public var ok: Bool
+    public var action: String
+    public var kind: String
+    public var affected: Int
+    public var queued: Int?
+    public var queue: OpsAiJobsQueue
+}
+
+public struct DatabaseBackup: Codable, Sendable {
+    public var path: String
+    public var filename: String
+    public var sizeBytes: Int
+    public var createdAt: String
+    public var reason: String
+}
+
+public struct DatabaseBackupResponse: Codable, Sendable {
+    public var ok: Bool
+    public var backup: DatabaseBackup
 }
 
 public struct AiFeedProgress: Codable, Sendable, Identifiable {

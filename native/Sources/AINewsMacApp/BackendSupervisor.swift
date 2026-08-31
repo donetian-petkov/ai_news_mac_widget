@@ -76,11 +76,14 @@ final class BackendSupervisor {
         // backend's WebSocket-based news lock (meant for the shared web server) would
         // just stop the scheduler from ever polling feeds. Disable it here.
         environment["REQUIRE_LOGIN_AND_KEY_FOR_NEWS"] = "false"
-        // Default AI throughput is 1 job at a time with a 600-job queue, which drops
-        // work and crawls once all feeds are fetched. Raise both so summaries and
-        // translations actually keep up with the backlog.
-        if environment["AI_MAX_CONCURRENCY"] == nil { environment["AI_MAX_CONCURRENCY"] = "6" }
-        if environment["AI_QUEUE_MAX"] == nil { environment["AI_QUEUE_MAX"] = "6000" }
+        // Keep local AI throughput responsive without letting background archive
+        // work create an expensive API burst.
+        if environment["AI_MAX_CONCURRENCY"] == nil { environment["AI_MAX_CONCURRENCY"] = "2" }
+        if environment["AI_QUEUE_MAX"] == nil { environment["AI_QUEUE_MAX"] = "1200" }
+        if environment["AI_BULK_QUEUE_MAX"] == nil { environment["AI_BULK_QUEUE_MAX"] = "160" }
+        if environment["AI_BULK_MAX_CONCURRENCY"] == nil { environment["AI_BULK_MAX_CONCURRENCY"] = "1" }
+        if environment["AI_NEUTRAL_TITLE_RECOVERY_BATCH"] == nil { environment["AI_NEUTRAL_TITLE_RECOVERY_BATCH"] = "6" }
+        if environment["AI_NEUTRAL_TITLE_RECOVERY_INTERVAL_MS"] == nil { environment["AI_NEUTRAL_TITLE_RECOVERY_INTERVAL_MS"] = "60000" }
         // The default TTL string ('180_000') is parsed as 180 and clamped to 15s, so
         // queued jobs expire before they run under a backlog. Use a long TTL (6h) so
         // jobs wait and drain instead of being dropped.

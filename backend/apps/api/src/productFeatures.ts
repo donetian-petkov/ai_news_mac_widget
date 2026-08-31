@@ -112,6 +112,7 @@ type RegisterProductFeatureApiArgs = {
   resetAiUsage: () => AiUsagePayload;
   importFeeds?: (feeds: Array<{ title: string; xmlUrl: string; htmlUrl?: string }>) => number;
   requestStoryAction?: (action: WidgetStoryActionKind, itemId: string, feedUrl: string) => Promise<boolean> | boolean;
+  requestVisibleStoryActions?: (items: ProductNews[]) => Promise<void> | void;
   refreshFeed?: (feedUrl: string) => Promise<boolean> | boolean;
 };
 
@@ -293,6 +294,44 @@ function changedStoryTitle(original: unknown, rewritten: unknown) {
   return !!source && !!candidate && source !== candidate;
 }
 
+function storyLetterScriptRatios(raw: unknown): { cyr: number; lat: number } {
+  const text = trimStoryText(raw);
+  const cyr = (text.match(/[А-Яа-яЁёЍѝ]/g) || []).length;
+  const lat = (text.match(/[A-Za-z]/g) || []).length;
+  const total = cyr + lat;
+  if (!total) return { cyr: 0, lat: 0 };
+  return { cyr: cyr / total, lat: lat / total };
+}
+
+function looksBulgarianStoryTitle(raw: unknown) {
+  return storyLetterScriptRatios(raw).cyr >= 0.45;
+}
+
+function looksEnglishStoryTitle(raw: unknown) {
+  return storyLetterScriptRatios(raw).lat >= 0.55;
+}
+
+function changedSameLanguageStoryTitle(original: unknown, rewritten: unknown) {
+  if (!changedStoryTitle(original, rewritten)) return false;
+  const sourceLooksBg = looksBulgarianStoryTitle(original);
+  const sourceLooksEn = looksEnglishStoryTitle(original);
+  if (sourceLooksBg && !sourceLooksEn) return looksBulgarianStoryTitle(rewritten);
+  if (sourceLooksEn && !sourceLooksBg) return looksEnglishStoryTitle(rewritten);
+  return true;
+}
+
+function storyTitleLooksLikeHeadline(original: unknown, candidate: unknown) {
+  const source = trimStoryText(original);
+  const title = trimStoryText(candidate);
+  if (!title) return false;
+  if (title.length > 150) return false;
+  if (/[.。]\s*$/u.test(title)) return false;
+
+  const sourceWords = canonicalStoryTitle(source).split(' ').filter(Boolean).length;
+  const titleWords = canonicalStoryTitle(title).split(' ').filter(Boolean).length;
+  return titleWords <= Math.max(18, sourceWords * 2 + 4);
+}
+
 function summaryAddsInformationComparedToTitle(titleRaw: unknown, summaryRaw: unknown) {
   const title = canonicalStoryTitle(titleRaw);
   const summary = canonicalStoryTitle(summaryRaw);
@@ -311,12 +350,22 @@ function summaryAddsInformationComparedToTitle(titleRaw: unknown, summaryRaw: un
 
 function toWidgetStory(news: ProductNews) {
   const originalTitle = trimStoryText(news.title);
-  const neutralOriginal = changedStoryTitle(originalTitle, news.neutralTitle) ? trimStoryText(news.neutralTitle) : '';
-  const neutralBg = changedStoryTitle(news.titleBg || originalTitle, news.neutralTitleBg) ? trimStoryText(news.neutralTitleBg) : '';
-  const neutralEn = changedStoryTitle(news.titleEn || originalTitle, news.neutralTitleEn) ? trimStoryText(news.neutralTitleEn) : '';
+  const sourceLooksBg = looksBulgarianStoryTitle(originalTitle);
+  const sourceLooksEn = looksEnglishStoryTitle(originalTitle);
+  const neutralOriginal = changedSameLanguageStoryTitle(originalTitle, news.neutralTitle) && storyTitleLooksLikeHeadline(originalTitle, news.neutralTitle) ? trimStoryText(news.neutralTitle) : '';
+  const neutralBg = changedStoryTitle(news.titleBg || originalTitle, news.neutralTitleBg) && looksBulgarianStoryTitle(news.neutralTitleBg) && storyTitleLooksLikeHeadline(news.titleBg || originalTitle, news.neutralTitleBg) ? trimStoryText(news.neutralTitleBg) : '';
+  const neutralEn = changedStoryTitle(news.titleEn || originalTitle, news.neutralTitleEn) && looksEnglishStoryTitle(news.neutralTitleEn) && storyTitleLooksLikeHeadline(news.titleEn || originalTitle, news.neutralTitleEn) ? trimStoryText(news.neutralTitleEn) : '';
   const neutralTranslated = neutralBg || neutralEn;
-  const translatedTitle = neutralTranslated || trimStoryText(news.titleBg) || trimStoryText(news.titleEn);
-  const displayTitle = neutralOriginal || neutralTranslated || trimStoryText(news.title);
+  const sourceLanguageNeutral = neutralOriginal
+    || (sourceLooksBg && !sourceLooksEn ? neutralBg : '')
+    || (sourceLooksEn && !sourceLooksBg ? neutralEn : '')
+    || (!sourceLooksBg && !sourceLooksEn ? neutralTranslated : '');
+  const translatedTitle = sourceLooksBg && !sourceLooksEn
+    ? (neutralEn || trimStoryText(news.titleEn))
+    : sourceLooksEn && !sourceLooksBg
+      ? (neutralBg || trimStoryText(news.titleBg))
+      : (neutralTranslated || trimStoryText(news.titleBg) || trimStoryText(news.titleEn));
+  const displayTitle = sourceLanguageNeutral || trimStoryText(news.title);
   const summary = summaryAddsInformationComparedToTitle(displayTitle, news.summary) ? trimStoryText(news.summary) : '';
   return {
     id: news.id,
@@ -347,7 +396,7 @@ function toWidgetStory(news: ProductNews) {
     hasSummary: !!summary,
     hasResearch: !!trimStoryText(news.research),
     hasTranslation: !!translatedTitle,
-    hasNeutralTitle: !!(neutralOriginal || neutralTranslated),
+    hasNeutralTitle: !!sourceLanguageNeutral,
     coverUrl: trimStoryText(news.coverUrl) || null,
     imagesEnabled: false
   };
@@ -731,11 +780,19 @@ export function registerProductFeatureApi({
   resetAiUsage,
   importFeeds,
   requestStoryAction,
+  requestVisibleStoryActions,
   refreshFeed
 }: RegisterProductFeatureApiArgs): ProductFeatureRuntime {
   void ensureProductFeatureTables(prisma).catch(err => {
     console.warn('[product-features] failed to ensure tables:', (err as Error).message);
   });
+
+  const requestVisibleActionsFor = (items: ProductNews[]) => {
+    if (!requestVisibleStoryActions || !items.length) return;
+    Promise.resolve(requestVisibleStoryActions(items)).catch(err => {
+      console.warn('[product-features] visible story actions failed:', (err as Error).message);
+    });
+  };
 
   const registerCrud = (basePath: string, kind: FeatureKind) => {
     app.get(basePath, async (req, res) => {
@@ -922,6 +979,7 @@ export function registerProductFeatureApi({
       .filter(item => item.isMatch === true && item.filteredOk !== false)
       .sort((a, b) => Number(b.publishedMs || 0) - Number(a.publishedMs || 0))
       .slice(0, limit + 1);
+    requestVisibleActionsFor(page.slice(0, limit));
     const stories = page
       .slice(0, limit)
       .map(toWidgetStory);
@@ -935,15 +993,22 @@ export function registerProductFeatureApi({
     await ensureDefaultCollectionsForUser(prisma, user.id, getFeeds());
     const rows = await listFeatureRows(prisma, user.id, 'collection', 200, true);
     const news = await widgetNewsOrFallback(prisma, getRecentNews(), { limit: 1000 });
-    const categories = rows
+    const categoriesWithStories = rows
       .map(mapCollectionRow)
       .sort((left, right) => left.sortOrder - right.sortOrder || left.id - right.id)
       .map(category => ({
         ...category,
-        stories: selectCategoryStories(category, news)
+        rawStories: selectCategoryStories(category, news)
           .slice(0, Math.max(1, category.activeCount))
-          .map(toWidgetStory)
       }));
+    requestVisibleActionsFor(categoriesWithStories.flatMap(category => category.rawStories));
+    const categories = categoriesWithStories.map(category => {
+      const { rawStories, ...rest } = category;
+      return {
+        ...rest,
+        stories: rawStories.map(toWidgetStory)
+      };
+    });
     res.json({
       ok: true,
       categories,
@@ -970,6 +1035,7 @@ export function registerProductFeatureApi({
       feedUrls: category.feedUrls
     });
     const page = selectCategoryStories(category, news).slice(0, limit + 1);
+    requestVisibleActionsFor(page.slice(0, limit));
     const stories = page.slice(0, limit).map(toWidgetStory);
     res.json({
       ok: true,

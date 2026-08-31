@@ -92,6 +92,96 @@ const prisma = new PrismaClient({
 });
 let productFeatures: ProductFeatureRuntime | null = null;
 
+type DatabaseBackupResult = {
+  path: string;
+  filename: string;
+  sizeBytes: number;
+  createdAt: string;
+  reason: string;
+};
+
+function sqliteFilePathFromDatabaseUrl(rawUrl?: string): string | undefined {
+  const raw = String(rawUrl || '').trim();
+  if (!raw.startsWith('file:')) return undefined;
+  const withoutScheme = raw.slice('file:'.length);
+  if (!withoutScheme) return undefined;
+  return path.isAbsolute(withoutScheme)
+    ? withoutScheme
+    : path.resolve(process.cwd(), withoutScheme);
+}
+
+function databaseBackupDir(): string {
+  const configured = String(process.env.AI_NEWS_DB_BACKUP_DIR || '').trim();
+  if (configured) return path.resolve(configured);
+  const home = String(process.env.HOME || '').trim();
+  if (home) return path.join(home, 'Library', 'Application Support', 'AINewsMacWidget', 'backups');
+  const dbPath = sqliteFilePathFromDatabaseUrl(process.env.DATABASE_URL);
+  return path.join(dbPath ? path.dirname(dbPath) : process.cwd(), 'backups');
+}
+
+function backupTimestamp(date = new Date()): string {
+  return date.toISOString()
+    .replace(/[-:]/g, '')
+    .replace('T', '-')
+    .replace('Z', '');
+}
+
+function backupReasonSlug(raw: unknown): string {
+  const slug = String(raw || 'manual')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 48);
+  return slug || 'manual';
+}
+
+function sqlStringLiteral(value: string): string {
+  return `'${value.replace(/'/g, "''")}'`;
+}
+
+function pruneDatabaseBackups(dir: string) {
+  const maxBackups = Math.max(1, Math.min(100, parseEnvInt('AI_NEWS_DB_BACKUP_MAX', 20)));
+  try {
+    const backups = fs.readdirSync(dir, { withFileTypes: true })
+      .filter(entry => entry.isFile() && /^ai-news-\d{8}-\d{6}(?:\.\d+)?-.+\.db$/i.test(entry.name))
+      .map(entry => {
+        const fullPath = path.join(dir, entry.name);
+        const stat = fs.statSync(fullPath);
+        return { fullPath, mtimeMs: stat.mtimeMs };
+      })
+      .sort((a, b) => b.mtimeMs - a.mtimeMs);
+
+    for (const backup of backups.slice(maxBackups)) {
+      try {
+        fs.unlinkSync(backup.fullPath);
+      } catch {}
+    }
+  } catch {}
+}
+
+async function createDatabaseBackup(reasonRaw?: unknown): Promise<DatabaseBackupResult> {
+  const dbPath = sqliteFilePathFromDatabaseUrl(process.env.DATABASE_URL);
+  if (!dbPath) {
+    throw new Error('Database backups are only supported for SQLite file databases.');
+  }
+  const dir = databaseBackupDir();
+  fs.mkdirSync(dir, { recursive: true });
+  const reason = backupReasonSlug(reasonRaw);
+  const filename = `ai-news-${backupTimestamp()}-${reason}.db`;
+  const backupPath = path.join(dir, filename);
+
+  await prisma.$executeRawUnsafe(`VACUUM INTO ${sqlStringLiteral(backupPath)}`);
+  const stat = fs.statSync(backupPath);
+  pruneDatabaseBackups(dir);
+  return {
+    path: backupPath,
+    filename,
+    sizeBytes: stat.size,
+    createdAt: new Date().toISOString(),
+    reason
+  };
+}
+
 type SummaryLang = 'bg' | 'en' | 'bilingual';
 type ResearchLang = 'bg' | 'en';
 type TitleDisplayLanguage = 'original' | 'bg' | 'en';
@@ -1175,6 +1265,13 @@ productFeatures = registerProductFeatureApi({
     title: item.title,
     titleBg: item.titleBg,
     titleEn: item.titleEn,
+    neutralTitle: item.neutralTitle,
+    neutralTitleBg: item.neutralTitleBg,
+    neutralTitleEn: item.neutralTitleEn,
+    neutralTitleStatus: item.neutralTitleStatus,
+    neutralTitleReason: item.neutralTitleReason,
+    neutralTitleClassification: item.neutralTitleClassification,
+    neutralTitleConfidence: item.neutralTitleConfidence,
     link: item.link,
     source: item.source,
     publishedMs: item.publishedMs,
@@ -1235,6 +1332,37 @@ productFeatures = registerProductFeatureApi({
     }
     return false;
   },
+  requestVisibleStoryActions: async items => {
+    if (!aiEnabled || !aiAvailable || activeModel('summary') === 'none') return;
+    const seen = new Set<string>();
+    for (const candidate of items.slice(0, 80)) {
+      const itemId = String(candidate.id || '').trim();
+      const feedUrl = String(candidate.feedUrl || '').trim();
+      const key = `${feedUrl}::${itemId}`;
+      if (!itemId || !feedUrl || seen.has(key)) continue;
+      seen.add(key);
+
+      const item = recent.find(entry => entry.id === itemId && entry.feedUrl === feedUrl);
+      if (!item) continue;
+      if (!isFeedAiEnabled(item.feedUrl)) continue;
+
+      if (
+        isTranslationEnabledForFeed(item.feedUrl) &&
+        needsTitleTranslation(item.title, item.titleBg, item.titleEn) &&
+        !hasTitleTranslateJobQueuedOrRunning(item.id, item.feedUrl)
+      ) {
+        enqueueJob({ kind: 'title_translate', id: item.id, feedUrl: item.feedUrl, viewport: true });
+      }
+
+      if (
+        shouldUseNeutralTitlesForItem(item) &&
+        needsTitleNeutralization(item) &&
+        !hasTitleNeutralizeJobQueuedOrRunning(item.id, item.feedUrl)
+      ) {
+        enqueueJob({ kind: 'title_neutralize', id: item.id, feedUrl: item.feedUrl, viewport: true });
+      }
+    }
+  },
   refreshFeed: async feedUrl => {
     const feed = currentFeeds().find(entry => entry.url === feedUrl);
     if (!feed) return false;
@@ -1257,13 +1385,16 @@ app.post('/api/maintenance/regenerate', async (req, res) => {
   const kind = ['summary', 'translation', 'neutral_title', 'research', 'all'].includes(kindRaw) ? kindRaw as 'summary' | 'translation' | 'neutral_title' | 'research' | 'all' : 'all';
   const feedUrl = String(body.feedUrl || '').trim();
   const limitRaw = Number(body.limit);
-  const limit = Number.isFinite(limitRaw) ? Math.max(1, Math.min(6000, Math.floor(limitRaw))) : 80;
   const missingOnly = body.missingOnly === true;
+  const archiveTitleSweep = !feedUrl && (kind === 'all' || kind === 'neutral_title');
+  const limitCap = archiveTitleSweep ? 500 : 6000;
+  const limit = Number.isFinite(limitRaw) ? Math.max(1, Math.min(limitCap, Math.floor(limitRaw))) : 80;
   const jobs = new Set<AiJobKind>();
   if (kind === 'summary' || kind === 'all') jobs.add('summary');
   if (kind === 'translation' || kind === 'all') jobs.add('title_translate');
   if (kind === 'neutral_title' || kind === 'all') jobs.add('title_neutralize');
   if (kind === 'research' || kind === 'all') jobs.add('research');
+  const bulkRegenerateAll = kind === 'all';
 
   const selected = recent
     .slice()
@@ -1275,6 +1406,18 @@ app.post('/api/maintenance/regenerate', async (req, res) => {
       return item.feedUrl === feedUrl;
     })
     .slice(0, limit);
+
+  let backup: DatabaseBackupResult | undefined;
+  if (!missingOnly || archiveTitleSweep) {
+    try {
+      backup = await createDatabaseBackup(`before-${kind}-regenerate`);
+    } catch (error) {
+      res.status(500).json({
+        error: `Database backup failed before regeneration: ${(error as Error).message || 'unknown error'}`
+      });
+      return;
+    }
+  }
 
   const queued = { summary: 0, translation: 0, neutralTitle: 0, research: 0 };
   const skipped = { summary: 0, translation: 0, neutralTitle: 0, research: 0 };
@@ -1303,7 +1446,7 @@ app.post('/api/maintenance/regenerate', async (req, res) => {
           item.titleBg = undefined;
           item.titleEn = undefined;
         }
-        enqueueJob({ kind: 'title_translate', id: item.id, feedUrl: item.feedUrl, manual: true });
+        enqueueJob({ kind: 'title_translate', id: item.id, feedUrl: item.feedUrl, manual: true, bulk: bulkRegenerateAll });
         if (hasTitleTranslateJobQueuedOrRunning(item.id, item.feedUrl)) queued.translation += 1;
         changed = true;
       }
@@ -1311,7 +1454,8 @@ app.post('/api/maintenance/regenerate', async (req, res) => {
 
     if (jobs.has('title_neutralize')) {
       const hasNeutralTitle = hasNeutralTitleSet(item);
-      if (activeModel('summary') === 'none' || !shouldUseNeutralTitlesForItem(item) || hasTitleNeutralizeJobQueuedOrRunning(item.id, item.feedUrl) || (missingOnly && hasNeutralTitle)) {
+      const needsNeutralTitle = needsTitleNeutralization(item);
+      if (activeModel('summary') === 'none' || !shouldUseNeutralTitlesForItem(item) || hasTitleNeutralizeJobQueuedOrRunning(item.id, item.feedUrl) || (missingOnly && (!needsNeutralTitle || hasNeutralTitle))) {
         skipped.neutralTitle += 1;
       } else {
         if (!missingOnly) {
@@ -1324,7 +1468,7 @@ app.post('/api/maintenance/regenerate', async (req, res) => {
           item.neutralTitleConfidence = undefined;
           item.neutralTitleCheckedAtMs = undefined;
         }
-        enqueueJob({ kind: 'title_neutralize', id: item.id, feedUrl: item.feedUrl, manual: true });
+        enqueueJob({ kind: 'title_neutralize', id: item.id, feedUrl: item.feedUrl, manual: true, bulk: bulkRegenerateAll });
         if (hasTitleNeutralizeJobQueuedOrRunning(item.id, item.feedUrl)) queued.neutralTitle += 1;
         changed = true;
       }
@@ -1360,7 +1504,7 @@ app.post('/api/maintenance/regenerate', async (req, res) => {
     reason: missingOnly ? 'Fill missing AI outputs.' : 'Regenerate selected AI outputs.',
     details: { kind, feedUrl: feedUrl || null, limit, selected: selected.length, queued, skipped }
   });
-  res.json({ ok: true, kind, feedUrl: feedUrl || null, limit, selected: selected.length, queued, skipped, missingOnly });
+  res.json({ ok: true, kind, feedUrl: feedUrl || null, limit, selected: selected.length, queued, skipped, missingOnly, backup });
 });
 
 app.get('/', (_req, res) => {
@@ -1378,6 +1522,24 @@ app.get('/', (_req, res) => {
 
 app.get('/health', (_req, res) => {
   res.json({ ok: true, service: 'ai-news-api' });
+});
+
+app.post('/api/ops/database/backup', async (req, res) => {
+  const user = await requireAuthUser(req, res);
+  if (!user) return;
+  try {
+    const backup = await createDatabaseBackup((req.body as Record<string, unknown> | undefined)?.reason || 'manual');
+    void productFeatures?.recordHistory({
+      userId: user.id,
+      stage: 'database_backup',
+      status: 'created',
+      reason: String(backup.reason || 'manual'),
+      details: { path: backup.path, sizeBytes: backup.sizeBytes }
+    });
+    res.json({ ok: true, backup });
+  } catch (error) {
+    res.status(500).json({ error: (error as Error).message || 'Failed to create database backup.' });
+  }
 });
 
 app.get('/api/ops/ai-jobs', (req, res) => {
@@ -1409,6 +1571,7 @@ app.get('/api/ops/ai-jobs', (req, res) => {
       id: job.id,
       feedUrl: job.feedUrl,
       manual: !!job.manual,
+      bulk: !!job.bulk,
       enqueuedAtMs: job.enqueuedAtMs,
       ageMs: Math.max(0, Date.now() - job.enqueuedAtMs)
     }))
@@ -1441,7 +1604,11 @@ app.get('/api/ops/ai-jobs', (req, res) => {
       size: aiQueue.length,
       countsByKind: aiQueueCounts(),
       inFlight: aiInFlight.size,
+      bulkQueued: queuedBulkJobCount(),
+      bulkInFlight: inFlightBulkJobCount(),
       deadLetters: aiDeadLetters.length,
+      pausedAll: aiQueuePausedAll,
+      pausedKinds: Array.from(aiPausedKinds),
       queuedJobs: queuePreview,
       inFlightKeys
     },
@@ -1456,6 +1623,106 @@ app.get('/api/ops/ai-jobs', (req, res) => {
     },
     events,
     deadLetters
+  });
+});
+
+app.post('/api/ops/ai-jobs/control', async (req, res) => {
+  const user = await requireAuthUser(req, res);
+  if (!user) return;
+
+  const body = (req.body || {}) as Record<string, unknown>;
+  const action = String(body.action || '').trim();
+  const kindRaw = String(body.kind || 'all').trim();
+  const bulkOnly = body.bulkOnly === true;
+  const backgroundOnly = body.backgroundOnly === true;
+  const kinds: AiJobKind[] = ['summary', 'title_translate', 'title_neutralize', 'research', 'mood', 'news_type'];
+  const selectedKinds = (() => {
+    if (kindRaw === 'all') return kinds;
+    if (kindRaw === 'title') return ['title_translate', 'title_neutralize'] as AiJobKind[];
+    return kinds.includes(kindRaw as AiJobKind) ? [kindRaw as AiJobKind] : [];
+  })();
+
+  if (!selectedKinds.length) {
+    res.status(400).json({ error: 'Unknown AI job kind.' });
+    return;
+  }
+
+  const matches = (job: AiJob | DeadLetterAiJob) => {
+    if (!selectedKinds.includes(job.kind)) return false;
+    if (bulkOnly && !job.bulk) return false;
+    if (backgroundOnly && (job.manual || job.viewport)) return false;
+    return true;
+  };
+
+  let affected = 0;
+  let queued = 0;
+
+  if (action === 'pause') {
+    if (kindRaw === 'all') {
+      aiQueuePausedAll = true;
+    } else {
+      selectedKinds.forEach(kind => aiPausedKinds.add(kind));
+    }
+    affected = selectedKinds.length;
+  } else if (action === 'resume') {
+    if (kindRaw === 'all') {
+      aiQueuePausedAll = false;
+      aiPausedKinds.clear();
+    } else {
+      selectedKinds.forEach(kind => aiPausedKinds.delete(kind));
+    }
+    affected = selectedKinds.length;
+  } else if (action === 'cancel') {
+    for (let i = aiQueue.length - 1; i >= 0; i -= 1) {
+      const job = aiQueue[i];
+      if (!matches(job)) continue;
+      aiQueue.splice(i, 1);
+      affected += 1;
+      recordAiJobEvent(job, 'drop', { reason: 'cancelled_by_user' });
+    }
+  } else if (action === 'prioritize_summaries') {
+    aiQueuePausedAll = false;
+    aiPausedKinds.delete('summary');
+    lastSummaryRecoveryAtMs = 0;
+    affected = enqueueSummaryRecoveryPass(Date.now());
+  } else if (action === 'retry_dead_letters') {
+    const retry = aiDeadLetters.filter(matches);
+    for (const dead of retry) {
+      enqueueJob({
+        kind: dead.kind,
+        id: dead.id,
+        feedUrl: dead.feedUrl,
+        manual: dead.manual,
+        viewport: dead.viewport,
+        bulk: dead.bulk
+      });
+      queued += 1;
+    }
+    affected = retry.length;
+    for (let i = aiDeadLetters.length - 1; i >= 0; i -= 1) {
+      if (matches(aiDeadLetters[i])) aiDeadLetters.splice(i, 1);
+    }
+  } else {
+    res.status(400).json({ error: 'Unknown AI queue control action.' });
+    return;
+  }
+
+  res.json({
+    ok: true,
+    action,
+    kind: kindRaw,
+    affected,
+    queued,
+    queue: {
+      size: aiQueue.length,
+      countsByKind: aiQueueCounts(),
+      inFlight: aiInFlight.size,
+      bulkQueued: queuedBulkJobCount(),
+      bulkInFlight: inFlightBulkJobCount(),
+      deadLetters: aiDeadLetters.length,
+      pausedAll: aiQueuePausedAll,
+      pausedKinds: Array.from(aiPausedKinds)
+    }
   });
 });
 
@@ -2350,14 +2617,14 @@ function buildPersistedNewsUpdate(it: NewsInternal): Prisma.NewsItemRecordUnchec
     title: it.title,
     titleBg: it.titleBg || undefined,
     titleEn: it.titleEn || undefined,
-    neutralTitle: it.neutralTitle || undefined,
-    neutralTitleBg: it.neutralTitleBg || undefined,
-    neutralTitleEn: it.neutralTitleEn || undefined,
-    neutralTitleStatus: it.neutralTitleStatus || undefined,
-    neutralTitleReason: it.neutralTitleReason || undefined,
-    neutralTitleClassification: it.neutralTitleClassification || undefined,
-    neutralTitleConfidence: typeof it.neutralTitleConfidence === 'number' ? it.neutralTitleConfidence : undefined,
-    neutralTitleCheckedAtMs: it.neutralTitleCheckedAtMs ? BigInt(Math.floor(it.neutralTitleCheckedAtMs)) : undefined,
+    neutralTitle: it.neutralTitle || null,
+    neutralTitleBg: it.neutralTitleBg || null,
+    neutralTitleEn: it.neutralTitleEn || null,
+    neutralTitleStatus: it.neutralTitleStatus || null,
+    neutralTitleReason: it.neutralTitleReason || null,
+    neutralTitleClassification: it.neutralTitleClassification || null,
+    neutralTitleConfidence: typeof it.neutralTitleConfidence === 'number' ? it.neutralTitleConfidence : null,
+    neutralTitleCheckedAtMs: it.neutralTitleCheckedAtMs ? BigInt(Math.floor(it.neutralTitleCheckedAtMs)) : null,
     coverUrl: it.coverUrl || undefined,
     link: it.link,
     source: it.source,
@@ -5031,7 +5298,7 @@ type NeutralizedTitleSet = {
   en?: string;
 };
 
-const AI_NEUTRAL_TITLE_RULESET_VERSION = 'neutral-title-rules-2026-08-06';
+const AI_NEUTRAL_TITLE_RULESET_VERSION = 'neutral-title-rules-2026-08-26';
 
 function canonicalTitleForCompare(raw: unknown): string {
   return String(raw || '')
@@ -5048,6 +5315,54 @@ function titleMateriallyChanged(original: unknown, rewritten: unknown): boolean 
   return !!source && !!candidate && source !== candidate;
 }
 
+function neutralTitleLooksLikeHeadline(originalTitle: unknown, candidateTitle: unknown): boolean {
+  const original = normalizeTitleValue(originalTitle);
+  const candidate = normalizeTitleValue(candidateTitle);
+  if (!candidate) return false;
+  if (candidate.length > 150) return false;
+  if (/[.。]\s*$/u.test(candidate)) return false;
+
+  const originalWords = canonicalTitleForCompare(original).split(' ').filter(Boolean).length;
+  const candidateWords = canonicalTitleForCompare(candidate).split(' ').filter(Boolean).length;
+  const maxWords = Math.max(18, originalWords * 2 + 4);
+  return candidateWords <= maxWords;
+}
+
+function neutralTitleForOriginalSlot(
+  originalTitle: string,
+  neutralized: NeutralizedTitleSet
+): string | undefined {
+  const originalLooksBg = looksBulgarianTitle(originalTitle);
+  const originalLooksEn = looksEnglishTitle(originalTitle);
+  const candidateOriginal = trimNeutralTitle(neutralized.original);
+  const candidateBg = trimNeutralTitle(neutralized.bg);
+  const candidateEn = trimNeutralTitle(neutralized.en);
+
+  if (originalLooksBg && !originalLooksEn) {
+    if (candidateOriginal && looksBulgarianTitle(candidateOriginal) && neutralTitleLooksLikeHeadline(originalTitle, candidateOriginal) && titleMateriallyChanged(originalTitle, candidateOriginal)) {
+      return candidateOriginal;
+    }
+    if (candidateBg && looksBulgarianTitle(candidateBg) && neutralTitleLooksLikeHeadline(originalTitle, candidateBg) && titleMateriallyChanged(originalTitle, candidateBg)) {
+      return candidateBg;
+    }
+    return undefined;
+  }
+
+  if (originalLooksEn && !originalLooksBg) {
+    if (candidateOriginal && looksEnglishTitle(candidateOriginal) && neutralTitleLooksLikeHeadline(originalTitle, candidateOriginal) && titleMateriallyChanged(originalTitle, candidateOriginal)) {
+      return candidateOriginal;
+    }
+    if (candidateEn && looksEnglishTitle(candidateEn) && neutralTitleLooksLikeHeadline(originalTitle, candidateEn) && titleMateriallyChanged(originalTitle, candidateEn)) {
+      return candidateEn;
+    }
+    return undefined;
+  }
+
+  return candidateOriginal && neutralTitleLooksLikeHeadline(originalTitle, candidateOriginal) && titleMateriallyChanged(originalTitle, candidateOriginal)
+    ? candidateOriginal
+    : undefined;
+}
+
 function titleNeutralizationSignals(...parts: unknown[]): string[] {
   const text = parts
     .map(part => String(part || ''))
@@ -5058,7 +5373,8 @@ function titleNeutralizationSignals(...parts: unknown[]): string[] {
   const rules: Array<[RegExp, string]> = [
     [/\b(clickbait|shocking|you won'?t believe|rage[-\s]?bait|slammed|attacks?|crisis|scandal|dramatic|bombshell|tension rises|big problem|what happened)\b/iu, 'loaded English headline framing'],
     [/\b(important news|one neighborhood rejoices|neighborhood rejoices|residents rejoice|locals celebrate)\b/iu, 'vague importance/reaction framing'],
-    [/(обрат|психологическа граница|напрежението расте|голям проблем|какво направи|проплака|на седмото небе|скандал|атакува|шок|драма|сензац|взриви|извънреден ход|разкри|горещо|важно|кой пази|мина|спасило кариерата|втрещи|ужас|кошмар)/iu, 'loaded Bulgarian headline framing'],
+    [/(обрат|психологическа граница|напрежението расте|голям проблем|какво направи|проплака|на седмото небе|скандал|атакува|шок|драма|сензац|взриви|извънреден ход|разкри|горещо|важно|кой пази|мина|спасило кариерата|втрещи|ужас|кошмар|чадърът падна|нови загадки|тайни тунели|извива ръцете|нанася удар|ответен удар)/iu, 'loaded Bulgarian headline framing'],
+    [/^[„"][^“"]{8,90}[“"](?:\s*[.。:—-]\s*|\s+).{12,}$/iu, 'quote-led teaser framing'],
     [/(важна новина|важно за|един квартал ликува|квартал ликува|\bликува\b)/iu, 'vague importance/reaction framing']
   ];
 
@@ -5067,6 +5383,7 @@ function titleNeutralizationSignals(...parts: unknown[]): string[] {
 
 function fallbackClassificationFromNeutralSignals(signals: string[]): NeutralTitleClassification | undefined {
   if (signals.includes('vague importance/reaction framing')) return 'clickbait';
+  if (signals.includes('quote-led teaser framing')) return 'vague_teaser';
   if (signals.includes('loaded English headline framing') || signals.includes('loaded Bulgarian headline framing')) return 'emotional_framing';
   return undefined;
 }
@@ -5118,6 +5435,7 @@ function neutralTitleFallbackFromSummary(summaryRaw: unknown): string | undefine
   const summary = trimNeutralTitle(summaryRaw);
   if (!summary) return undefined;
   const firstSentence = summary.split(/(?<=[.!?])\s+/u)[0]?.trim() || summary;
+  if (firstSentence.length > 140) return undefined;
   return trimNeutralTitle(firstSentence);
 }
 
@@ -5193,10 +5511,11 @@ function parseNeutralizedTitles(raw: string): NeutralizedTitleSet | undefined {
 }
 
 function hasNeutralTitleSet(it: NewsInternal): boolean {
-  if (it.neutralTitleStatus === 'rewritten') return true;
-  return titleMateriallyChanged(it.title, it.neutralTitle)
-    || titleMateriallyChanged(it.titleBg || it.title, it.neutralTitleBg)
-    || titleMateriallyChanged(it.titleEn || it.title, it.neutralTitleEn);
+  return !!neutralTitleForOriginalSlot(it.title, {
+    original: it.neutralTitle,
+    bg: it.neutralTitleBg,
+    en: it.neutralTitleEn
+  });
 }
 
 function needsTitleNeutralization(it: NewsInternal): boolean {
@@ -5217,6 +5536,28 @@ function needsTitleNeutralization(it: NewsInternal): boolean {
     return false;
   }
   return true;
+}
+
+async function markNeutralTitleRewriteFailed(
+  it: NewsInternal,
+  reason: string,
+  classification?: NeutralTitleClassification,
+  confidence?: number
+) {
+  it.neutralTitle = undefined;
+  it.neutralTitleBg = undefined;
+  it.neutralTitleEn = undefined;
+  it.neutralTitleStatus = 'rewrite_failed';
+  it.neutralTitleReason = reason.includes(AI_NEUTRAL_TITLE_RULESET_VERSION)
+    ? reason
+    : `${reason} ${AI_NEUTRAL_TITLE_RULESET_VERSION}`;
+  it.neutralTitleClassification = classification;
+  it.neutralTitleConfidence = typeof confidence === 'number' ? confidence : undefined;
+  it.neutralTitleCheckedAtMs = Date.now();
+  refreshDerivedDataForItem(it);
+  await upsertPersistedNewsItem(it);
+  broadcastNewsUpdate(it);
+  scheduleDiscordPost(it);
 }
 
 function normalizeMood(raw: string): Mood | undefined {
@@ -5337,8 +5678,8 @@ function budgetAllowsVisibleNeutralTitles(b: BudgetMode) {
 }
 
 function budgetAllowsBackgroundNeutralTitles(b: BudgetMode) {
-  // Neutral rewrites add one model call per story, so feed-wide background work is High only.
-  return b === 'high';
+  // Standard and High both run neutral-title normalization in the background.
+  return b !== 'low';
 }
 
 // --------------- Optional article fetch + extraction ---------------
@@ -5712,6 +6053,13 @@ async function neutralizeTitleSet(item: NewsInternal, budget: BudgetMode): Promi
   const enTitle = normalizeTitleValue(item.titleEn || '');
   const signals = titleNeutralizationSignals(originalTitle, bgTitle, enTitle);
   const maxTokens = Math.max(260, Math.min(520, budgetToTokensSummary(budget) + 260));
+  const originalLooksBg = looksBulgarianTitle(originalTitle);
+  const originalLooksEn = looksEnglishTitle(originalTitle);
+  const sourceLanguageRule = originalLooksBg && !originalLooksEn
+    ? 'The "original" and "bg" fields must be Bulgarian in Cyrillic. Do not put English in either field.'
+    : originalLooksEn && !originalLooksBg
+      ? 'The "original" and "en" fields must be English. Do not put Bulgarian in either field.'
+      : '';
 
   const input = [
     'Classify this headline set first, then rewrite only if the classification requires neutralization.',
@@ -5723,6 +6071,7 @@ async function neutralizeTitleSet(item: NewsInternal, budget: BudgetMode): Promi
     'Do not rewrite neutral headlines or headlines that simply state facts about an emotional event.',
     'If you rewrite, make the headline neutral, factual, shorter where possible, and preserve names, places, numbers, dates, roles, outcomes, and uncertainty.',
     'Do not invent facts. Keep each output in the same language as the corresponding input title.',
+    sourceLanguageRule,
     signals.length ? `Heuristic signal hints detected: ${signals.join(', ')}.` : '',
     item.summary ? 'Use the summary only as factual support if you need it to remove baiting or vagueness.' : '',
     'Return strict JSON only with keys "classification", "confidence", "needsRewrite", "reason", "original", "bg", and "en".',
@@ -5743,7 +6092,77 @@ async function neutralizeTitleSet(item: NewsInternal, budget: BudgetMode): Promi
     `Neutral title: ${item.source} - ${originalTitle}`,
     { itemId: item.id, feedUrl: item.feedUrl, source: item.source, title: originalTitle }
   );
-  return text ? parseNeutralizedTitles(text) : undefined;
+  if (!text) return undefined;
+  const parsed = parseNeutralizedTitles(text);
+  if (parsed) return parsed;
+
+  const fallbackTitle = trimNeutralTitle(text);
+  if (
+    fallbackTitle &&
+    neutralTitleLooksLikeHeadline(originalTitle, fallbackTitle) &&
+    titleMateriallyChanged(originalTitle, fallbackTitle) &&
+    ((originalLooksBg && !originalLooksEn && looksBulgarianTitle(fallbackTitle))
+      || (originalLooksEn && !originalLooksBg && looksEnglishTitle(fallbackTitle)))
+  ) {
+    return {
+      needsRewrite: true,
+      classification: fallbackClassificationFromNeutralSignals(signals) || 'emotional_framing',
+      confidence: 0.62,
+      reason: `Model returned a plain-text neutral title instead of JSON. ${AI_NEUTRAL_TITLE_RULESET_VERSION}`,
+      original: fallbackTitle,
+      bg: originalLooksBg && !originalLooksEn ? fallbackTitle : undefined,
+      en: originalLooksEn && !originalLooksBg ? fallbackTitle : undefined
+    };
+  }
+  return undefined;
+}
+
+async function neutralizeTitleInSourceLanguage(
+  item: NewsInternal,
+  budget: BudgetMode,
+  classification: NeutralTitleClassification | undefined,
+  signals: string[]
+): Promise<string | undefined> {
+  const originalTitle = normalizeTitleValue(item.title);
+  if (!originalTitle) return undefined;
+
+  const sourceLooksBg = looksBulgarianTitle(originalTitle);
+  const sourceLooksEn = looksEnglishTitle(originalTitle);
+  const language = sourceLooksBg && !sourceLooksEn
+    ? 'Bulgarian in Cyrillic'
+    : sourceLooksEn && !sourceLooksBg
+      ? 'English'
+      : '';
+  if (!language) return undefined;
+
+  const input = [
+    `Rewrite the headline as a neutral factual headline in ${language}.`,
+    'Return plain text only. Do not translate to another language. No quotes, no markdown, no commentary.',
+    'Preserve names, places, numbers, dates, roles, outcomes, and uncertainty. Do not invent facts.',
+    'Make it shorter or similar length where possible.',
+    classification ? `Classification: ${classification}` : '',
+    signals.length ? `Detected signals: ${signals.join(', ')}` : '',
+    `Source: ${item.source}`,
+    `Headline: ${originalTitle}`,
+    item.summary ? `Summary: ${item.summary}` : '',
+    item.__ctx ? `RSS context: ${item.__ctx}` : ''
+  ].filter(Boolean).join('\n');
+
+  const text = await generateAiText(
+    'summary',
+    input,
+    Math.max(90, Math.min(180, budgetToTokensSummary(budget) + 90)),
+    0,
+    `Neutral title source-language retry: ${item.source} - ${originalTitle}`,
+    { itemId: item.id, feedUrl: item.feedUrl, source: item.source, title: originalTitle }
+  );
+  const candidate = trimNeutralTitle(text);
+  if (!candidate) return undefined;
+  if (!neutralTitleLooksLikeHeadline(originalTitle, candidate)) return undefined;
+  if (!titleMateriallyChanged(originalTitle, candidate)) return undefined;
+  if (sourceLooksBg && !sourceLooksEn && !looksBulgarianTitle(candidate)) return undefined;
+  if (sourceLooksEn && !sourceLooksBg && !looksEnglishTitle(candidate)) return undefined;
+  return candidate;
 }
 
 async function oneItemResearch(
@@ -6036,7 +6455,7 @@ function shouldUseNeutralTitlesForItem(it: NewsInternal): boolean {
 
 // ---------------- AI JOB QUEUE (non-blocking) ----------------
 type AiJobKind = 'summary' | 'title_translate' | 'title_neutralize' | 'research' | 'mood' | 'news_type';
-type AiJobInput = { kind: AiJobKind; id: string; feedUrl: string; manual?: boolean; viewport?: boolean };
+type AiJobInput = { kind: AiJobKind; id: string; feedUrl: string; manual?: boolean; viewport?: boolean; bulk?: boolean };
 type AiJob = AiJobInput & { enqueuedAtMs: number };
 type DeadLetterAiJob = {
   kind: AiJobKind;
@@ -6044,6 +6463,7 @@ type DeadLetterAiJob = {
   feedUrl: string;
   manual?: boolean;
   viewport?: boolean;
+  bulk?: boolean;
   enqueuedAtMs: number;
   droppedAtMs: number;
   reason: string;
@@ -6058,6 +6478,7 @@ type AiJobLogEvent = {
   id: string;
   feedUrl: string;
   manual: boolean;
+  bulk?: boolean;
   reason?: string;
   durationMs?: number;
   queueLength: number;
@@ -6089,11 +6510,14 @@ type SummaryDebugEvent = {
 
 const aiQueue: AiJob[] = [];
 const aiInFlight = new Set<string>();
+const aiInFlightJobs = new Map<string, AiJob>();
 const aiDeadLetters: DeadLetterAiJob[] = [];
 const aiJobLogEvents: AiJobLogEvent[] = [];
 const summaryDebugEvents: SummaryDebugEvent[] = [];
 const lastAiJobErrorAtMs = new Map<string, number>();
 const aiTimeoutCounts = new Map<string, number>();
+const aiPausedKinds = new Set<AiJobKind>();
+let aiQueuePausedAll = false;
 
 function parseEnvInt(envKey: string, fallback: number): number {
   const raw = process.env[envKey];
@@ -6106,6 +6530,8 @@ function parseEnvInt(envKey: string, fallback: number): number {
 
 const AI_MAX_CONCURRENCY = Math.max(1, parseInt(process.env.AI_MAX_CONCURRENCY || '1', 10));
 const AI_QUEUE_MAX = Math.max(200, parseInt(process.env.AI_QUEUE_MAX || '600', 10));
+const AI_BULK_QUEUE_MAX = Math.max(25, parseEnvInt('AI_BULK_QUEUE_MAX', 160));
+const AI_BULK_MAX_CONCURRENCY = Math.max(1, parseEnvInt('AI_BULK_MAX_CONCURRENCY', 1));
 const AI_JOB_TTL_MS = Math.max(15_000, parseEnvInt('AI_JOB_TTL_MS', 180_000));
 const AI_DEAD_LETTER_MAX = Math.max(50, parseEnvInt('AI_DEAD_LETTER_MAX', 400));
 const AI_JOB_LOG_MAX = Math.max(100, parseEnvInt('AI_JOB_LOG_MAX', 1200));
@@ -6159,8 +6585,8 @@ const AI_NEUTRAL_TITLE_SUMMARY_BACKLOG_PAUSE = Math.max(
 );
 const AI_TITLE_RECOVERY_INTERVAL_MS = Math.max(3_000, parseEnvInt('AI_TITLE_RECOVERY_INTERVAL_MS', 9_000));
 const AI_TITLE_RECOVERY_BATCH = Math.max(1, Math.min(120, parseEnvInt('AI_TITLE_RECOVERY_BATCH', 32)));
-const AI_NEUTRAL_TITLE_RECOVERY_INTERVAL_MS = Math.max(3_000, parseEnvInt('AI_NEUTRAL_TITLE_RECOVERY_INTERVAL_MS', 10_000));
-const AI_NEUTRAL_TITLE_RECOVERY_BATCH = Math.max(1, Math.min(120, parseEnvInt('AI_NEUTRAL_TITLE_RECOVERY_BATCH', 32)));
+const AI_NEUTRAL_TITLE_RECOVERY_INTERVAL_MS = Math.max(3_000, parseEnvInt('AI_NEUTRAL_TITLE_RECOVERY_INTERVAL_MS', 60_000));
+const AI_NEUTRAL_TITLE_RECOVERY_BATCH = Math.max(1, Math.min(120, parseEnvInt('AI_NEUTRAL_TITLE_RECOVERY_BATCH', 6)));
 const AI_NEUTRAL_TITLE_RETRY_COOLDOWN_MS = Math.max(
   60_000,
   parseEnvInt('AI_NEUTRAL_TITLE_RETRY_COOLDOWN_MS', 30 * 60_000)
@@ -6336,6 +6762,7 @@ function pushDeadLetter(job: AiJob, reason: string) {
     feedUrl: job.feedUrl,
     manual: job.manual,
     viewport: job.viewport,
+    bulk: job.bulk,
     enqueuedAtMs: job.enqueuedAtMs,
     droppedAtMs: Date.now(),
     reason
@@ -6358,6 +6785,22 @@ function aiQueueCounts() {
     counts[job.kind] += 1;
   });
   return counts;
+}
+
+function queuedBulkJobCount(kind?: AiJobKind): number {
+  return aiQueue.reduce((count, job) => {
+    if (!job.bulk) return count;
+    if (kind && job.kind !== kind) return count;
+    return count + 1;
+  }, 0);
+}
+
+function inFlightBulkJobCount(): number {
+  let count = 0;
+  for (const job of aiInFlightJobs.values()) {
+    if (job.bulk) count += 1;
+  }
+  return count;
 }
 
 function hasSummaryBacklog(): boolean {
@@ -6403,7 +6846,7 @@ function clearTimeoutAttempts(job: Pick<AiJob, 'kind' | 'id' | 'feedUrl'>) {
   aiTimeoutCounts.delete(timeoutAttemptKey(job));
 }
 
-function recordAiJobEvent(job: Pick<AiJob, 'kind' | 'id' | 'feedUrl' | 'manual'>, stage: AiJobLogStage, opts?: {
+function recordAiJobEvent(job: Pick<AiJob, 'kind' | 'id' | 'feedUrl' | 'manual' | 'bulk'>, stage: AiJobLogStage, opts?: {
   reason?: string;
   durationMs?: number;
 }) {
@@ -6415,6 +6858,7 @@ function recordAiJobEvent(job: Pick<AiJob, 'kind' | 'id' | 'feedUrl' | 'manual'>
     id: job.id,
     feedUrl: job.feedUrl,
     manual: !!job.manual,
+    bulk: job.bulk,
     reason: opts?.reason,
     durationMs: opts?.durationMs,
     queueLength: aiQueue.length,
@@ -6456,30 +6900,40 @@ function purgeExpiredQueuedJobs() {
 }
 
 function jobPriority(j: AiJob): number {
+  if (j.bulk) return 8;
+  if (j.kind === 'summary') {
+    if (j.manual) return 0;
+    if (j.viewport) return 1;
+    return 2;
+  }
   if (j.manual) {
-    if (j.kind === 'summary') return 0;
-    if (j.kind === 'title_translate') return 1;
-    if (j.kind === 'title_neutralize') return 1;
-    if (j.kind === 'research') return 2;
+    if (j.kind === 'title_translate') return 3;
+    if (j.kind === 'title_neutralize') return 3;
+    if (j.kind === 'research') return 4;
     if (j.kind === 'mood') return 6;
     return 7; // news_type
   }
-  if (j.viewport && j.kind === 'title_neutralize') return 2;
-  if (j.viewport && j.kind === 'summary') return 3;
+  if (j.viewport && j.kind === 'title_neutralize') return 3;
   if (j.viewport && j.kind === 'title_translate') return 4;
-  if (j.kind === 'summary') return 3;
-  if (j.kind === 'title_translate') return 4;
-  if (j.kind === 'title_neutralize') return 4;
+  if (j.kind === 'title_translate') return 5;
+  if (j.kind === 'title_neutralize') return 5;
   if (j.kind === 'research') return 5;
   if (j.kind === 'mood') return 6;
   return 7; // news_type
 }
 
+function isAiJobPaused(job: Pick<AiJob, 'kind' | 'bulk'>): boolean {
+  return aiQueuePausedAll
+    || aiPausedKinds.has(job.kind)
+    || (!!job.bulk && inFlightBulkJobCount() >= AI_BULK_MAX_CONCURRENCY);
+}
+
 function dequeueNextJob(): AiJob | undefined {
   while (aiQueue.length) {
-    let bestIndex = 0;
-    let bestPriority = jobPriority(aiQueue[0]);
-    for (let i = 1; i < aiQueue.length; i += 1) {
+    let bestIndex = -1;
+    let bestPriority = Number.POSITIVE_INFINITY;
+    for (let i = 0; i < aiQueue.length; i += 1) {
+      if (isAiJobPaused(aiQueue[i])) continue;
       const priority = jobPriority(aiQueue[i]);
       if (priority < bestPriority) {
         bestPriority = priority;
@@ -6487,6 +6941,7 @@ function dequeueNextJob(): AiJob | undefined {
         if (bestPriority === 0) break;
       }
     }
+    if (bestIndex < 0) return undefined;
     const next = aiQueue.splice(bestIndex, 1)[0];
     if (!next) return undefined;
     if (isJobExpired(next)) {
@@ -6537,6 +6992,10 @@ function enqueueJob(job: AiJobInput) {
   }
   if (aiQueue.some(x => jobKey(x) === k)) {
     recordAiJobEvent(nextJob, 'skip', { reason: 'duplicate_queue' });
+    return;
+  }
+  if (nextJob.bulk && queuedBulkJobCount(nextJob.kind) >= AI_BULK_QUEUE_MAX) {
+    recordAiJobEvent(nextJob, 'skip', { reason: `bulk_queue_cap:${AI_BULK_QUEUE_MAX}` });
     return;
   }
 
@@ -6615,7 +7074,6 @@ function enqueueNeutralTitleBackfill(feedUrl?: string, manual = false, maxItems 
 
   const targetFeedUrl = String(feedUrl || '').trim();
   const max = Math.max(1, Math.min(2_000, Math.floor(maxItems)));
-  if (!manual && hasSummaryBacklogForNeutralTitles()) return 0;
   const list = recent.slice().sort((a, b) => b.publishedMs - a.publishedMs);
   let done = 0;
 
@@ -6709,7 +7167,6 @@ function enqueueNeutralTitleRecoveryPass(nowMs = Date.now()): number {
   if (activeModel('summary') === 'none') return 0;
   if (nowMs - lastNeutralTitleRecoveryAtMs < AI_NEUTRAL_TITLE_RECOVERY_INTERVAL_MS) return 0;
   lastNeutralTitleRecoveryAtMs = nowMs;
-  if (hasSummaryBacklogForNeutralTitles()) return 0;
 
   let queued = 0;
   const list = recent.slice().sort((a, b) => b.publishedMs - a.publishedMs);
@@ -6764,6 +7221,7 @@ async function runOneJob(job: AiJob) {
   const duration = () => Math.max(0, Date.now() - startedAtMs);
   const k = jobKey(job);
   aiInFlight.add(k);
+  aiInFlightJobs.set(k, job);
   recordAiJobEvent(job, 'start');
   let itemForError: NewsInternal | undefined;
   let didBroadcastUpdate = false;
@@ -6934,7 +7392,7 @@ async function runOneJob(job: AiJob) {
         let confidence = normalizeNeutralTitleConfidence(neutralized.confidence);
         if (
           fallbackClassification &&
-          (!classification || (classification === 'neutral' && (typeof confidence !== 'number' || confidence < 0.8)))
+          (!classification || classification === 'neutral' || classification === 'fact_stating_but_emotional_event')
         ) {
           classification = fallbackClassification;
           confidence = Math.max(confidence || 0, 0.72);
@@ -6944,19 +7402,47 @@ async function runOneJob(job: AiJob) {
           : neutralized.needsRewrite === true;
         const summaryFallback = needsRewrite ? neutralTitleFallbackFromSummary(it.summary) : undefined;
         const bgFallback = summaryFallback && looksBulgarianTitle(summaryFallback) ? summaryFallback : undefined;
-        const changedOriginal = titleMateriallyChanged(it.title, neutralized.original);
-        const changedBg = titleMateriallyChanged(it.titleBg || it.title, neutralized.bg);
-        const changedEn = titleMateriallyChanged(it.titleEn || it.title, neutralized.en);
-        const fallbackOriginal = !changedOriginal && bgFallback && looksBulgarianTitle(it.title) && titleMateriallyChanged(it.title, bgFallback)
+        const validOriginal = neutralTitleForOriginalSlot(it.title, neutralized);
+        const neutralBg = trimNeutralTitle(neutralized.bg);
+        const neutralEn = trimNeutralTitle(neutralized.en);
+        const changedBg = !!neutralBg && looksBulgarianTitle(neutralBg) && neutralTitleLooksLikeHeadline(it.titleBg || it.title, neutralBg) && titleMateriallyChanged(it.titleBg || it.title, neutralBg);
+        const changedEn = !!neutralEn && looksEnglishTitle(neutralEn) && neutralTitleLooksLikeHeadline(it.titleEn || it.title, neutralEn) && titleMateriallyChanged(it.titleEn || it.title, neutralEn);
+        const fallbackBg = !changedBg && bgFallback && neutralTitleLooksLikeHeadline(it.titleBg || it.title, bgFallback) && titleMateriallyChanged(it.titleBg || it.title, bgFallback)
           ? bgFallback
           : undefined;
-        const fallbackBg = !changedBg && bgFallback && titleMateriallyChanged(it.titleBg || it.title, bgFallback)
-          ? bgFallback
-          : undefined;
-        const finalNeutralTitle = needsRewrite ? (changedOriginal ? neutralized.original : fallbackOriginal) : undefined;
-        const finalNeutralTitleBg = needsRewrite ? (changedBg ? neutralized.bg : fallbackBg) : undefined;
-        const finalNeutralTitleEn = needsRewrite ? (changedEn ? neutralized.en : undefined) : undefined;
-        const hasChangedTitle = !!(finalNeutralTitle || finalNeutralTitleBg || finalNeutralTitleEn);
+        let finalNeutralTitle = needsRewrite ? validOriginal : undefined;
+        let finalNeutralTitleBg = needsRewrite ? (changedBg ? neutralBg : fallbackBg) : undefined;
+        let finalNeutralTitleEn = needsRewrite ? (changedEn ? neutralEn : undefined) : undefined;
+
+        if (
+          needsRewrite &&
+          !neutralTitleForOriginalSlot(it.title, {
+            original: finalNeutralTitle,
+            bg: finalNeutralTitleBg,
+            en: finalNeutralTitleEn
+          })
+        ) {
+          const retryTitle = await neutralizeTitleInSourceLanguage(it, budget, classification, signals);
+          if (retryTitle) {
+            finalNeutralTitle = retryTitle;
+            if (looksBulgarianTitle(it.title) && !looksEnglishTitle(it.title)) {
+              finalNeutralTitleBg = retryTitle;
+            } else if (looksEnglishTitle(it.title) && !looksBulgarianTitle(it.title)) {
+              finalNeutralTitleEn = retryTitle;
+            }
+          }
+        }
+
+        const hasChangedTitle = !!neutralTitleForOriginalSlot(it.title, {
+          original: finalNeutralTitle,
+          bg: finalNeutralTitleBg,
+          en: finalNeutralTitleEn
+        });
+        if (!hasChangedTitle) {
+          finalNeutralTitle = undefined;
+          finalNeutralTitleBg = undefined;
+          finalNeutralTitleEn = undefined;
+        }
         it.neutralTitle = finalNeutralTitle;
         it.neutralTitleBg = finalNeutralTitleBg;
         it.neutralTitleEn = finalNeutralTitleEn;
@@ -6969,7 +7455,7 @@ async function runOneJob(job: AiJob) {
               ? `Headline states facts about an emotional event without bait framing. ${AI_NEUTRAL_TITLE_RULESET_VERSION}`
               : `Headline is already neutral enough and does not require rewriting. ${AI_NEUTRAL_TITLE_RULESET_VERSION}`)
             : (hasChangedTitle
-              ? (summaryFallback && (fallbackOriginal || fallbackBg) ? `Rewritten from summary to remove baiting while preserving the facts. ${AI_NEUTRAL_TITLE_RULESET_VERSION}` : `Rewritten for a more neutral factual tone. ${AI_NEUTRAL_TITLE_RULESET_VERSION}`)
+              ? (summaryFallback && fallbackBg ? `Rewritten from summary to remove baiting while preserving the facts. ${AI_NEUTRAL_TITLE_RULESET_VERSION}` : `Rewritten for a more neutral factual tone. ${AI_NEUTRAL_TITLE_RULESET_VERSION}`)
               : (signals.length ? `Rewrite was warranted but no materially better neutral title was returned: ${signals.join(', ')}. ${AI_NEUTRAL_TITLE_RULESET_VERSION}` : `Rewrite was warranted but no materially better neutral title was returned. ${AI_NEUTRAL_TITLE_RULESET_VERSION}`)));
         it.neutralTitleReason = neutralTitleReason.includes(AI_NEUTRAL_TITLE_RULESET_VERSION)
           ? neutralTitleReason
@@ -6988,6 +7474,19 @@ async function runOneJob(job: AiJob) {
           ? 'title_neutral_checked_unchanged'
           : (hasChangedTitle ? 'title_neutralized' : 'title_neutralize_failed_no_change'));
       } else {
+        const signals = titleNeutralizationSignals(it.title, it.titleBg, it.titleEn);
+        const classification = fallbackClassificationFromNeutralSignals(signals);
+        await markNeutralTitleRewriteFailed(
+          it,
+          signals.length
+            ? `Neutral title model returned empty or invalid output for a headline with rewrite signals: ${signals.join(', ')}.`
+            : 'Neutral title model returned empty or invalid output.',
+          classification,
+          classification ? 0.62 : undefined
+        );
+        clearTimeoutAttempts(job);
+        didBroadcastUpdate = true;
+        markDirty();
         markSkip('title_neutralize_empty_or_invalid');
       }
       return;
@@ -7136,6 +7635,14 @@ async function runOneJob(job: AiJob) {
       if (job.kind === 'summary') {
         summaryRetryCooldownUntilMs.set(summaryItemKey(job.id, job.feedUrl), Date.now() + AI_SUMMARY_RETRY_COOLDOWN_MS);
       }
+      if (job.kind === 'title_neutralize' && attempts >= AI_TIMEOUT_RETRY_LIMIT && itemForError) {
+        await markNeutralTitleRewriteFailed(
+          itemForError,
+          `Neutral title model timed out ${attempts} times and will cool down before retrying.`
+        );
+        didBroadcastUpdate = true;
+        markDirty();
+      }
       if (!outcomeRecorded) {
         recordAiJobEvent(job, 'skip', {
           reason: attempts >= AI_TIMEOUT_RETRY_LIMIT
@@ -7168,6 +7675,7 @@ async function runOneJob(job: AiJob) {
     broadcastAiJobError(job, itemForError, err);
   } finally {
     aiInFlight.delete(k);
+    aiInFlightJobs.delete(k);
     if (!didBroadcastUpdate && itemForError && !hiddenIds.has(itemForError.id)) {
       // Push final pending=false state when jobs finish without producing output.
       if (job.kind === 'summary' || job.kind === 'research' || job.kind === 'title_translate' || job.kind === 'title_neutralize') {
@@ -7486,11 +7994,12 @@ async function enqueueAiForFetchedItem(item: NewsInternal) {
       && activeModel('research') !== 'none' && !hasResearchJobQueuedOrRunning(item.id, item.feedUrl)) {
     enqueueJob({ kind: 'research', id: item.id, feedUrl: item.feedUrl });
   }
-  if (cfg.translationEnabled !== false && needsTitleTranslation(item.title, item.titleBg, item.titleEn)
+  const budget = cfg.budget || 'standard';
+  if (cfg.translationEnabled !== false && budget === 'high' && needsTitleTranslation(item.title, item.titleBg, item.titleEn)
       && activeModel('summary') !== 'none' && !hasTitleTranslateJobQueuedOrRunning(item.id, item.feedUrl)) {
     enqueueJob({ kind: 'title_translate', id: item.id, feedUrl: item.feedUrl });
   }
-  if (shouldUseNeutralTitlesForItem(item) && needsTitleNeutralization(item)
+  if (shouldUseNeutralTitlesForItem(item) && budgetAllowsBackgroundNeutralTitles(budget) && needsTitleNeutralization(item)
       && activeModel('summary') !== 'none' && !hasTitleNeutralizeJobQueuedOrRunning(item.id, item.feedUrl)) {
     enqueueJob({ kind: 'title_neutralize', id: item.id, feedUrl: item.feedUrl });
   }
@@ -8063,6 +8572,7 @@ socketServer.on('connection', (ws: WebSocket) => {
 
       aiQueue.length = 0;
       aiInFlight.clear();
+      aiInFlightJobs.clear();
 
       await safeInitKeywordEmbeddings(ws, 'AI keyword matching');
       broadcastConfig();
@@ -8116,6 +8626,7 @@ socketServer.on('connection', (ws: WebSocket) => {
       filteredDedupeWindow = [];
       aiQueue.length = 0;
       aiInFlight.clear();
+      aiInFlightJobs.clear();
 
       await safeInitKeywordEmbeddings(ws, 'AI provider keyword matching');
       if (REQUIRE_LOGIN_AND_KEY_FOR_NEWS && !newsAccessUnlocked) {
@@ -8179,6 +8690,7 @@ socketServer.on('connection', (ws: WebSocket) => {
 
       aiQueue.length = 0;
       aiInFlight.clear();
+      aiInFlightJobs.clear();
 
       broadcastConfig();
       markDirty();
