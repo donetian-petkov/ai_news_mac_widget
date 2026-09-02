@@ -51,6 +51,16 @@ type ProductNews = {
   coverUrl?: string;
 };
 
+type ProductNewsMonitorCandidate = Pick<ProductNews, 'id' | 'feedUrl' | 'title' | 'summary' | 'source' | 'link' | 'publishedMs'>;
+
+type ProductNewsMonitorMatch = {
+  id: string;
+  feedUrl: string;
+  matched: boolean;
+  reason?: string;
+  confidence?: number;
+};
+
 type PersistedProductNews = {
   itemId: string;
   feedUrl: string;
@@ -114,9 +124,11 @@ type RegisterProductFeatureApiArgs = {
   requestStoryAction?: (action: WidgetStoryActionKind, itemId: string, feedUrl: string) => Promise<boolean> | boolean;
   requestVisibleStoryActions?: (items: ProductNews[]) => Promise<void> | void;
   refreshFeed?: (feedUrl: string) => Promise<boolean> | boolean;
+  evaluateAlertRuleCriteria?: (criteria: string, items: ProductNewsMonitorCandidate[]) => Promise<ProductNewsMonitorMatch[]>;
 };
 
 type FeatureKind = 'saved_story' | 'collection' | 'alert_rule' | 'schedule' | 'digest';
+type AlertRulePayload = z.infer<typeof alertRulePayloadSchema>;
 
 type FeatureRow = {
   id: number;
@@ -651,13 +663,56 @@ function computeNextRunAtMs(cadence: string, fromMs = Date.now()) {
   return fromMs + hour;
 }
 
-function newsMatchesRule(item: ProductNews, payload: z.infer<typeof alertRulePayloadSchema>) {
-  const haystack = `${item.title || ''} ${item.summary || ''} ${item.research || ''}`.toLowerCase();
+function newsMatchesRule(item: ProductNews, payload: AlertRulePayload) {
+  const haystack = `${item.title || ''} ${item.summary || ''}`.toLowerCase();
   const keywordOk = !payload.keywords.length || payload.keywords.some((keyword: string) => haystack.includes(keyword.toLowerCase()));
+  return keywordOk && newsPassesRuleFilters(item, payload);
+}
+
+function newsPassesRuleFilters(item: ProductNews, payload: AlertRulePayload) {
   const sourceOk = !payload.sources.length || payload.sources.some((source: string) => String(item.source || '').toLowerCase().includes(source.toLowerCase()));
   const moodOk = !payload.moods.length || payload.moods.includes(String(item.mood || ''));
   const typeOk = !payload.newsTypes.length || payload.newsTypes.includes(String(item.newsType || ''));
-  return keywordOk && sourceOk && moodOk && typeOk;
+  return sourceOk && moodOk && typeOk;
+}
+
+function localDateStamp(date = new Date()) {
+  const year = date.getFullYear();
+  const month = `${date.getMonth() + 1}`.padStart(2, '0');
+  const day = `${date.getDate()}`.padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+function startOfLocalDayMs(date = new Date()) {
+  return new Date(date.getFullYear(), date.getMonth(), date.getDate()).getTime();
+}
+
+function minutesFromTime(raw: string) {
+  const match = String(raw || '').match(/^(\d{2}):(\d{2})$/);
+  if (!match) return 23 * 60 + 55;
+  const hour = Math.max(0, Math.min(23, Number(match[1])));
+  const minute = Math.max(0, Math.min(59, Number(match[2])));
+  return hour * 60 + minute;
+}
+
+function shouldRunDailyAlertRule(payload: AlertRulePayload, now = new Date()) {
+  if (!payload.enabled) return false;
+  const today = localDateStamp(now);
+  if (payload.lastRunDate === today) return false;
+  const currentMinutes = now.getHours() * 60 + now.getMinutes();
+  return currentMinutes >= minutesFromTime(payload.dailyScanTime);
+}
+
+function toMonitorCandidate(item: ProductNews): ProductNewsMonitorCandidate {
+  return {
+    id: item.id,
+    feedUrl: item.feedUrl,
+    title: item.title,
+    summary: item.summary,
+    source: item.source,
+    link: item.link,
+    publishedMs: item.publishedMs
+  };
 }
 
 async function postDiscordMessage(webhookUrl: string, title: string, body: string) {
@@ -717,37 +772,106 @@ async function runSchedule(prisma: PrismaClient, row: FeatureRow, getRecentNews:
   await updateFeatureRecord(prisma, row.userId, row.id, row.title, payload);
 }
 
-async function runAlertRule(prisma: PrismaClient, row: FeatureRow, getRecentNews: () => ProductNews[]) {
+async function recentAlertRows(prisma: PrismaClient, userId: number, limit: number) {
+  await ensureProductFeatureTables(prisma);
+  const rows = await prisma.$queryRawUnsafe<Array<Record<string, unknown>>>(
+    'SELECT * FROM "DeliveryHistoryRecord" WHERE "userId" = ? AND "stage" = ? AND "status" = ? ORDER BY "createdAt" DESC LIMIT ?',
+    userId,
+    'alert_rule',
+    'matched',
+    limit
+  );
+  return rows.map(row => ({
+    ...Object.fromEntries(Object.entries(row).map(([k, v]) => [k, typeof v === 'bigint' ? Number(v) : v])),
+    details: parseJsonObject(row.detailsJson)
+  }));
+}
+
+async function runAlertRule(
+  prisma: PrismaClient,
+  row: FeatureRow,
+  getRecentNews: () => ProductNews[],
+  options: {
+    force?: boolean;
+    evaluateCriteria?: (criteria: string, items: ProductNewsMonitorCandidate[]) => Promise<ProductNewsMonitorMatch[]>;
+  } = {}
+) {
   const payload = alertRulePayloadSchema.parse(parseJsonObject(row.payloadJson));
   if (!payload.enabled) return;
-  const since = Number(payload.lastCheckedAtMs || 0);
-  const matches = getRecentNews()
+  const now = new Date();
+  if (!options.force && !shouldRunDailyAlertRule(payload, now)) return;
+
+  const criteria = String(payload.criteria || '').replace(/\s+/g, ' ').trim();
+  const since = Math.max(Number(payload.lastCheckedAtMs || 0), options.force ? 0 : startOfLocalDayMs(now));
+  const candidates = getRecentNews()
     .filter(item => Number(item.publishedMs || 0) > since)
-    .filter(item => newsMatchesRule(item, payload))
+    .filter(item => newsPassesRuleFilters(item, payload))
+    .sort((a, b) => Number(b.publishedMs || 0) - Number(a.publishedMs || 0))
     .slice(0, 20);
+
+  let matches: Array<{ item: ProductNews; reason?: string; confidence?: number }> = [];
+  if (criteria) {
+    if (!options.evaluateCriteria) {
+      await recordHistoryRaw(prisma, {
+        userId: row.userId,
+        stage: 'alert_rule',
+        status: 'skipped',
+        reason: 'AI monitor matching is unavailable.',
+        details: { ruleId: row.id, criteria }
+      });
+    } else if (candidates.length > 0) {
+      const judged = await options.evaluateCriteria(criteria, candidates.map(toMonitorCandidate));
+      const byKey = new Map(judged.map(result => [`${result.feedUrl}::${result.id}`, result]));
+      matches = candidates
+        .map((item): { item: ProductNews; reason?: string; confidence?: number } | null => {
+          const result = byKey.get(`${item.feedUrl}::${item.id}`);
+          return result?.matched ? { item, reason: result.reason, confidence: result.confidence } : null;
+        })
+        .filter((entry): entry is { item: ProductNews; reason?: string; confidence?: number } => !!entry);
+    }
+  } else {
+    matches = candidates
+      .filter(item => newsMatchesRule(item, payload))
+      .map(item => ({ item, reason: 'Matched rule keywords in the title or summary.' }));
+  }
+
   for (const item of matches) {
-    const body = `${item.title}\n${item.link || ''}`.trim();
+    const body = `${item.item.title}\n${item.reason ? `${item.reason}\n` : ''}${item.item.link || ''}`.trim();
     let discordStatus = 'skipped';
     if (payload.discordWebhookUrl) {
       discordStatus = await postDiscordMessage(payload.discordWebhookUrl, payload.name, body) ? 'sent' : 'failed';
     }
     await recordHistoryRaw(prisma, {
       userId: row.userId,
-      feedUrl: item.feedUrl,
-      itemId: item.id,
-      title: item.title,
-      source: item.source,
+      feedUrl: item.item.feedUrl,
+      itemId: item.item.id,
+      title: item.item.title,
+      source: item.item.source,
       stage: 'alert_rule',
       status: discordStatus === 'failed' ? 'failed' : 'matched',
       reason: discordStatus === 'skipped' ? 'No Discord webhook configured.' : undefined,
-      details: { ruleId: row.id, discordStatus }
+      details: {
+        ruleId: row.id,
+        criteria: criteria || payload.keywords.join(', '),
+        matchReason: item.reason,
+        confidence: item.confidence,
+        discordStatus,
+        scannedFields: ['title', 'summary']
+      }
     });
   }
   payload.lastCheckedAtMs = Date.now();
+  if (!options.force) {
+    payload.lastRunDate = localDateStamp(now);
+  }
   await updateFeatureRecord(prisma, row.userId, row.id, row.title, payload);
 }
 
-async function runDueAutomation(prisma: PrismaClient, getRecentNews: () => ProductNews[]) {
+async function runDueAutomation(
+  prisma: PrismaClient,
+  getRecentNews: () => ProductNews[],
+  evaluateCriteria?: (criteria: string, items: ProductNewsMonitorCandidate[]) => Promise<ProductNewsMonitorMatch[]>
+) {
   await ensureProductFeatureTables(prisma);
   const now = Date.now();
   const schedules = await prisma.$queryRawUnsafe<FeatureRow[]>(
@@ -766,7 +890,7 @@ async function runDueAutomation(prisma: PrismaClient, getRecentNews: () => Produ
     'alert_rule'
   );
   for (const row of rules) {
-    await runAlertRule(prisma, row, getRecentNews).catch(() => {});
+    await runAlertRule(prisma, row, getRecentNews, { evaluateCriteria }).catch(() => {});
   }
 }
 
@@ -781,7 +905,8 @@ export function registerProductFeatureApi({
   importFeeds,
   requestStoryAction,
   requestVisibleStoryActions,
-  refreshFeed
+  refreshFeed,
+  evaluateAlertRuleCriteria
 }: RegisterProductFeatureApiArgs): ProductFeatureRuntime {
   void ensureProductFeatureTables(prisma).catch(err => {
     console.warn('[product-features] failed to ensure tables:', (err as Error).message);
@@ -875,8 +1000,16 @@ export function registerProductFeatureApi({
       res.status(404).json({ error: 'Rule not found.' });
       return;
     }
-    await runAlertRule(prisma, row, getRecentNews);
+    await runAlertRule(prisma, row, getRecentNews, { force: true, evaluateCriteria: evaluateAlertRuleCriteria });
     res.json({ ok: true });
+  });
+
+  app.get('/api/rules/alerts', async (req, res) => {
+    const user = await requireAuthUser(req, res);
+    if (!user) return;
+    const limit = normalizeLimit(req.query.limit, 20, 100);
+    const items = await recentAlertRows(prisma, user.id, limit);
+    res.json({ ok: true, items, count: items.length });
   });
 
   app.get('/api/history', async (req, res) => {
@@ -1257,7 +1390,7 @@ export function registerProductFeatureApi({
   });
 
   const timer = setInterval(() => {
-    void runDueAutomation(prisma, getRecentNews).catch(() => {});
+    void runDueAutomation(prisma, getRecentNews, evaluateAlertRuleCriteria).catch(() => {});
   }, 60_000);
 
   return {

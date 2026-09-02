@@ -183,6 +183,13 @@ describe('shared clientMsgSchema', () => {
       keywords: ['NATO', 'Ukraine'],
       discordWebhookUrl: ''
     }).success).toBe(true);
+    const sentenceRule = alertRulePayloadSchema.safeParse({
+      name: 'Flu vaccines Bulgaria',
+      criteria: 'when flu vaccinations will be available to the public in Bulgaria',
+      dailyScanTime: '23:55'
+    });
+    expect(sentenceRule.success).toBe(true);
+    expect(sentenceRule.success && sentenceRule.data.criteria).toBe('when flu vaccinations will be available to the public in Bulgaria');
     expect(schedulePayloadSchema.safeParse({
       name: 'Morning brief',
       cadence: 'daily',

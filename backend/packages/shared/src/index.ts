@@ -60,12 +60,15 @@ export const savedStoryPayloadSchema = z.object({
 export const alertRulePayloadSchema = z.object({
   enabled: z.boolean().default(true),
   name: z.string().trim().min(1).max(120),
+  criteria: z.string().trim().max(600).default(''),
   keywords: z.array(z.string().trim().min(1).max(80)).max(40).default([]),
   sources: z.array(z.string().trim().min(1).max(160)).max(40).default([]),
   moods: z.array(z.string().trim().min(1).max(40)).max(20).default([]),
   newsTypes: z.array(z.string().trim().min(1).max(40)).max(20).default([]),
   discordWebhookUrl: z.string().trim().max(500).default(''),
-  lastCheckedAtMs: z.number().finite().nonnegative().default(0)
+  dailyScanTime: z.string().trim().regex(/^\d{2}:\d{2}$/).default('23:55'),
+  lastCheckedAtMs: z.number().finite().nonnegative().default(0),
+  lastRunDate: z.string().trim().max(20).default('')
 });
 
 export const schedulePayloadSchema = z.object({

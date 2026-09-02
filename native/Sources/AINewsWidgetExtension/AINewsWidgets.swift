@@ -53,6 +53,7 @@ struct CategoryWidgetEntry: TimelineEntry {
     let category: WidgetCategory?
     let stories: [WidgetStory]
     let pendingCount: Int
+    let alertCount: Int
 }
 
 @available(macOS 14.0, *)
@@ -71,7 +72,8 @@ struct CategoryWidgetProvider: AppIntentTimelineProvider {
                 WidgetStory(id: "1", feedUrl: "feed", title: "Ingenuity images reveal a blade broke off", summary: "A short summary for the widget preview."),
                 WidgetStory(id: "2", feedUrl: "feed", title: "A new material solved a long-time engineering issue", summary: "Another compact summary line.")
             ],
-            pendingCount: 2
+            pendingCount: 2,
+            alertCount: 1
         )
     }
 
@@ -92,7 +94,7 @@ struct CategoryWidgetProvider: AppIntentTimelineProvider {
         } ?? visibleCategories.first ?? snapshot.categories.first
         let stories = category.flatMap { snapshot.storiesByCategory[String($0.id)] } ?? []
         let pendingCount = category.flatMap { snapshot.pendingByCategory[String($0.id)] } ?? 0
-        return CategoryWidgetEntry(date: Date(), category: category, stories: stories, pendingCount: pendingCount)
+        return CategoryWidgetEntry(date: Date(), category: category, stories: stories, pendingCount: pendingCount, alertCount: snapshot.monitorAlerts.count)
     }
 }
 
@@ -162,6 +164,11 @@ struct CategoryWidgetView: View {
 
                 if entry.pendingCount > 0 {
                     Text("\(entry.pendingCount) pending")
+                        .font(.caption2.weight(.semibold))
+                        .foregroundStyle(AINewsTheme.accentGold)
+                }
+                if entry.alertCount > 0 {
+                    Label("\(entry.alertCount) monitor alert\(entry.alertCount == 1 ? "" : "s")", systemImage: "bell.badge.fill")
                         .font(.caption2.weight(.semibold))
                         .foregroundStyle(AINewsTheme.accentGold)
                 }
@@ -300,6 +307,10 @@ struct MasterWidgetView: View {
         }
     }
 
+    private var alertCount: Int {
+        entry.snapshot.monitorAlerts.count
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack {
@@ -310,6 +321,12 @@ struct MasterWidgetView: View {
                 Text(totalPending > 0 ? "\(visibleCategories.count) live · \(totalPending) pending" : "\(visibleCategories.count) live")
                     .font(.caption)
                     .foregroundStyle(totalPending > 0 ? AINewsTheme.accentGold : AINewsTheme.textMuted)
+            }
+
+            if alertCount > 0 {
+                Label("\(alertCount) monitor alert\(alertCount == 1 ? "" : "s")", systemImage: "bell.badge.fill")
+                    .font(.caption2.weight(.semibold))
+                    .foregroundStyle(AINewsTheme.accentGold)
             }
 
             if family != .systemMedium {
@@ -418,6 +435,7 @@ struct KeywordWidgetEntry: TimelineEntry {
     let keywords: [String]
     let stories: [WidgetStory]
     let pendingCount: Int
+    let alertCount: Int
 }
 
 @available(macOS 14.0, *)
@@ -430,7 +448,8 @@ struct KeywordWidgetProvider: TimelineProvider {
                 WidgetStory(id: "1", feedUrl: "feed", title: "OpenAI ships a new model for agents", summary: "Matched your tracked topics."),
                 WidgetStory(id: "2", feedUrl: "feed", title: "Humanoid robotics startup raises a large round", summary: "Another tracked-topic match.")
             ],
-            pendingCount: 16
+            pendingCount: 16,
+            alertCount: 1
         )
     }
 
@@ -453,7 +472,8 @@ struct KeywordWidgetProvider: TimelineProvider {
             date: Date(),
             keywords: snapshot.keywords,
             stories: snapshot.keywordMatches,
-            pendingCount: snapshot.totalPendingCount
+            pendingCount: snapshot.totalPendingCount,
+            alertCount: snapshot.monitorAlerts.count
         )
     }
 }
@@ -490,6 +510,12 @@ struct KeywordWidgetView: View {
                      : "\(entry.stories.count) match\(entry.stories.count == 1 ? "" : "es")")
                     .font(.caption)
                     .foregroundStyle(entry.pendingCount > 0 ? AINewsTheme.accentGold : AINewsTheme.textMuted)
+            }
+
+            if entry.alertCount > 0 {
+                Label("\(entry.alertCount) monitor alert\(entry.alertCount == 1 ? "" : "s")", systemImage: "bell.badge.fill")
+                    .font(.caption2.weight(.semibold))
+                    .foregroundStyle(AINewsTheme.accentGold)
             }
 
             if family != .systemSmall, !entry.keywords.isEmpty {

@@ -69,6 +69,7 @@ private struct LoginView: View {
     @State private var username = ""
     @State private var password = ""
     @State private var registerMode = false
+    @State private var showingResetConfirmation = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 24) {
@@ -118,6 +119,12 @@ private struct LoginView: View {
                     registerMode.toggle()
                 }
                 .buttonStyle(.bordered)
+
+                Button("Reset password") {
+                    showingResetConfirmation = true
+                }
+                .buttonStyle(.bordered)
+                .disabled(state.isBusy || username.isEmpty || password.count < 6)
             }
 
             if let statusMessage = state.statusMessage {
@@ -129,6 +136,16 @@ private struct LoginView: View {
         .frame(maxWidth: 720)
         .aiNewsPanelStyle()
         .padding(40)
+        .confirmationDialog("Reset local password?", isPresented: $showingResetConfirmation) {
+            Button("Reset password", role: .destructive) {
+                Task {
+                    await state.resetPassword(username: username, password: password)
+                }
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("Set the local password for \(username) to the password entered above.")
+        }
     }
 }
 
@@ -1732,17 +1749,20 @@ private struct AutomationsWorkspaceTab: View {
     @State private var rules: [FeatureRecord<AlertRulePayload>] = []
     @State private var schedules: [FeatureRecord<SchedulePayload>] = []
     @State private var ruleName = ""
+    @State private var ruleCriteria = ""
     @State private var ruleKeywords = ""
     @State private var ruleWebhook = ""
+    @State private var ruleDailyScanTime = "23:55"
     @State private var scheduleName = ""
     @State private var scheduleCadence = "daily"
     @State private var scheduleFormat = "executive"
     @State private var scheduleWebhook = ""
+    @State private var alerts: [HistoryEntry] = []
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
-                header(title: "Rules and schedules", subtitle: "Create keyword-driven alerts and recurring briefings with local history and Discord delivery.")
+                header(title: "Rules and schedules", subtitle: "Monitor title and summary text with AI, raise app and widget alerts, and keep briefing schedules nearby.")
 
                 VStack(alignment: .leading, spacing: 12) {
                     Text("Create alert rule")
@@ -1750,14 +1770,18 @@ private struct AutomationsWorkspaceTab: View {
                         .foregroundStyle(AINewsTheme.textPrimary)
                     TextField("Rule name", text: $ruleName)
                         .textFieldStyle(.roundedBorder)
-                    TextField("Keywords, comma separated", text: $ruleKeywords)
+                    TextField("Sentence criteria, e.g. flu vaccinations available to the public in Bulgaria", text: $ruleCriteria)
+                        .textFieldStyle(.roundedBorder)
+                    TextField("Optional keywords, comma separated", text: $ruleKeywords)
+                        .textFieldStyle(.roundedBorder)
+                    TextField("Daily scan time, 24-hour local time", text: $ruleDailyScanTime)
                         .textFieldStyle(.roundedBorder)
                     TextField("Discord webhook (optional)", text: $ruleWebhook)
                         .textFieldStyle(.roundedBorder)
                     Button("Create rule") { Task { await createRule() } }
                         .buttonStyle(.borderedProminent)
                         .tint(AINewsTheme.accentBlue)
-                        .disabled(ruleName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                        .disabled(!canCreateRule)
                 }
                 .padding(16)
                 .aiNewsPanelStyle()
@@ -1798,12 +1822,53 @@ private struct AutomationsWorkspaceTab: View {
                     ForEach(rules) { rule in
                         automationCard(
                             title: rule.title,
-                            subtitle: rule.payload.keywords.joined(separator: ", "),
+                            subtitle: rule.payload.criteria.isEmpty ? rule.payload.keywords.joined(separator: ", ") : rule.payload.criteria,
                             enabled: rule.payload.enabled,
-                            footer: rule.payload.discordWebhookUrl.isEmpty ? "No Discord delivery" : "Discord delivery configured",
+                            footer: "\(rule.payload.dailyScanTime) local scan • \(rule.payload.discordWebhookUrl.isEmpty ? "No Discord delivery" : "Discord delivery configured")",
                             toggle: { enabled in await updateRule(rule, enabled: enabled) },
                             run: { await runRule(rule) }
                         )
+                    }
+                }
+
+                VStack(alignment: .leading, spacing: 12) {
+                    Text("Recent monitor alerts")
+                        .font(.headline)
+                        .foregroundStyle(AINewsTheme.textSecondary)
+                    if alerts.isEmpty {
+                        Text("No monitor matches yet.")
+                            .font(.caption)
+                            .foregroundStyle(AINewsTheme.textMuted)
+                    }
+                    ForEach(alerts) { alert in
+                        VStack(alignment: .leading, spacing: 8) {
+                            HStack {
+                                Label("Matched", systemImage: "bell.badge.fill")
+                                    .font(.headline)
+                                    .foregroundStyle(AINewsTheme.accentGold)
+                                Spacer()
+                                Text(alert.createdAt)
+                                    .font(.caption2)
+                                    .foregroundStyle(AINewsTheme.textMuted)
+                            }
+                            if let title = alert.title, !title.isEmpty {
+                                Text(title)
+                                    .font(.headline)
+                                    .foregroundStyle(AINewsTheme.textPrimary)
+                            }
+                            let criteria = alertDetail(alert, "criteria")
+                            if !criteria.isEmpty {
+                                Text(criteria)
+                                    .foregroundStyle(AINewsTheme.textSecondary)
+                            }
+                            if let reason = alert.details?["matchReason"]?.stringValue, !reason.isEmpty {
+                                Text(reason)
+                                    .font(.caption)
+                                    .foregroundStyle(AINewsTheme.textMuted)
+                            }
+                        }
+                        .padding(16)
+                        .aiNewsPanelStyle()
                     }
                 }
 
@@ -1832,6 +1897,8 @@ private struct AutomationsWorkspaceTab: View {
             let api = try state.authorizedAPIClient()
             rules = try await api.fetchRules()
             schedules = try await api.fetchSchedules()
+            alerts = try await api.fetchRuleAlerts(limit: 20)
+            await state.refreshMonitorAlerts()
         } catch {
             state.errorMessage = error.localizedDescription
         }
@@ -1843,17 +1910,22 @@ private struct AutomationsWorkspaceTab: View {
             let created = try await api.createRule(AlertRulePayload(
                 enabled: true,
                 name: ruleName.trimmingCharacters(in: .whitespacesAndNewlines),
+                criteria: ruleCriteria.trimmingCharacters(in: .whitespacesAndNewlines),
                 keywords: ruleKeywords.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty },
                 sources: [],
                 moods: [],
                 newsTypes: [],
                 discordWebhookUrl: ruleWebhook.trimmingCharacters(in: .whitespacesAndNewlines),
-                lastCheckedAtMs: 0
+                dailyScanTime: normalizedRuleScanTime,
+                lastCheckedAtMs: 0,
+                lastRunDate: ""
             ))
             rules.insert(created, at: 0)
             ruleName = ""
+            ruleCriteria = ""
             ruleKeywords = ""
             ruleWebhook = ""
+            ruleDailyScanTime = "23:55"
         } catch {
             state.errorMessage = error.localizedDescription
         }
@@ -1912,9 +1984,27 @@ private struct AutomationsWorkspaceTab: View {
             let api = try state.authorizedAPIClient()
             try await api.runRule(id: rule.id)
             state.statusMessage = "Ran \(rule.title)."
+            alerts = try await api.fetchRuleAlerts(limit: 20)
+            await state.refreshMonitorAlerts()
         } catch {
             state.errorMessage = error.localizedDescription
         }
+    }
+
+    private var canCreateRule: Bool {
+        let nameReady = !ruleName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        let criteriaReady = !ruleCriteria.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        let keywordsReady = !ruleKeywords.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        return nameReady && (criteriaReady || keywordsReady)
+    }
+
+    private var normalizedRuleScanTime: String {
+        let trimmed = ruleDailyScanTime.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.range(of: #"^\d{2}:\d{2}$"#, options: .regularExpression) == nil ? "23:55" : trimmed
+    }
+
+    private func alertDetail(_ alert: HistoryEntry, _ key: String) -> String {
+        alert.details?[key]?.stringValue.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
     }
 
     private func runSchedule(_ schedule: FeatureRecord<SchedulePayload>) async {
@@ -2462,6 +2552,16 @@ private struct SettingsView: View {
     @State private var newCategoryDescription = ""
     @State private var newCategoryFeedURLs = Set<String>()
     @State private var editingCategoryID: Int?
+    @State private var newAccountPassword = ""
+    @State private var confirmAccountPassword = ""
+    @State private var showingAccountResetConfirmation = false
+
+    private var canResetAccountPassword: Bool {
+        !newAccountPassword.isEmpty
+            && newAccountPassword.count >= 6
+            && newAccountPassword == confirmAccountPassword
+            && state.session?.user.username.isEmpty == false
+    }
 
     private var appearancePanel: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -2778,11 +2878,37 @@ private struct SettingsView: View {
 
                 Toggle("Show cover thumbnails on stories", isOn: $showThumbnails)
 
+                SecureField("New local password", text: $newAccountPassword)
+                    .textFieldStyle(.roundedBorder)
+
+                SecureField("Confirm local password", text: $confirmAccountPassword)
+                    .textFieldStyle(.roundedBorder)
+
                 Button("Save settings") {
                     Task { await state.saveSettings() }
                 }
                 .buttonStyle(.borderedProminent)
                 .tint(AINewsTheme.accentBlue)
+
+                Button("Reset local password", role: .destructive) {
+                    showingAccountResetConfirmation = true
+                }
+                .buttonStyle(.bordered)
+                .disabled(!canResetAccountPassword || state.isBusy)
+            }
+            .confirmationDialog("Reset local password?", isPresented: $showingAccountResetConfirmation) {
+                Button("Reset password", role: .destructive) {
+                    guard let username = state.session?.user.username else { return }
+                    let password = newAccountPassword
+                    Task {
+                        await state.resetPassword(username: username, password: password)
+                        newAccountPassword = ""
+                        confirmAccountPassword = ""
+                    }
+                }
+                Button("Cancel", role: .cancel) {}
+            } message: {
+                Text("Set the local password for \(state.session?.user.username ?? "this account").")
             }
 
             VStack(alignment: .leading, spacing: 12) {

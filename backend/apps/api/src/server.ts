@@ -701,6 +701,11 @@ function readBearerToken(req: express.Request): string {
   return header.slice(prefix.length).trim();
 }
 
+function isLoopbackRequest(req: express.Request): boolean {
+  const address = String(req.socket.remoteAddress || '').trim();
+  return address === '127.0.0.1' || address === '::1' || address === '::ffff:127.0.0.1';
+}
+
 async function requireAuthUser(req: express.Request, res: express.Response): Promise<{ id: number; username: string } | null> {
   const token = readBearerToken(req);
   const payload = verifyAuthToken(token);
@@ -835,6 +840,43 @@ app.post('/api/auth/login', async (req, res) => {
     res.json({ token, user: { id: user.id, username: user.username } });
   } catch (error) {
     res.status(500).json({ error: (error as Error).message || 'Failed to sign in.' });
+  }
+});
+
+app.post('/api/auth/reset-password', async (req, res) => {
+  if (!isLoopbackRequest(req)) {
+    res.status(403).json({ error: 'Password reset is only available from this Mac.' });
+    return;
+  }
+  const parsed = authCredentialsSchema.safeParse(req.body || {});
+  if (!parsed.success) {
+    res.status(400).json({ error: 'Invalid username or password.' });
+    return;
+  }
+  const username = parsed.data.username.trim().toLowerCase();
+  const password = parsed.data.password;
+  try {
+    const user = await prisma.user.findUnique({
+      where: { username },
+      select: { id: true, username: true }
+    });
+    if (!user) {
+      res.status(404).json({ error: 'Username not found.' });
+      return;
+    }
+    await prisma.user.update({
+      where: { id: user.id },
+      data: { passwordHash: hashPassword(password) }
+    });
+    const token = issueAuthToken({
+      uid: user.id,
+      un: user.username,
+      iat: Date.now(),
+      exp: Date.now() + AUTH_TOKEN_TTL_MS
+    });
+    res.json({ token, user });
+  } catch (error) {
+    res.status(500).json({ error: (error as Error).message || 'Failed to reset password.' });
   }
 });
 
@@ -1288,6 +1330,7 @@ productFeatures = registerProductFeatureApi({
   })),
   getAiUsage: buildAiUsagePayload,
   resetAiUsage: resetAiUsageCounters,
+  evaluateAlertRuleCriteria,
   importFeeds: feeds => {
     let added = 0;
     for (const feed of feeds) {
@@ -5904,6 +5947,92 @@ async function generateAiText(
     return generateWithClaude(kind, model, input, maxOutputTokens, temperature, labelRaw, debugMeta);
   }
   return generateWithOpenAiLike(kind, model, input, maxOutputTokens, temperature, labelRaw, debugMeta);
+}
+
+type AlertCriteriaMatchResult = {
+  id: string;
+  feedUrl: string;
+  matched: boolean;
+  reason?: string;
+  confidence?: number;
+};
+
+function parseAlertCriteriaMatches(raw: string): AlertCriteriaMatchResult[] {
+  const text = String(raw || '').trim();
+  if (!text) return [];
+  const normalized = text
+    .replace(/^```(?:json)?\s*/i, '')
+    .replace(/\s*```$/i, '')
+    .trim();
+
+  const tryParse = (candidate: string): AlertCriteriaMatchResult[] => {
+    try {
+      const parsed = JSON.parse(candidate) as Record<string, unknown>;
+      const matches = Array.isArray(parsed.matches) ? parsed.matches : [];
+      return matches
+        .map((entry): AlertCriteriaMatchResult | null => {
+          const item = entry && typeof entry === 'object' ? entry as Record<string, unknown> : {};
+          const id = String(item.id || '').trim();
+          const feedUrl = String(item.feedUrl || '').trim();
+          if (!id || !feedUrl) return null;
+          const confidence = Number(item.confidence);
+          return {
+            id,
+            feedUrl,
+            matched: item.matched === true,
+            reason: normalizeTitleValue(item.reason).slice(0, 220) || undefined,
+            confidence: Number.isFinite(confidence) ? Math.max(0, Math.min(1, confidence)) : undefined
+          };
+        })
+        .filter((entry): entry is AlertCriteriaMatchResult => !!entry);
+    } catch {
+      return [];
+    }
+  };
+
+  const direct = tryParse(normalized);
+  if (direct.length) return direct;
+  const match = normalized.match(/\{[\s\S]*\}/);
+  return match ? tryParse(match[0]) : [];
+}
+
+async function evaluateAlertRuleCriteria(
+  criteria: string,
+  items: Array<{ id: string; feedUrl: string; title: string; summary?: string; source?: string; link?: string; publishedMs?: number }>
+): Promise<AlertCriteriaMatchResult[]> {
+  const cleanCriteria = String(criteria || '').replace(/\s+/g, ' ').trim();
+  const candidates = items
+    .map(item => ({
+      id: String(item.id || '').trim(),
+      feedUrl: String(item.feedUrl || '').trim(),
+      title: String(item.title || '').replace(/\s+/g, ' ').trim().slice(0, 320),
+      summary: String(item.summary || '').replace(/\s+/g, ' ').trim().slice(0, 800),
+      source: String(item.source || '').replace(/\s+/g, ' ').trim().slice(0, 120),
+      publishedMs: Number(item.publishedMs || 0) || 0
+    }))
+    .filter(item => item.id && item.feedUrl && item.title)
+    .slice(0, 40);
+  if (!cleanCriteria || !candidates.length) return [];
+
+  const input = [
+    'You are judging whether news items match a user monitoring request.',
+    'Use only each item headline and summary. Do not use the link or assume facts from a full article.',
+    'The request may be a natural-language sentence or question. Mark matched=true only when the headline or summary clearly indicates the requested news exists, was announced, became available, or has a concrete answer.',
+    'Treat spelling mistakes in the user request as likely typos when the meaning is obvious.',
+    'Return strict JSON only with this shape: {"matches":[{"id":"...","feedUrl":"...","matched":true,"confidence":0.0,"reason":"short reason"}]}.',
+    'Include every candidate exactly once. Use matched=false when uncertain.',
+    `User request: ${cleanCriteria}`,
+    `Candidates: ${JSON.stringify(candidates)}`
+  ].join('\n');
+
+  const text = await generateAiText(
+    'ask',
+    input,
+    Math.max(500, Math.min(1800, 180 + candidates.length * 70)),
+    0,
+    `News monitor: ${cleanCriteria}`
+  );
+  return parseAlertCriteriaMatches(text || '');
 }
 
 async function withTimeout<T>(promise: Promise<T>, timeoutMs: number, label: string): Promise<T> {

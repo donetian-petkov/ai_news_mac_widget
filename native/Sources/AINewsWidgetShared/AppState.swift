@@ -9,6 +9,7 @@ public final class WidgetAppState: ObservableObject {
     @Published public var stories: [WidgetStory] = []
     @Published public var keywords: [String] = []
     @Published public var keywordMatches: [WidgetStory] = []
+    @Published public var monitorAlerts: [HistoryEntry] = []
     @Published public var usage: AIUsageExport?
     @Published public var runtimeConfig: RuntimeConfigResponse?
     @Published public var aiProgress: [String: AiFeedProgress] = [:]
@@ -46,6 +47,7 @@ public final class WidgetAppState: ObservableObject {
         self.selectedCategoryID = snapshot.activeCategoryID ?? snapshot.categories.first?.id
         self.keywords = snapshot.keywords
         self.keywordMatches = snapshot.keywordMatches
+        self.monitorAlerts = snapshot.monitorAlerts
         if snapshot.activeCategoryID == FilteredCategoryID {
             self.stories = snapshot.keywordMatches
         } else {
@@ -95,6 +97,19 @@ public final class WidgetAppState: ObservableObject {
         }
     }
 
+    public func resetPassword(username: String, password: String) async {
+        await runBusy("Resetting password...") {
+            self.refreshDiscoveredBackendURL()
+            await self.waitForBackendReady()
+            let api = try self.makeAPIClient()
+            let session = try await api.resetPassword(username: username, password: password)
+            self.sessionStore.save(session: session)
+            self.session = session
+            await self.reloadEverything(selectFirstCategory: true, suppressUnauthorizedAlert: true)
+            self.statusMessage = "Password reset. Signed in."
+        }
+    }
+
     public func signOut() {
         sessionStore.clear()
         session = nil
@@ -102,6 +117,7 @@ public final class WidgetAppState: ObservableObject {
         stories = []
         keywords = []
         keywordMatches = []
+        monitorAlerts = []
         usage = nil
         runtimeConfig = nil
         selectedCategoryID = nil
@@ -137,6 +153,7 @@ public final class WidgetAppState: ObservableObject {
             }
             await self.refreshAiProgress()
             try await self.refreshAllCategorySnapshots(using: api)
+            await self.refreshMonitorAlerts(using: api)
             await self.loadRuntimeContext(suppressUnauthorizedAlert: suppressUnauthorizedAlert)
             await self.loadStoriesForSelectedCategory(suppressUnauthorizedAlert: suppressUnauthorizedAlert)
             self.scrollToTop()
@@ -840,6 +857,7 @@ public final class WidgetAppState: ObservableObject {
         }
         snapshot.keywords = keywords
         snapshot.keywordMatches = keywordMatches
+        snapshot.monitorAlerts = monitorAlerts
         snapshot.pendingByCategory = Dictionary(uniqueKeysWithValues: categories.map { (String($0.id), pendingCount(for: $0)) })
         snapshot.filteredPendingCount = aiProgress[FilteredFeedURL]?.pending ?? pendingOutputCount(in: snapshot.keywordMatches)
         snapshot.totalPendingCount = aiProgress.values.reduce(0) { $0 + $1.pending }
@@ -873,10 +891,25 @@ public final class WidgetAppState: ObservableObject {
                 self.stories = matches
             }
         }
+        if let alerts = try? await api.fetchRuleAlerts(limit: 20) {
+            snapshot.monitorAlerts = alerts
+            self.monitorAlerts = alerts
+        }
         snapshot.pendingByCategory = Dictionary(uniqueKeysWithValues: snapshot.categories.map { (String($0.id), pendingCount(for: $0)) })
         snapshot.filteredPendingCount = aiProgress[FilteredFeedURL]?.pending ?? pendingOutputCount(in: snapshot.keywordMatches)
         snapshot.totalPendingCount = aiProgress.values.reduce(0) { $0 + $1.pending }
         try snapshotStore.saveSnapshot(snapshot)
+    }
+
+    public func refreshMonitorAlerts() async {
+        guard let api = try? makeAPIClient() else { return }
+        await refreshMonitorAlerts(using: api)
+    }
+
+    private func refreshMonitorAlerts(using api: APIClient) async {
+        guard let alerts = try? await api.fetchRuleAlerts(limit: 20) else { return }
+        monitorAlerts = alerts
+        saveSnapshot()
     }
 
     private func pendingCount(for category: WidgetCategory) -> Int {

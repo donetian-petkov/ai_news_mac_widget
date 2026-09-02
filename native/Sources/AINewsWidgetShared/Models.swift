@@ -559,6 +559,12 @@ public struct FeatureMutationResponse<Payload: Codable & Sendable>: Codable, Sen
     public var item: FeatureRecord<Payload>?
 }
 
+public struct RuleAlertsResponse: Codable, Sendable {
+    public var ok: Bool
+    public var items: [HistoryEntry]
+    public var count: Int?
+}
+
 public struct SavedStoryPayload: Codable, Equatable, Hashable, Sendable {
     public var itemId: String
     public var feedUrl: String
@@ -672,31 +678,59 @@ public struct OpmlImportResponse: Codable, Sendable {
 public struct AlertRulePayload: Codable, Equatable, Hashable, Sendable {
     public var enabled: Bool
     public var name: String
+    public var criteria: String
     public var keywords: [String]
     public var sources: [String]
     public var moods: [String]
     public var newsTypes: [String]
     public var discordWebhookUrl: String
+    public var dailyScanTime: String
     public var lastCheckedAtMs: Double
+    public var lastRunDate: String
 
     public init(
         enabled: Bool = true,
         name: String,
+        criteria: String = "",
         keywords: [String] = [],
         sources: [String] = [],
         moods: [String] = [],
         newsTypes: [String] = [],
         discordWebhookUrl: String = "",
-        lastCheckedAtMs: Double = 0
+        dailyScanTime: String = "23:55",
+        lastCheckedAtMs: Double = 0,
+        lastRunDate: String = ""
     ) {
         self.enabled = enabled
         self.name = name
+        self.criteria = criteria
         self.keywords = keywords
         self.sources = sources
         self.moods = moods
         self.newsTypes = newsTypes
         self.discordWebhookUrl = discordWebhookUrl
+        self.dailyScanTime = dailyScanTime
         self.lastCheckedAtMs = lastCheckedAtMs
+        self.lastRunDate = lastRunDate
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case enabled, name, criteria, keywords, sources, moods, newsTypes, discordWebhookUrl, dailyScanTime, lastCheckedAtMs, lastRunDate
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        enabled = try container.decodeIfPresent(Bool.self, forKey: .enabled) ?? true
+        name = try container.decodeIfPresent(String.self, forKey: .name) ?? "Alert rule"
+        criteria = try container.decodeIfPresent(String.self, forKey: .criteria) ?? ""
+        keywords = try container.decodeIfPresent([String].self, forKey: .keywords) ?? []
+        sources = try container.decodeIfPresent([String].self, forKey: .sources) ?? []
+        moods = try container.decodeIfPresent([String].self, forKey: .moods) ?? []
+        newsTypes = try container.decodeIfPresent([String].self, forKey: .newsTypes) ?? []
+        discordWebhookUrl = try container.decodeIfPresent(String.self, forKey: .discordWebhookUrl) ?? ""
+        dailyScanTime = try container.decodeIfPresent(String.self, forKey: .dailyScanTime) ?? "23:55"
+        lastCheckedAtMs = try container.decodeIfPresent(Double.self, forKey: .lastCheckedAtMs) ?? 0
+        lastRunDate = try container.decodeIfPresent(String.self, forKey: .lastRunDate) ?? ""
     }
 }
 
@@ -1013,6 +1047,8 @@ public struct WidgetSnapshot: Codable, Equatable, Sendable {
     public var keywords: [String]
     /// Stories that matched the tracked topics, powering the dedicated Keywords widget.
     public var keywordMatches: [WidgetStory]
+    /// Recent AI monitor alerts shown in the app and summarized by widgets.
+    public var monitorAlerts: [HistoryEntry]
     /// Total pending AI outputs across the filtered/keyword-matches story set.
     public var filteredPendingCount: Int
     /// Total pending AI outputs across the entire app queue.
@@ -1026,6 +1062,7 @@ public struct WidgetSnapshot: Codable, Equatable, Sendable {
         pendingByCategory: [String: Int] = [:],
         keywords: [String] = [],
         keywordMatches: [WidgetStory] = [],
+        monitorAlerts: [HistoryEntry] = [],
         filteredPendingCount: Int = 0,
         totalPendingCount: Int = 0
     ) {
@@ -1036,12 +1073,13 @@ public struct WidgetSnapshot: Codable, Equatable, Sendable {
         self.pendingByCategory = pendingByCategory
         self.keywords = keywords
         self.keywordMatches = keywordMatches
+        self.monitorAlerts = monitorAlerts
         self.filteredPendingCount = filteredPendingCount
         self.totalPendingCount = totalPendingCount
     }
 
     enum CodingKeys: String, CodingKey {
-        case lastUpdated, categories, activeCategoryID, storiesByCategory, pendingByCategory, keywords, keywordMatches, filteredPendingCount, totalPendingCount
+        case lastUpdated, categories, activeCategoryID, storiesByCategory, pendingByCategory, keywords, keywordMatches, monitorAlerts, filteredPendingCount, totalPendingCount
     }
 
     public init(from decoder: Decoder) throws {
@@ -1054,6 +1092,7 @@ public struct WidgetSnapshot: Codable, Equatable, Sendable {
         // Tolerate older snapshots written before these fields existed.
         keywords = try container.decodeIfPresent([String].self, forKey: .keywords) ?? []
         keywordMatches = try container.decodeIfPresent([WidgetStory].self, forKey: .keywordMatches) ?? []
+        monitorAlerts = try container.decodeIfPresent([HistoryEntry].self, forKey: .monitorAlerts) ?? []
         filteredPendingCount = try container.decodeIfPresent(Int.self, forKey: .filteredPendingCount) ?? 0
         totalPendingCount = try container.decodeIfPresent(Int.self, forKey: .totalPendingCount) ?? 0
     }

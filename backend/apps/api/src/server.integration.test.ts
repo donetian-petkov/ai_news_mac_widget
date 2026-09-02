@@ -229,6 +229,51 @@ describe('api integration: keyword rematch', () => {
     expect(body.service).toBe('ai-news-api');
   });
 
+  it('resets a local account password through the auth API', async (ctx) => {
+    if (startupError) {
+      if (startupError.includes('EPERM')) {
+        ctx.skip();
+        return;
+      }
+      throw new Error(startupError);
+    }
+    const username = `reset-${apiPort}@example.com`;
+    const firstPassword = 'first-password';
+    const secondPassword = 'second-password';
+    const baseUrl = `http://127.0.0.1:${apiPort}`;
+
+    const registerRes = await fetch(`${baseUrl}/api/auth/register`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username, password: firstPassword })
+    });
+    expect(registerRes.ok).toBe(true);
+
+    const resetRes = await fetch(`${baseUrl}/api/auth/reset-password`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username, password: secondPassword })
+    });
+    expect(resetRes.ok).toBe(true);
+    const resetBody = await resetRes.json() as { token?: string; user?: { username?: string } };
+    expect(resetBody.token).toBeTruthy();
+    expect(resetBody.user?.username).toBe(username);
+
+    const oldLoginRes = await fetch(`${baseUrl}/api/auth/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username, password: firstPassword })
+    });
+    expect(oldLoginRes.status).toBe(401);
+
+    const newLoginRes = await fetch(`${baseUrl}/api/auth/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username, password: secondPassword })
+    });
+    expect(newLoginRes.ok).toBe(true);
+  });
+
   it('reprocesses retained news when keywords are updated', async (ctx) => {
     if (startupError) {
       if (startupError.includes('EPERM')) {

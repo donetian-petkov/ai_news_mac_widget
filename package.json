@@ -15,6 +15,7 @@
     "prisma:migrate": "npm run prisma:migrate -w @ai-news/api",
     "secrets:init": "node scripts/ensure-local-secrets.mjs",
     "prisma:init": "node scripts/ensure-local-db.mjs",
+    "password:reset": "node scripts/reset-password.mjs",
     "build:native": "cd native && swift build",
     "test:native": "cd native && swift test",
     "install:app": "bash scripts/install-mac-app.sh",

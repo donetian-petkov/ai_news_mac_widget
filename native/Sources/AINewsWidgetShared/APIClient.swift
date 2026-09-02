@@ -72,6 +72,12 @@ public struct APIClient: Sendable {
         return UserSession(token: response.token, user: response.user)
     }
 
+    public func resetPassword(username: String, password: String) async throws -> UserSession {
+        let body = ["username": username, "password": password]
+        let response: AuthResponse = try await send(path: "/api/auth/reset-password", method: "POST", body: body)
+        return UserSession(token: response.token, user: response.user)
+    }
+
     public func fetchBootstrap() async throws -> WidgetBootstrapResponse {
         try await send(path: "/api/widget/bootstrap")
     }
@@ -346,6 +352,11 @@ public struct APIClient: Sendable {
 
     public func runRule(id: Int) async throws {
         let _: BasicSuccessResponse = try await send(path: "/api/rules/\(id)/run", method: "POST")
+    }
+
+    public func fetchRuleAlerts(limit: Int = 20) async throws -> [HistoryEntry] {
+        let response: RuleAlertsResponse = try await send(path: "/api/rules/alerts?limit=\(limit)")
+        return response.items
     }
 
     public func fetchSchedules() async throws -> [FeatureRecord<SchedulePayload>] {
