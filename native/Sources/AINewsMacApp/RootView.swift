@@ -1188,6 +1188,7 @@ private struct DiagnosticsWorkspaceTab: View {
                             queueKindChip("research", counts: q.countsByKind)
                             queueKindChip("mood", counts: q.countsByKind)
                             queueKindChip("news_type", counts: q.countsByKind)
+                            queueKindChip("topic_labels", counts: q.countsByKind)
                         }
                         Divider().opacity(0.25)
                         LazyVGrid(columns: [GridItem(.adaptive(minimum: 170), spacing: 8)], alignment: .leading, spacing: 8) {
@@ -1311,6 +1312,7 @@ private struct DiagnosticsWorkspaceTab: View {
         case "research": return "Research"
         case "mood": return "Mood"
         case "news_type": return "News type"
+        case "topic_labels": return "Topic labels"
         case "title": return "Title jobs"
         default: return raw.replacingOccurrences(of: "_", with: " ")
         }

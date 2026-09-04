@@ -663,14 +663,14 @@ private struct StoryLabelStrip: View {
         if isFresh(story.publishedDate) {
             labels.append("New")
         }
-        if story.isMatch {
-            labels.append("Match")
-        }
-        if !compact, let newsType = clean(story.newsType) {
+        let topicLabels = story.topicLabels
+            .compactMap(clean)
+            .map(displayLabel)
+            .filter { !$0.isEmpty }
+        if !topicLabels.isEmpty {
+            labels.append(contentsOf: topicLabels)
+        } else if !compact, let newsType = clean(story.newsType) {
             labels.append(displayLabel(newsType))
-        }
-        if !compact, let mood = clean(story.mood) {
-            labels.append(displayLabel(mood))
         }
         return Array(labels.prefix(compact ? 2 : 4))
     }

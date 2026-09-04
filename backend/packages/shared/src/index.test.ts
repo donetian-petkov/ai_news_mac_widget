@@ -141,7 +141,8 @@ describe('shared clientMsgSchema', () => {
       feedUrl: 'https://feed',
       summary: true,
       research: true,
-      titleTranslate: true
+      titleTranslate: true,
+      topicLabels: true
     });
     const bad = clientMsgSchema.safeParse({
       type: 'run_item_auto',

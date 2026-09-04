@@ -414,6 +414,7 @@ type News = {
   insightStatus?: InsightStatus;
   insights?: NewsInsights;
   topicHits?: string[];
+  topicLabels?: string[];
   emergingSignal?: EmergingStorySignal;
   mood?: Mood;
   newsType?: NewsType;
@@ -1321,6 +1322,7 @@ productFeatures = registerProductFeatureApi({
     research: item.research,
     mood: item.mood,
     newsType: item.newsType,
+    topicLabels: item.topicLabels,
     isMatch: item.isMatch,
     filteredOk: item.filteredOk,
     summaryPending: !!item.summaryPending,
@@ -1376,7 +1378,7 @@ productFeatures = registerProductFeatureApi({
     return false;
   },
   requestVisibleStoryActions: async items => {
-    if (!aiEnabled || !aiAvailable || activeModel('summary') === 'none') return;
+    if (!aiEnabled || !aiAvailable || (activeModel('summary') === 'none' && activeModel('research') === 'none')) return;
     const seen = new Set<string>();
     for (const candidate of items.slice(0, 80)) {
       const itemId = String(candidate.id || '').trim();
@@ -1390,6 +1392,7 @@ productFeatures = registerProductFeatureApi({
       if (!isFeedAiEnabled(item.feedUrl)) continue;
 
       if (
+        activeModel('summary') !== 'none' &&
         isTranslationEnabledForFeed(item.feedUrl) &&
         needsTitleTranslation(item.title, item.titleBg, item.titleEn) &&
         !hasTitleTranslateJobQueuedOrRunning(item.id, item.feedUrl)
@@ -1398,11 +1401,22 @@ productFeatures = registerProductFeatureApi({
       }
 
       if (
+        activeModel('summary') !== 'none' &&
         shouldUseNeutralTitlesForItem(item) &&
         needsTitleNeutralization(item) &&
         !hasTitleNeutralizeJobQueuedOrRunning(item.id, item.feedUrl)
       ) {
         enqueueJob({ kind: 'title_neutralize', id: item.id, feedUrl: item.feedUrl, viewport: true });
+      }
+
+      const budget = feedSettings.get(item.feedUrl)?.budget || 'standard';
+      if (
+        budget === 'high' &&
+        activeModel('research') !== 'none' &&
+        (!Array.isArray(item.topicLabels) || item.topicLabels.length === 0) &&
+        !hasAiJobQueuedOrRunning('topic_labels', item.id, item.feedUrl)
+      ) {
+        enqueueJob({ kind: 'topic_labels', id: item.id, feedUrl: item.feedUrl, viewport: true });
       }
     }
   },
@@ -1593,7 +1607,7 @@ app.get('/api/ops/ai-jobs', (req, res) => {
   const limit = Number.isFinite(limitRaw) ? Math.max(1, Math.min(1000, Math.floor(limitRaw))) : 120;
   const deadLimit = Number.isFinite(deadLimitRaw) ? Math.max(1, Math.min(400, Math.floor(deadLimitRaw))) : 40;
 
-  const kinds: AiJobKind[] = ['summary', 'title_translate', 'title_neutralize', 'research', 'mood', 'news_type'];
+  const kinds: AiJobKind[] = ['summary', 'title_translate', 'title_neutralize', 'research', 'mood', 'news_type', 'topic_labels'];
   const stages: AiJobLogStage[] = ['enqueue', 'start', 'success', 'skip', 'drop', 'error'];
   const kindFilter = kinds.includes(kindRaw as AiJobKind) ? (kindRaw as AiJobKind) : '';
   const stageFilter = stages.includes(stageRaw as AiJobLogStage) ? (stageRaw as AiJobLogStage) : '';
@@ -1678,7 +1692,7 @@ app.post('/api/ops/ai-jobs/control', async (req, res) => {
   const kindRaw = String(body.kind || 'all').trim();
   const bulkOnly = body.bulkOnly === true;
   const backgroundOnly = body.backgroundOnly === true;
-  const kinds: AiJobKind[] = ['summary', 'title_translate', 'title_neutralize', 'research', 'mood', 'news_type'];
+  const kinds: AiJobKind[] = ['summary', 'title_translate', 'title_neutralize', 'research', 'mood', 'news_type', 'topic_labels'];
   const selectedKinds = (() => {
     if (kindRaw === 'all') return kinds;
     if (kindRaw === 'title') return ['title_translate', 'title_neutralize'] as AiJobKind[];
@@ -2644,6 +2658,7 @@ function newsFromPersistedRow(row: PersistedNewsRow): NewsInternal {
     insightStatus: (row.insightStatus as InsightStatus | null) || undefined,
     insights: safeJsonParseString<NewsInsights>(row.insightsJson),
     topicHits: safeJsonParseString<string[]>(row.topicHitsJson),
+    topicLabels: safeJsonParseString<string[]>(row.topicLabelsJson),
     emergingSignal: safeJsonParseString<EmergingStorySignal>(row.emergingSignalJson),
     mood: (row.mood as Mood | null) || undefined,
     newsType: (row.newsType as NewsType | null) || undefined,
@@ -2681,6 +2696,7 @@ function buildPersistedNewsUpdate(it: NewsInternal): Prisma.NewsItemRecordUnchec
     insightStatus: it.insightStatus || undefined,
     insightsJson: safeJsonStringify(it.insights),
     topicHitsJson: safeJsonStringify(it.topicHits),
+    topicLabelsJson: safeJsonStringify(it.topicLabels),
     emergingSignalJson: safeJsonStringify(it.emergingSignal),
     mood: it.mood || undefined,
     newsType: it.newsType || undefined,
@@ -5692,6 +5708,103 @@ function newsTypeInstruction(): string {
   ].join(' ');
 }
 
+const GENERIC_TOPIC_LABELS = new Set([
+  'breaking',
+  'news',
+  'update',
+  'updates',
+  'latest',
+  'story',
+  'report',
+  'reports',
+  'article',
+  'headline',
+  'other'
+]);
+
+function normalizeTopicLabel(raw: unknown): string | undefined {
+  const cleaned = String(raw || '')
+    .trim()
+    .replace(/^[-*\d.)\s]+/u, '')
+    .replace(/^["'`]+|["'`]+$/g, '')
+    .replace(/[^\p{L}\p{N}\s&+/-]+/gu, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  if (!cleaned) return undefined;
+
+  const words = cleaned.split(' ').filter(Boolean).slice(0, 4);
+  const label = words.join(' ').trim();
+  const key = label.toLocaleLowerCase();
+  if (label.length < 2 || label.length > 36) return undefined;
+  if (GENERIC_TOPIC_LABELS.has(key)) return undefined;
+  if (/^(ai|match|new)$/i.test(label)) return undefined;
+  return label;
+}
+
+function normalizeTopicLabels(raw: unknown): string[] {
+  const values = Array.isArray(raw)
+    ? raw
+    : String(raw || '').split(/[\n,;|]+/u);
+  const seen = new Set<string>();
+  const labels: string[] = [];
+  for (const value of values) {
+    const label = normalizeTopicLabel(value);
+    if (!label) continue;
+    const key = label.toLocaleLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    labels.push(label);
+    if (labels.length >= 3) break;
+  }
+  return labels;
+}
+
+function parseTopicLabels(raw: string): string[] {
+  const text = String(raw || '').trim()
+    .replace(/^```(?:json)?\s*/i, '')
+    .replace(/\s*```$/i, '')
+    .trim();
+  if (!text) return [];
+
+  const tryParse = (candidate: string): string[] => {
+    try {
+      const parsed = JSON.parse(candidate) as unknown;
+      if (Array.isArray(parsed)) return normalizeTopicLabels(parsed);
+      if (parsed && typeof parsed === 'object') {
+        const obj = parsed as Record<string, unknown>;
+        return normalizeTopicLabels(obj.topicLabels || obj.labels || obj.topics);
+      }
+      return [];
+    } catch {
+      return [];
+    }
+  };
+
+  const direct = tryParse(text);
+  if (direct.length) return direct;
+  const arrayMatch = text.match(/\[[\s\S]*\]/);
+  if (arrayMatch) {
+    const fromArray = tryParse(arrayMatch[0]);
+    if (fromArray.length) return fromArray;
+  }
+  const objectMatch = text.match(/\{[\s\S]*\}/);
+  if (objectMatch) {
+    const fromObject = tryParse(objectMatch[0]);
+    if (fromObject.length) return fromObject;
+  }
+  return normalizeTopicLabels(text);
+}
+
+function topicLabelsInstruction(): string {
+  return [
+    'Create short meaningful topic labels for this news item.',
+    'Use the actual subject matter, entities, places, policy area, product, disease, company, event, or market involved.',
+    'Do not return generic labels like News, Update, Match, AI, Breaking, Latest, or Other.',
+    'Return strict JSON only: {"labels":["label one","label two","label three"]}.',
+    'Use 2 or 3 labels. Each label must be 1 to 4 words.'
+  ].join(' ');
+}
+
 function budgetToTokensSummary(b: BudgetMode) {
   if (b === 'low') return 55;
   if (b === 'high') return 95;
@@ -6372,6 +6485,25 @@ async function classifyNewsTypeForItem(
   return normalizeNewsType(text) || 'other';
 }
 
+async function classifyTopicLabelsForItem(
+  title: string,
+  source: string,
+  context: string,
+  summary: string,
+  research: string,
+  budget: BudgetMode
+): Promise<string[]> {
+  const input =
+    `${topicLabelsInstruction()}\n` +
+    `Source: ${source}\n` +
+    `Headline: ${title}\n` +
+    (context ? `Context: ${context}\n` : '') +
+    (summary ? `Summary: ${summary}\n` : '') +
+    (research ? `Research: ${research}\n` : '');
+  const text = await generateAiText('research', input, Math.max(60, Math.min(110, budgetToTokensSummary(budget) + 15)), 0, `Topic labels: ${source} - ${title}`);
+  return parseTopicLabels(text || '');
+}
+
 function askAgentInstruction(lang: ResearchLang): string {
   const langText = lang === 'bg' ? 'Reply in Bulgarian.' : 'Reply in English.';
   return [
@@ -6483,6 +6615,7 @@ function toNewsWire(it: NewsInternal): News {
     insightStatus: it.insightStatus,
     insights: it.insights,
     topicHits: it.topicHits,
+    topicLabels: it.topicLabels,
     emergingSignal: it.emergingSignal,
     mood: it.mood,
     newsType: it.newsType
@@ -6583,7 +6716,7 @@ function shouldUseNeutralTitlesForItem(it: NewsInternal): boolean {
 }
 
 // ---------------- AI JOB QUEUE (non-blocking) ----------------
-type AiJobKind = 'summary' | 'title_translate' | 'title_neutralize' | 'research' | 'mood' | 'news_type';
+type AiJobKind = 'summary' | 'title_translate' | 'title_neutralize' | 'research' | 'mood' | 'news_type' | 'topic_labels';
 type AiJobInput = { kind: AiJobKind; id: string; feedUrl: string; manual?: boolean; viewport?: boolean; bulk?: boolean };
 type AiJob = AiJobInput & { enqueuedAtMs: number };
 type DeadLetterAiJob = {
@@ -6908,7 +7041,8 @@ function aiQueueCounts() {
     title_neutralize: 0,
     research: 0,
     mood: 0,
-    news_type: 0
+    news_type: 0,
+    topic_labels: 0
   };
   aiQueue.forEach(job => {
     counts[job.kind] += 1;
@@ -7040,7 +7174,8 @@ function jobPriority(j: AiJob): number {
     if (j.kind === 'title_neutralize') return 3;
     if (j.kind === 'research') return 4;
     if (j.kind === 'mood') return 6;
-    return 7; // news_type
+    if (j.kind === 'news_type') return 7;
+    return 7; // topic_labels
   }
   if (j.viewport && j.kind === 'title_neutralize') return 3;
   if (j.viewport && j.kind === 'title_translate') return 4;
@@ -7048,7 +7183,8 @@ function jobPriority(j: AiJob): number {
   if (j.kind === 'title_neutralize') return 5;
   if (j.kind === 'research') return 5;
   if (j.kind === 'mood') return 6;
-  return 7; // news_type
+  if (j.kind === 'news_type') return 7;
+  return 7; // topic_labels
 }
 
 function isAiJobPaused(job: Pick<AiJob, 'kind' | 'bulk'>): boolean {
@@ -7695,6 +7831,47 @@ async function runOneJob(job: AiJob) {
       return;
     }
 
+    if (job.kind === 'topic_labels') {
+      if (Array.isArray(it.topicLabels) && it.topicLabels.length > 0) {
+        markSkip('topic_labels_exist');
+        return;
+      }
+      if (budget !== 'high') {
+        markSkip('budget_not_high');
+        return;
+      }
+      if (activeModel('research') === 'none') {
+        markSkip('research_model_disabled');
+        return;
+      }
+      const labels = await withTimeout(
+        classifyTopicLabelsForItem(
+          it.title,
+          it.source,
+          it.__ctx || '',
+          it.summary || '',
+          it.research || '',
+          budget
+        ),
+        AI_CLASSIFY_TIMEOUT_MS,
+        `topic_labels:${it.id}`
+      );
+      if (labels.length) {
+        it.topicLabels = labels;
+        clearTimeoutAttempts(job);
+        refreshDerivedDataForItem(it);
+        await upsertPersistedNewsItem(it);
+        broadcastNewsUpdate(it);
+        scheduleDiscordPost(it);
+        didBroadcastUpdate = true;
+        markDirty();
+        markSuccess('topic_labels_classified');
+      } else {
+        markSkip('topic_labels_empty');
+      }
+      return;
+    }
+
     if (job.kind === 'research') {
       if (it.research && it.research.trim() && !job.manual) {
         markSkip('research_exists');
@@ -7757,7 +7934,7 @@ async function runOneJob(job: AiJob) {
     }
   } catch (err) {
     const message = (err as Error)?.message || String(err);
-    const classifyJob = job.kind === 'mood' || job.kind === 'news_type';
+    const classifyJob = job.kind === 'mood' || job.kind === 'news_type' || job.kind === 'topic_labels';
     const timedOut = isTimeoutError(err);
     if (timedOut) {
       const attempts = recordTimeoutAttempt(job);
@@ -8132,6 +8309,11 @@ async function enqueueAiForFetchedItem(item: NewsInternal) {
       && activeModel('summary') !== 'none' && !hasTitleNeutralizeJobQueuedOrRunning(item.id, item.feedUrl)) {
     enqueueJob({ kind: 'title_neutralize', id: item.id, feedUrl: item.feedUrl });
   }
+  if (budget === 'high' && activeModel('research') !== 'none'
+      && (!Array.isArray(item.topicLabels) || item.topicLabels.length === 0)
+      && !hasAiJobQueuedOrRunning('topic_labels', item.id, item.feedUrl)) {
+    enqueueJob({ kind: 'topic_labels', id: item.id, feedUrl: item.feedUrl });
+  }
 }
 
 async function processFeed(fi: FeedInfo) {
@@ -8298,6 +8480,7 @@ async function processFeed(fi: FeedInfo) {
         research: undefined,
         mood: undefined,
         newsType: undefined,
+        topicLabels: undefined,
         __ctx: ctx
       };
 
@@ -9257,6 +9440,11 @@ socketServer.on('connection', (ws: WebSocket) => {
 
       if (msg.newsType && researchModelReady && !it.newsType) {
         enqueueJob({ kind: 'news_type', id: it.id, feedUrl: it.feedUrl, viewport: true });
+        queuedSomething = true;
+      }
+
+      if (msg.topicLabels && researchModelReady && budget === 'high' && (!Array.isArray(it.topicLabels) || it.topicLabels.length === 0) && !hasAiJobQueuedOrRunning('topic_labels', it.id, it.feedUrl)) {
+        enqueueJob({ kind: 'topic_labels', id: it.id, feedUrl: it.feedUrl, viewport: true });
         queuedSomething = true;
       }
 

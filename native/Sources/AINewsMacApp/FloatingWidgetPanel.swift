@@ -787,7 +787,7 @@ private struct FloatingWidgetView: View {
             ? 0
             : max(1.0, ceil(Double(summaryLength) / 34.0))
         let sourceLines = ceil(Double((story.source ?? story.feedUrl).count) / 26.0)
-        let labelHeight = storyLabels(for: story).isEmpty && cleanLabel(story.mood) == nil ? 0.0 : 20.0
+        let labelHeight = storyLabels(for: story).isEmpty ? 0.0 : 20.0
         let baseHeight = coversEnabled ? 146.0 : 126.0
         let dynamicHeight = (titleLines * 20.0) + (secondaryLines * 14.0) + (summaryLines * 16.0) + (sourceLines * 8.0) + labelHeight
         return min(max(baseHeight + dynamicHeight, 150.0), 300.0)
@@ -1948,14 +1948,17 @@ private struct FloatingWidgetView: View {
     }
 
     private func storyLabels(for story: WidgetStory) -> [String] {
-        var labels: [String] = []
-        if story.isMatch {
-            labels.append("Match")
+        let topicLabels = story.topicLabels
+            .compactMap(cleanLabel)
+            .map(displayLabel)
+            .filter { !$0.isEmpty }
+        if !topicLabels.isEmpty {
+            return Array(topicLabels.prefix(3))
         }
         if let newsType = cleanLabel(story.newsType) {
-            labels.append(displayLabel(newsType))
+            return [displayLabel(newsType)]
         }
-        return Array(labels.prefix(3))
+        return []
     }
 
     private func cleanLabel(_ value: String?) -> String? {
@@ -1992,9 +1995,6 @@ private struct FloatingWidgetView: View {
                         Capsule(style: .continuous)
                             .stroke(AINewsTheme.accentCyan.opacity(0.32), lineWidth: 1)
                     )
-            }
-            if let mood = cleanLabel(story.mood) {
-                MoodChip(mood: mood)
             }
         }
     }

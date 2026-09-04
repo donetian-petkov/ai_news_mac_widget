@@ -169,6 +169,7 @@ public struct WidgetStory: Codable, Equatable, Hashable, Identifiable, Sendable 
     public var research: String?
     public var mood: String?
     public var newsType: String?
+    public var topicLabels: [String]
     public var isMatch: Bool
     public var filteredOk: Bool
     public var summaryPending: Bool
@@ -202,6 +203,7 @@ public struct WidgetStory: Codable, Equatable, Hashable, Identifiable, Sendable 
         research: String? = nil,
         mood: String? = nil,
         newsType: String? = nil,
+        topicLabels: [String] = [],
         isMatch: Bool = true,
         filteredOk: Bool = true,
         summaryPending: Bool = false,
@@ -234,6 +236,7 @@ public struct WidgetStory: Codable, Equatable, Hashable, Identifiable, Sendable 
         self.research = research
         self.mood = mood
         self.newsType = newsType
+        self.topicLabels = topicLabels
         self.isMatch = isMatch
         self.filteredOk = filteredOk
         self.summaryPending = summaryPending
@@ -251,7 +254,7 @@ public struct WidgetStory: Codable, Equatable, Hashable, Identifiable, Sendable 
     private enum CodingKeys: String, CodingKey {
         case id, feedUrl, title, originalTitle, translatedTitle, neutralTitle, neutralTitleBg, neutralTitleEn
         case neutralTitleStatus, neutralTitleReason, neutralTitleClassification, neutralTitleConfidence
-        case link, source, publishedMs, summary, research, mood, newsType
+        case link, source, publishedMs, summary, research, mood, newsType, topicLabels
         case isMatch, filteredOk, summaryPending, researchPending, translationPending, neutralTitlePending
         case hasSummary, hasResearch, hasTranslation, hasNeutralTitle, coverUrl, imagesEnabled
     }
@@ -277,6 +280,7 @@ public struct WidgetStory: Codable, Equatable, Hashable, Identifiable, Sendable 
         research = try container.decodeIfPresent(String.self, forKey: .research)
         mood = try container.decodeIfPresent(String.self, forKey: .mood)
         newsType = try container.decodeIfPresent(String.self, forKey: .newsType)
+        topicLabels = try container.decodeIfPresent([String].self, forKey: .topicLabels) ?? []
         isMatch = try container.decodeIfPresent(Bool.self, forKey: .isMatch) ?? true
         filteredOk = try container.decodeIfPresent(Bool.self, forKey: .filteredOk) ?? true
         summaryPending = try container.decodeIfPresent(Bool.self, forKey: .summaryPending) ?? false

@@ -42,6 +42,7 @@ type ProductNews = {
   research?: string;
   mood?: string;
   newsType?: string;
+  topicLabels?: string[];
   isMatch?: boolean;
   filteredOk?: boolean;
   summaryPending?: boolean;
@@ -81,6 +82,7 @@ type PersistedProductNews = {
   research: string | null;
   mood: string | null;
   newsType: string | null;
+  topicLabelsJson: string | null;
   isMatch: boolean;
   filteredOk: boolean;
   coverUrl: string | null;
@@ -185,6 +187,27 @@ function normalizeLimit(raw: unknown, fallback = 80, max = 500) {
   return Number.isFinite(value) ? Math.max(1, Math.min(max, Math.floor(value))) : fallback;
 }
 
+function parseStringArray(raw: unknown): string[] | undefined {
+  if (!raw) return undefined;
+  try {
+    const parsed = typeof raw === 'string' ? JSON.parse(raw) : raw;
+    if (!Array.isArray(parsed)) return undefined;
+    const seen = new Set<string>();
+    const values: string[] = [];
+    for (const entry of parsed) {
+      const value = trimStoryText(entry).slice(0, 36);
+      const key = value.toLocaleLowerCase();
+      if (!value || seen.has(key)) continue;
+      seen.add(key);
+      values.push(value);
+      if (values.length >= 3) break;
+    }
+    return values.length ? values : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 function persistedNewsToProductNews(row: PersistedProductNews): ProductNews {
   return {
     id: row.itemId,
@@ -206,6 +229,7 @@ function persistedNewsToProductNews(row: PersistedProductNews): ProductNews {
     research: row.research || undefined,
     mood: row.mood || undefined,
     newsType: row.newsType || undefined,
+    topicLabels: parseStringArray(row.topicLabelsJson),
     isMatch: row.isMatch,
     filteredOk: row.filteredOk,
     coverUrl: row.coverUrl || undefined
@@ -399,6 +423,7 @@ function toWidgetStory(news: ProductNews) {
     research: trimStoryText(news.research) || null,
     mood: trimStoryText(news.mood) || null,
     newsType: trimStoryText(news.newsType) || null,
+    topicLabels: Array.isArray(news.topicLabels) ? news.topicLabels.map(label => trimStoryText(label).slice(0, 36)).filter(Boolean).slice(0, 3) : [],
     isMatch: news.isMatch !== false,
     filteredOk: news.filteredOk !== false,
     summaryPending: !!news.summaryPending,

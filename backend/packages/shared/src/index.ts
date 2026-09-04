@@ -165,7 +165,8 @@ export const clientMsgSchema = z.discriminatedUnion('type', [
     titleTranslate: z.boolean().optional(),
     neutralTitle: z.boolean().optional(),
     mood: z.boolean().optional(),
-    newsType: z.boolean().optional()
+    newsType: z.boolean().optional(),
+    topicLabels: z.boolean().optional()
   }),
   z.object({
     type: z.literal('generate_daily_briefing'),

@@ -50,6 +50,7 @@ model NewsItemRecord {
   insightStatus      String?
   insightsJson       String?
   topicHitsJson      String?
+  topicLabelsJson    String?
   emergingSignalJson String?
   mood               String?
   newsType           String?
