@@ -787,8 +787,9 @@ private struct FloatingWidgetView: View {
             ? 0
             : max(1.0, ceil(Double(summaryLength) / 34.0))
         let sourceLines = ceil(Double((story.source ?? story.feedUrl).count) / 26.0)
-        let baseHeight = coversEnabled ? 138.0 : 118.0
-        let dynamicHeight = (titleLines * 20.0) + (secondaryLines * 14.0) + (summaryLines * 16.0) + (sourceLines * 8.0)
+        let labelHeight = storyLabels(for: story).isEmpty && cleanLabel(story.mood) == nil ? 0.0 : 20.0
+        let baseHeight = coversEnabled ? 146.0 : 126.0
+        let dynamicHeight = (titleLines * 20.0) + (secondaryLines * 14.0) + (summaryLines * 16.0) + (sourceLines * 8.0) + labelHeight
         return min(max(baseHeight + dynamicHeight, 150.0), 300.0)
     }
 
@@ -1675,15 +1676,13 @@ private struct FloatingWidgetView: View {
                         if story.hasNeutralTitle {
                             neutralizedTitleBadge(compact: true)
                         }
-                        if let mood = story.mood, !mood.isEmpty {
-                            MoodChip(mood: mood)
-                        }
                     }
                     if let date = story.publishedDate {
                         Text(date.formatted(date: .abbreviated, time: .shortened))
                             .font(widgetCaption2())
                             .foregroundStyle(AINewsTheme.textMuted)
                     }
+                    storyLabelStrip(for: story)
 
                     Text(displayTitle(for: story))
                         .font(widgetHeadline(weight: .bold))
@@ -1729,6 +1728,7 @@ private struct FloatingWidgetView: View {
         .contentShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
         .opacity(draggedStoryKey == story.storyKey ? 0.72 : 1)
         .onTapGesture {
+            markStorySeen(story.storyKey)
             openStory(story)
         }
         .onDrag {
@@ -1930,7 +1930,65 @@ private struct FloatingWidgetView: View {
     }
 
     private func showsNewBadge(for story: WidgetStory) -> Bool {
-        layoutMode == .stack && currentStackStory?.storyKey == story.storyKey && !seenStoryKeys.contains(story.storyKey)
+        if layoutMode == .stack && currentStackStory?.storyKey != story.storyKey {
+            return false
+        }
+        return !seenStoryKeys.contains(story.storyKey)
+    }
+
+    private func storyLabels(for story: WidgetStory) -> [String] {
+        var labels: [String] = []
+        if story.isMatch {
+            labels.append("Match")
+        }
+        if let newsType = cleanLabel(story.newsType) {
+            labels.append(displayLabel(newsType))
+        }
+        if story.hasSummary || story.hasResearch || story.hasTranslation || story.hasNeutralTitle {
+            labels.append("AI")
+        }
+        return Array(labels.prefix(3))
+    }
+
+    private func cleanLabel(_ value: String?) -> String? {
+        let trimmed = value?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return trimmed.isEmpty ? nil : trimmed
+    }
+
+    private func displayLabel(_ value: String) -> String {
+        value
+            .replacingOccurrences(of: "_", with: " ")
+            .replacingOccurrences(of: "-", with: " ")
+            .split(separator: " ")
+            .map { word in
+                let lower = word.lowercased()
+                return lower.prefix(1).uppercased() + lower.dropFirst()
+            }
+            .joined(separator: " ")
+    }
+
+    private func storyLabelStrip(for story: WidgetStory) -> some View {
+        HStack(spacing: 6) {
+            ForEach(storyLabels(for: story), id: \.self) { label in
+                Text(label)
+                    .font(widgetCaption2(weight: .bold))
+                    .foregroundStyle(AINewsTheme.accentCyan)
+                    .lineLimit(1)
+                    .padding(.horizontal, 7)
+                    .padding(.vertical, 2)
+                    .background(
+                        Capsule(style: .continuous)
+                            .fill(AINewsTheme.accentCyan.opacity(0.12))
+                    )
+                    .overlay(
+                        Capsule(style: .continuous)
+                            .stroke(AINewsTheme.accentCyan.opacity(0.32), lineWidth: 1)
+                    )
+            }
+            if let mood = cleanLabel(story.mood) {
+                MoodChip(mood: mood)
+            }
+        }
     }
 
     private var newBadge: some View {
