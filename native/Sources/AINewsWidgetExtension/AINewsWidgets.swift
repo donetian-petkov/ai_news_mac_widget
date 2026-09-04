@@ -198,9 +198,11 @@ struct CategoryWidgetView: View {
                                         .foregroundStyle(AINewsTheme.accentBlue)
                                         .underline(story.hasNeutralTitle, color: AINewsTheme.accentCyan.opacity(0.85))
                                         .lineLimit(2)
+                                    StorySubtitleLine(story: story)
                                     if story.hasNeutralTitle {
                                         NeutralTitleMarker(compact: family == .systemSmall)
                                     }
+                                    StoryLabelStrip(story: story, compact: family == .systemSmall)
                                     Text(story.summary ?? story.source ?? story.feedUrl)
                                         .font(.caption)
                                         .foregroundStyle(AINewsTheme.textSecondary)
@@ -367,6 +369,10 @@ struct MasterWidgetView: View {
                                 .font(.caption)
                                 .foregroundStyle(AINewsTheme.textSecondary)
                                 .lineLimit(2)
+                            if let topStory {
+                                StorySubtitleLine(story: topStory)
+                                StoryLabelStrip(story: topStory, compact: true)
+                            }
                         }
                     }
                     .buttonStyle(.plain)
@@ -542,9 +548,11 @@ struct KeywordWidgetView: View {
                                     .foregroundStyle(AINewsTheme.accentBlue)
                                     .underline(story.hasNeutralTitle, color: AINewsTheme.accentCyan.opacity(0.85))
                                     .lineLimit(2)
+                                StorySubtitleLine(story: story)
                                 if story.hasNeutralTitle {
                                     NeutralTitleMarker(compact: family == .systemSmall)
                                 }
+                                StoryLabelStrip(story: story, compact: family == .systemSmall)
                                 if family != .systemSmall {
                                     Text(story.summary ?? story.source ?? story.feedUrl)
                                         .font(.caption)
@@ -599,6 +607,111 @@ struct KeywordWidget: Widget {
         .description("Show the latest stories that match your tracked topics.")
         .supportedFamilies([.systemSmall, .systemMedium, .systemLarge])
     }
+}
+
+private struct StorySubtitleLine: View {
+    let story: WidgetStory
+
+    var body: some View {
+        let text = storySubtitle(story)
+        if !text.isEmpty {
+            Text(text)
+                .font(.caption2.weight(.medium))
+                .foregroundStyle(AINewsTheme.textMuted)
+                .lineLimit(1)
+        }
+    }
+
+    private func storySubtitle(_ story: WidgetStory) -> String {
+        var parts: [String] = []
+        if let source = clean(story.source) {
+            parts.append(source)
+        }
+        if let age = relativeAge(story.publishedDate) {
+            parts.append(age)
+        }
+        return parts.joined(separator: " · ")
+    }
+}
+
+private struct StoryLabelStrip: View {
+    let story: WidgetStory
+    let compact: Bool
+
+    var body: some View {
+        let labels = storyLabels(story, compact: compact)
+        if !labels.isEmpty {
+            HStack(spacing: 4) {
+                ForEach(labels, id: \.self) { label in
+                    Text(label)
+                        .font(.caption2.weight(.bold))
+                        .lineLimit(1)
+                        .foregroundStyle(AINewsTheme.accentCyan)
+                        .padding(.horizontal, compact ? 5 : 6)
+                        .padding(.vertical, 2)
+                        .background(
+                            Capsule(style: .continuous)
+                                .fill(AINewsTheme.accentCyan.opacity(0.12))
+                        )
+                }
+            }
+        }
+    }
+
+    private func storyLabels(_ story: WidgetStory, compact: Bool) -> [String] {
+        var labels: [String] = []
+        if isFresh(story.publishedDate) {
+            labels.append("New")
+        }
+        if story.isMatch {
+            labels.append("Match")
+        }
+        if !compact, let newsType = clean(story.newsType) {
+            labels.append(displayLabel(newsType))
+        }
+        if !compact, let mood = clean(story.mood) {
+            labels.append(displayLabel(mood))
+        }
+        if compact, story.hasSummary || story.hasResearch || story.hasTranslation || story.hasNeutralTitle {
+            labels.append("AI")
+        }
+        return Array(labels.prefix(compact ? 2 : 4))
+    }
+}
+
+private func clean(_ value: String?) -> String? {
+    let trimmed = value?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+    return trimmed.isEmpty ? nil : trimmed
+}
+
+private func displayLabel(_ value: String) -> String {
+    value
+        .replacingOccurrences(of: "_", with: " ")
+        .replacingOccurrences(of: "-", with: " ")
+        .split(separator: " ")
+        .map { word in
+            let lower = word.lowercased()
+            return lower.prefix(1).uppercased() + lower.dropFirst()
+        }
+        .joined(separator: " ")
+}
+
+private func relativeAge(_ date: Date?) -> String? {
+    guard let date else { return nil }
+    let seconds = max(0, Int(Date().timeIntervalSince(date)))
+    if seconds < 60 { return "now" }
+    let minutes = seconds / 60
+    if minutes < 60 { return "\(minutes)m ago" }
+    let hours = minutes / 60
+    if hours < 24 { return "\(hours)h ago" }
+    let days = hours / 24
+    if days < 7 { return "\(days)d ago" }
+    return nil
+}
+
+private func isFresh(_ date: Date?) -> Bool {
+    guard let date else { return false }
+    return Date().timeIntervalSince(date) >= 0 && Date().timeIntervalSince(date) <= 24 * 60 * 60
 }
 
 private struct NeutralTitleMarker: View {
