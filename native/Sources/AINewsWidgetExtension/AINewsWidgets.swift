@@ -672,9 +672,6 @@ private struct StoryLabelStrip: View {
         if !compact, let mood = clean(story.mood) {
             labels.append(displayLabel(mood))
         }
-        if compact, story.hasSummary || story.hasResearch || story.hasTranslation || story.hasNeutralTitle {
-            labels.append("AI")
-        }
         return Array(labels.prefix(compact ? 2 : 4))
     }
 }

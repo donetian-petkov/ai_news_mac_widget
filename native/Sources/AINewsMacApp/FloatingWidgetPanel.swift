@@ -1101,7 +1101,7 @@ private struct FloatingWidgetView: View {
                 ProgressView().controlSize(.small)
             }
             Button {
-                Task { await reload() }
+                Task { await reload(clearUnchangedNewLabels: true) }
             } label: {
                 Image(systemName: "arrow.clockwise")
                     .font(widgetFont(12.5, weight: .semibold))
@@ -1130,7 +1130,7 @@ private struct FloatingWidgetView: View {
                 ProgressView().controlSize(.small)
             }
             Button {
-                Task { await reload() }
+                Task { await reload(clearUnchangedNewLabels: true) }
             } label: {
                 Image(systemName: "arrow.clockwise")
                     .font(widgetFont(14, weight: .semibold))
@@ -1807,9 +1807,10 @@ private struct FloatingWidgetView: View {
         }
     }
 
-    private func reload() async {
+    private func reload(clearUnchangedNewLabels: Bool = false) async {
         suppressResizeDuringRefresh = true
         loading = true
+        let previousStoryKeys = Set(stories.map(\.storyKey))
         defer {
             loading = false
             DispatchQueue.main.async {
@@ -1849,6 +1850,9 @@ private struct FloatingWidgetView: View {
             updateStories(limitedStories, resizeAfterUpdate: false, reachedEndOverride: reachedEnd)
             AINewsDebugLog.log("floating reload page scope=\(displayCategoryName) shown=\(limitedStories.count) requested=\(visibleCount) hasMore=\(!reachedEnd)")
             logTopStory(limitedStories, scope: displayCategoryName)
+        }
+        if clearUnchangedNewLabels {
+            self.clearUnchangedNewLabels(previousStoryKeys: previousStoryKeys)
         }
         Task { await state.refreshUsage() }
     }
@@ -1898,6 +1902,13 @@ private struct FloatingWidgetView: View {
         }
     }
 
+    private func clearUnchangedNewLabels(previousStoryKeys: Set<String>) {
+        let unchangedKeys = Set(stories.map(\.storyKey)).intersection(previousStoryKeys)
+        guard !unchangedKeys.isEmpty else { return }
+        seenStoryKeys.formUnion(unchangedKeys)
+        persistSeenStories()
+    }
+
     private func applyLocalOrder(to fetchedStories: [WidgetStory]) -> [WidgetStory] {
         guard FloatingWidgetPreferences.hasManualStoryOrder(categoryID: categoryID, isFiltered: isFiltered) else {
             return fetchedStories
@@ -1943,9 +1954,6 @@ private struct FloatingWidgetView: View {
         }
         if let newsType = cleanLabel(story.newsType) {
             labels.append(displayLabel(newsType))
-        }
-        if story.hasSummary || story.hasResearch || story.hasTranslation || story.hasNeutralTitle {
-            labels.append("AI")
         }
         return Array(labels.prefix(3))
     }
