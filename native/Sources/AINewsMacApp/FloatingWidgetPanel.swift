@@ -8,15 +8,45 @@ private enum FloatingWidgetLayoutMode: String, CaseIterable {
     case stack
 }
 
+private struct PointingHandCursorView: NSViewRepresentable {
+    func makeNSView(context _: Context) -> NSView {
+        CursorView()
+    }
+
+    func updateNSView(_: NSView, context _: Context) {}
+
+    private final class CursorView: NSView {
+        override func resetCursorRects() {
+            addCursorRect(bounds, cursor: .pointingHand)
+        }
+
+        override func updateTrackingAreas() {
+            super.updateTrackingAreas()
+            trackingAreas.forEach(removeTrackingArea)
+            addTrackingArea(
+                NSTrackingArea(
+                    rect: bounds,
+                    options: [.activeAlways, .inVisibleRect, .mouseEnteredAndExited, .cursorUpdate],
+                    owner: self
+                )
+            )
+        }
+
+        override func cursorUpdate(with event: NSEvent) {
+            NSCursor.pointingHand.set()
+            super.cursorUpdate(with: event)
+        }
+
+        override func mouseEntered(with event: NSEvent) {
+            NSCursor.pointingHand.set()
+            super.mouseEntered(with: event)
+        }
+    }
+}
+
 private extension View {
     func pointingHandCursor() -> some View {
-        onHover { isHovering in
-            if isHovering {
-                NSCursor.pointingHand.push()
-            } else {
-                NSCursor.pop()
-            }
-        }
+        background(PointingHandCursorView())
     }
 }
 
@@ -1671,82 +1701,57 @@ private struct FloatingWidgetView: View {
     }
 
     private func storyRow(_ story: WidgetStory, draggable: Bool = true, minCardHeight: CGFloat? = nil) -> some View {
-        ZStack(alignment: .topTrailing) {
-            HStack(alignment: .top, spacing: 12) {
-                if coversEnabled {
-                    StoryThumbnail(url: story.coverUrl.flatMap { URL(string: $0) }, size: 66)
-                }
-                VStack(alignment: .leading, spacing: 6) {
-                    HStack(spacing: 6) {
-                        Text(story.source ?? story.feedUrl)
-                            .font(widgetCaption(weight: .semibold))
-                            .foregroundStyle(AINewsTheme.accentCyan)
-                            .lineLimit(1)
-                        if showsNewBadge(for: story) {
-                            newBadge
+        HStack(alignment: .top, spacing: 12) {
+            if coversEnabled {
+                StoryThumbnail(url: story.coverUrl.flatMap { URL(string: $0) }, size: 66)
+            }
+            VStack(alignment: .leading, spacing: 6) {
+                HStack(alignment: .top, spacing: 8) {
+                    VStack(alignment: .leading, spacing: 4) {
+                        HStack(spacing: 6) {
+                            Text(story.source ?? story.feedUrl)
+                                .font(widgetCaption(weight: .semibold))
+                                .foregroundStyle(AINewsTheme.accentCyan)
+                                .lineLimit(1)
+                            if showsNewBadge(for: story) {
+                                newBadge
+                            }
+                            if story.hasNeutralTitle {
+                                neutralizedTitleBadge(compact: true)
+                            }
                         }
-                        if story.hasNeutralTitle {
-                            neutralizedTitleBadge(compact: true)
+                        if let date = story.publishedDate {
+                            Text(date.formatted(date: .abbreviated, time: .shortened))
+                                .font(widgetCaption2())
+                                .foregroundStyle(AINewsTheme.textMuted)
                         }
                     }
-                    if let date = story.publishedDate {
-                        Text(date.formatted(date: .abbreviated, time: .shortened))
-                            .font(widgetCaption2())
-                            .foregroundStyle(AINewsTheme.textMuted)
-                    }
-                    storyLabelStrip(for: story)
+                    .frame(maxWidth: .infinity, alignment: .leading)
 
-                    Text(displayTitle(for: story))
-                        .font(widgetHeadline(weight: .bold))
-                        .foregroundStyle(AINewsTheme.accentBlue)
-                        .underline(isShowingNeutralTitle(for: story), color: AINewsTheme.accentCyan.opacity(0.85))
+                    storyActionButtons(for: story)
+                }
+
+                storyLabelStrip(for: story)
+
+                Text(displayTitle(for: story))
+                    .font(widgetHeadline(weight: .bold))
+                    .foregroundStyle(AINewsTheme.accentBlue)
+                    .underline(isShowingNeutralTitle(for: story), color: AINewsTheme.accentCyan.opacity(0.85))
+                    .fixedSize(horizontal: false, vertical: true)
+
+                if let secondary = secondaryTitle(for: story) {
+                    Text(secondary)
+                        .font(widgetCaption())
+                        .foregroundStyle(AINewsTheme.accentGold)
                         .fixedSize(horizontal: false, vertical: true)
-
-                    if let secondary = secondaryTitle(for: story) {
-                        Text(secondary)
-                            .font(widgetCaption())
-                            .foregroundStyle(AINewsTheme.accentGold)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
-
-                    if !story.shouldOmitSummary(showOriginalTitle: showOriginalTitles) {
-                        block("Summary", visibleSummary(for: story), pending: story.summaryPending, enabled: state.globalAiDefaults.summaryEnabled, accent: AINewsTheme.accentBlue)
-                    }
-                    block("Research", story.research, pending: story.researchPending, enabled: state.globalAiDefaults.researchEnabled, accent: AINewsTheme.accentCyan)
                 }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.trailing, 30)
+
+                if !story.shouldOmitSummary(showOriginalTitle: showOriginalTitles) {
+                    block("Summary", visibleSummary(for: story), pending: story.summaryPending, enabled: state.globalAiDefaults.summaryEnabled, accent: AINewsTheme.accentBlue)
+                }
+                block("Research", story.research, pending: story.researchPending, enabled: state.globalAiDefaults.researchEnabled, accent: AINewsTheme.accentCyan)
             }
-
-            HStack(spacing: 8) {
-                Button {
-                    Task { await state.triggerStoryAction(.hide, story: story, recordCommand: false) }
-                } label: {
-                    Image(systemName: "eye.slash")
-                        .font(widgetCaption(weight: .semibold))
-                }
-                .buttonStyle(.borderless)
-                .foregroundStyle(AINewsTheme.textMuted)
-                .help("Hide this story from widgets")
-                .pointingHandCursor()
-
-                Button {
-                    Task { await state.shareStory(story) }
-                } label: {
-                    HStack(spacing: 6) {
-                        Image(systemName: copiedStoryKey == story.storyKey ? "checkmark" : "square.and.arrow.up")
-                            .font(widgetCaption(weight: .semibold))
-                        if copiedStoryKey == story.storyKey {
-                            Text("Copied")
-                                .font(widgetCaption2(weight: .semibold))
-                        }
-                    }
-                }
-                .buttonStyle(.borderless)
-                .foregroundStyle(copiedStoryKey == story.storyKey ? AINewsTheme.accentCyan : AINewsTheme.textMuted)
-                .help("Copy a share link for this story")
-                .pointingHandCursor()
-            }
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
         .padding(12)
         .frame(minHeight: minCardHeight, alignment: .top)
@@ -1811,6 +1816,17 @@ private struct FloatingWidgetView: View {
         NSWorkspace.shared.open(url)
     }
 
+    private func hideStoryImmediately(_ story: WidgetStory) {
+        let hiddenKey = story.storyKey
+        stories.removeAll { $0.storyKey == hiddenKey }
+        if copiedStoryKey == hiddenKey {
+            copiedStoryKey = nil
+        }
+        clampStackIndex()
+        persistStoryOrder()
+        resizeWindowForCurrentLayout()
+    }
+
     @ViewBuilder
     private func block(_ label: String, _ text: String?, pending: Bool, enabled: Bool, accent: Color) -> some View {
         // Only show the section when the action is enabled — disabling it globally hides
@@ -1832,6 +1848,42 @@ private struct FloatingWidgetView: View {
                 }
             }
         }
+    }
+
+    private func storyActionButtons(for story: WidgetStory) -> some View {
+        HStack(spacing: 8) {
+            Button {
+                hideStoryImmediately(story)
+                Task { await state.triggerStoryAction(.hide, story: story, recordCommand: false) }
+            } label: {
+                Image(systemName: "eye.slash")
+                    .font(widgetCaption(weight: .semibold))
+                    .frame(width: 22, height: 22)
+            }
+            .buttonStyle(.borderless)
+            .foregroundStyle(AINewsTheme.textMuted)
+            .help("Hide this story from widgets")
+            .pointingHandCursor()
+
+            Button {
+                Task { await state.shareStory(story) }
+            } label: {
+                HStack(spacing: 6) {
+                    Image(systemName: copiedStoryKey == story.storyKey ? "checkmark" : "square.and.arrow.up")
+                        .font(widgetCaption(weight: .semibold))
+                    if copiedStoryKey == story.storyKey {
+                        Text("Copied")
+                            .font(widgetCaption2(weight: .semibold))
+                    }
+                }
+                .frame(minWidth: copiedStoryKey == story.storyKey ? 58 : 22, minHeight: 22)
+            }
+            .buttonStyle(.borderless)
+            .foregroundStyle(copiedStoryKey == story.storyKey ? AINewsTheme.accentCyan : AINewsTheme.textMuted)
+            .help("Copy a share link for this story")
+            .pointingHandCursor()
+        }
+        .fixedSize()
     }
 
     private func reload(clearUnchangedNewLabels: Bool = false) async {
