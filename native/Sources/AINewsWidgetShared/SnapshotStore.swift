@@ -68,6 +68,17 @@ public final class SnapshotStore {
         reloadWidgetTimelines()
     }
 
+    public func hideStory(storyID: String, feedURL: String) throws {
+        let storyKey = "\(feedURL)::\(storyID)"
+        var snapshot = loadSnapshot()
+        snapshot.keywordMatches.removeAll { $0.storyKey == storyKey }
+        for key in snapshot.storiesByCategory.keys {
+            snapshot.storiesByCategory[key]?.removeAll { $0.storyKey == storyKey }
+        }
+        try saveSnapshot(snapshot)
+        writeDiagnostic("hideStory storyKey=\(storyKey)")
+    }
+
     public func loadCommands() -> [WidgetCommand] {
         for url in commandURLs {
             guard let data = try? Data(contentsOf: url),

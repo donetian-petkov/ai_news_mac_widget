@@ -11,6 +11,29 @@ private func persist(_ command: WidgetCommand) async throws {
 }
 
 @available(macOS 14.0, *)
+private func hideStoryImmediately(categoryID: Int, storyID: String, feedURL: String) async throws {
+    try await MainActor.run {
+        try SnapshotStore.shared.hideStory(storyID: storyID, feedURL: feedURL)
+    }
+
+    let sessionContext = await MainActor.run { () -> (baseURLString: String, token: String?) in
+        let store = SessionStore.shared
+        return (store.baseURLString, store.session?.token)
+    }
+    guard let token = sessionContext.token, !token.isEmpty else {
+        try await persist(WidgetCommand(kind: .hideStory, categoryID: categoryID, storyID: storyID, feedURL: feedURL))
+        return
+    }
+
+    do {
+        let api = try APIClient(baseURLString: sessionContext.baseURLString, token: token)
+        try await api.triggerStoryAction(.hide, story: WidgetStory(id: storyID, feedUrl: feedURL, title: storyID))
+    } catch {
+        try await persist(WidgetCommand(kind: .hideStory, categoryID: categoryID, storyID: storyID, feedURL: feedURL))
+    }
+}
+
+@available(macOS 14.0, *)
 public struct RefreshCategoryIntent: AppIntent {
     public static let title: LocalizedStringResource = "Refresh Category"
     public static let openAppWhenRun = true
@@ -209,7 +232,7 @@ public struct HideStoryIntent: AppIntent {
     }
 
     public func perform() async throws -> some IntentResult {
-        try await persist(WidgetCommand(kind: .hideStory, categoryID: categoryID, storyID: storyID, feedURL: feedURL))
+        try await hideStoryImmediately(categoryID: categoryID, storyID: storyID, feedURL: feedURL)
         return .result()
     }
 }

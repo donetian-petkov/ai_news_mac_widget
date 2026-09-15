@@ -873,13 +873,7 @@ public final class WidgetAppState: ObservableObject {
     private func removeStoryLocally(_ story: WidgetStory) {
         stories.removeAll { $0.storyKey == story.storyKey }
         keywordMatches.removeAll { $0.storyKey == story.storyKey }
-
-        var snapshot = snapshotStore.loadSnapshot()
-        snapshot.keywordMatches.removeAll { $0.storyKey == story.storyKey }
-        for key in snapshot.storiesByCategory.keys {
-            snapshot.storiesByCategory[key]?.removeAll { $0.storyKey == story.storyKey }
-        }
-        try? snapshotStore.saveSnapshot(snapshot)
+        try? snapshotStore.hideStory(storyID: story.id, feedURL: story.feedUrl)
     }
 
     private func refreshAllCategorySnapshots(using api: APIClient) async throws {
