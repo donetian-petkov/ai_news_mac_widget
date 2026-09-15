@@ -1356,6 +1356,12 @@ productFeatures = registerProductFeatureApi({
     return added;
   },
   requestStoryAction: async (action, itemId, feedUrl) => {
+    if (action === 'hide') {
+      hiddenIds.add(itemId);
+      broadcastConfig();
+      markDirty();
+      return true;
+    }
     const item = recent.find(entry => entry.id === itemId && entry.feedUrl === feedUrl);
     if (!item) return false;
     if (!isFeedAiEnabled(item.feedUrl)) return false;
@@ -1426,7 +1432,8 @@ productFeatures = registerProductFeatureApi({
     if (!isFeedPollingEnabled(feedUrl)) return false;
     await processFeed(feed);
     return true;
-  }
+  },
+  getHiddenNewsIds: () => Array.from(hiddenIds)
 });
 
 app.post('/api/maintenance/regenerate', async (req, res) => {

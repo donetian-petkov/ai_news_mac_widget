@@ -191,3 +191,25 @@ public struct OpenShareIntent: AppIntent {
         return .result()
     }
 }
+
+@available(macOS 14.0, *)
+public struct HideStoryIntent: AppIntent {
+    public static let title: LocalizedStringResource = "Hide Story"
+    public static let openAppWhenRun = true
+
+    @Parameter(title: "Category ID") public var categoryID: Int
+    @Parameter(title: "Story ID") public var storyID: String
+    @Parameter(title: "Feed URL") public var feedURL: String
+
+    public init() {}
+    public init(categoryID: Int, storyID: String, feedURL: String) {
+        self.categoryID = categoryID
+        self.storyID = storyID
+        self.feedURL = feedURL
+    }
+
+    public func perform() async throws -> some IntentResult {
+        try await persist(WidgetCommand(kind: .hideStory, categoryID: categoryID, storyID: storyID, feedURL: feedURL))
+        return .result()
+    }
+}

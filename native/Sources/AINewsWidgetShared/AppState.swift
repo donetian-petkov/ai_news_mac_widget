@@ -509,10 +509,15 @@ public final class WidgetAppState: ObservableObject {
         await runBusy("Sending \(action.rawValue) request...") {
             let api = try self.makeAPIClient()
             try await api.triggerStoryAction(action, story: story)
-            self.statusMessage = "\(action.rawValue.capitalized) queued for \(story.title)."
-            // The backend generates asynchronously. Poll the category so the freshly
-            // generated summary/research/translation shows up without a manual refresh.
-            await self.pollForStoryActionResult(action, story: story)
+            if action == .hide {
+                self.removeStoryLocally(story)
+                self.statusMessage = "Hidden \(story.title)."
+            } else {
+                self.statusMessage = "\(action.rawValue.capitalized) queued for \(story.title)."
+                // The backend generates asynchronously. Poll the category so the freshly
+                // generated summary/research/translation shows up without a manual refresh.
+                await self.pollForStoryActionResult(action, story: story)
+            }
             if recordCommand {
                 try? self.snapshotStore.appendCommand(
                     WidgetCommand(
@@ -523,6 +528,7 @@ public final class WidgetAppState: ObservableObject {
                             case .translation: return .openTranslation
                             case .neutralTitle: return .openNeutralTitle
                             case .refresh: return .refreshCategory
+                            case .hide: return .hideStory
                             }
                         }(),
                         categoryID: self.selectedCategoryID,
@@ -535,14 +541,14 @@ public final class WidgetAppState: ObservableObject {
     }
 
     private func pollForStoryActionResult(_ action: WidgetStoryAction, story: WidgetStory) async {
-        guard action != .refresh else { return }
+        guard action != .refresh && action != .hide else { return }
         func hasResult(_ s: WidgetStory) -> Bool {
             switch action {
             case .summary: return !(s.summary ?? "").isEmpty
             case .research: return !(s.research ?? "").isEmpty
             case .translation: return !(s.translatedTitle ?? "").isEmpty
             case .neutralTitle: return s.hasNeutralTitle || !s.neutralTitlePending
-            case .refresh: return true
+            case .refresh, .hide: return true
             }
         }
         // Poll for up to ~16s; generation usually completes within a few seconds.
@@ -864,6 +870,18 @@ public final class WidgetAppState: ObservableObject {
         try? snapshotStore.saveSnapshot(snapshot)
     }
 
+    private func removeStoryLocally(_ story: WidgetStory) {
+        stories.removeAll { $0.storyKey == story.storyKey }
+        keywordMatches.removeAll { $0.storyKey == story.storyKey }
+
+        var snapshot = snapshotStore.loadSnapshot()
+        snapshot.keywordMatches.removeAll { $0.storyKey == story.storyKey }
+        for key in snapshot.storiesByCategory.keys {
+            snapshot.storiesByCategory[key]?.removeAll { $0.storyKey == story.storyKey }
+        }
+        try? snapshotStore.saveSnapshot(snapshot)
+    }
+
     private func refreshAllCategorySnapshots(using api: APIClient) async throws {
         let master = try await api.fetchMaster()
         var snapshot = snapshotStore.loadSnapshot()
@@ -980,6 +998,9 @@ public final class WidgetAppState: ObservableObject {
         case .openShare:
             guard let story = story(for: command) else { return }
             await shareStory(story)
+        case .hideStory:
+            guard let story = story(for: command) else { return }
+            await triggerStoryAction(.hide, story: story, recordCommand: false)
         }
     }
 

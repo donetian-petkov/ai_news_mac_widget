@@ -1706,21 +1706,33 @@ private struct FloatingWidgetView: View {
                 .padding(.trailing, 30)
             }
 
-            Button {
-                Task { await state.shareStory(story) }
-            } label: {
-                HStack(spacing: 6) {
-                    Image(systemName: copiedStoryKey == story.storyKey ? "checkmark" : "square.and.arrow.up")
+            HStack(spacing: 8) {
+                Button {
+                    Task { await state.triggerStoryAction(.hide, story: story, recordCommand: false) }
+                } label: {
+                    Image(systemName: "eye.slash")
                         .font(widgetCaption(weight: .semibold))
-                    if copiedStoryKey == story.storyKey {
-                        Text("Copied")
-                            .font(widgetCaption2(weight: .semibold))
+                }
+                .buttonStyle(.borderless)
+                .foregroundStyle(AINewsTheme.textMuted)
+                .help("Hide this story from widgets")
+
+                Button {
+                    Task { await state.shareStory(story) }
+                } label: {
+                    HStack(spacing: 6) {
+                        Image(systemName: copiedStoryKey == story.storyKey ? "checkmark" : "square.and.arrow.up")
+                            .font(widgetCaption(weight: .semibold))
+                        if copiedStoryKey == story.storyKey {
+                            Text("Copied")
+                                .font(widgetCaption2(weight: .semibold))
+                        }
                     }
                 }
+                .buttonStyle(.borderless)
+                .foregroundStyle(copiedStoryKey == story.storyKey ? AINewsTheme.accentCyan : AINewsTheme.textMuted)
+                .help("Copy a share link for this story")
             }
-            .buttonStyle(.borderless)
-            .foregroundStyle(copiedStoryKey == story.storyKey ? AINewsTheme.accentCyan : AINewsTheme.textMuted)
-            .help("Copy a share link for this story")
         }
         .padding(12)
         .frame(minHeight: minCardHeight, alignment: .top)

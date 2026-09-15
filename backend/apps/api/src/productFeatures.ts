@@ -126,6 +126,7 @@ type RegisterProductFeatureApiArgs = {
   requestStoryAction?: (action: WidgetStoryActionKind, itemId: string, feedUrl: string) => Promise<boolean> | boolean;
   requestVisibleStoryActions?: (items: ProductNews[]) => Promise<void> | void;
   refreshFeed?: (feedUrl: string) => Promise<boolean> | boolean;
+  getHiddenNewsIds?: () => string[];
   evaluateAlertRuleCriteria?: (criteria: string, items: ProductNewsMonitorCandidate[]) => Promise<ProductNewsMonitorMatch[]>;
 };
 
@@ -158,7 +159,7 @@ const collectionPayloadSchema = z.object({
   pinnedFeedUrl: z.string().trim().max(1000).default('')
 });
 
-type WidgetStoryActionKind = 'summary' | 'research' | 'translation' | 'neutral_title' | 'refresh';
+type WidgetStoryActionKind = 'summary' | 'research' | 'translation' | 'neutral_title' | 'refresh' | 'hide';
 
 type WidgetCollectionPayload = z.infer<typeof collectionPayloadSchema>;
 
@@ -238,11 +239,12 @@ function persistedNewsToProductNews(row: PersistedProductNews): ProductNews {
 
 async function listPersistedWidgetNews(
   prisma: PrismaClient,
-  options: { limit?: number; feedUrls?: string[]; filteredOnly?: boolean } = {}
+  options: { limit?: number; feedUrls?: string[]; filteredOnly?: boolean; hiddenIds?: Set<string> } = {}
 ) {
   const feedUrls = (options.feedUrls || []).map(url => url.trim()).filter(Boolean);
   const where: Record<string, unknown> = {};
   if (feedUrls.length > 0) where.feedUrl = { in: feedUrls };
+  if (options.hiddenIds?.size) where.itemId = { notIn: Array.from(options.hiddenIds) };
   if (options.filteredOnly) {
     where.isMatch = true;
     where.filteredOk = true;
@@ -258,10 +260,12 @@ async function listPersistedWidgetNews(
 async function widgetNewsOrFallback(
   prisma: PrismaClient,
   fallback: ProductNews[],
-  options: { limit?: number; feedUrls?: string[]; filteredOnly?: boolean } = {}
+  options: { limit?: number; feedUrls?: string[]; filteredOnly?: boolean; hiddenIds?: Set<string> } = {}
 ) {
   const persisted = await listPersistedWidgetNews(prisma, options);
-  return persisted.length > 0 ? persisted : fallback;
+  const source = persisted.length > 0 ? persisted : fallback;
+  if (!options.hiddenIds?.size) return source;
+  return source.filter(item => !options.hiddenIds?.has(item.id));
 }
 
 function safeTitle(raw: unknown, fallback: string) {
@@ -931,6 +935,7 @@ export function registerProductFeatureApi({
   requestStoryAction,
   requestVisibleStoryActions,
   refreshFeed,
+  getHiddenNewsIds,
   evaluateAlertRuleCriteria
 }: RegisterProductFeatureApiArgs): ProductFeatureRuntime {
   void ensureProductFeatureTables(prisma).catch(err => {
@@ -943,6 +948,7 @@ export function registerProductFeatureApi({
       console.warn('[product-features] visible story actions failed:', (err as Error).message);
     });
   };
+  const hiddenNewsIds = () => new Set((getHiddenNewsIds?.() || []).map(id => String(id || '').trim()).filter(Boolean));
 
   const registerCrud = (basePath: string, kind: FeatureKind) => {
     app.get(basePath, async (req, res) => {
@@ -1132,7 +1138,7 @@ export function registerProductFeatureApi({
     if (!user) return;
     const limitRaw = Number(req.query.limit);
     const limit = Number.isFinite(limitRaw) ? Math.max(1, Math.min(200, Math.floor(limitRaw))) : 30;
-    const news = await widgetNewsOrFallback(prisma, getRecentNews(), { limit: limit + 1, filteredOnly: true });
+    const news = await widgetNewsOrFallback(prisma, getRecentNews(), { limit: limit + 1, filteredOnly: true, hiddenIds: hiddenNewsIds() });
     const page = news
       .filter(item => item.isMatch === true && item.filteredOk !== false)
       .sort((a, b) => Number(b.publishedMs || 0) - Number(a.publishedMs || 0))
@@ -1150,7 +1156,7 @@ export function registerProductFeatureApi({
     await ensureProductFeatureTables(prisma);
     await ensureDefaultCollectionsForUser(prisma, user.id, getFeeds());
     const rows = await listFeatureRows(prisma, user.id, 'collection', 200, true);
-    const news = await widgetNewsOrFallback(prisma, getRecentNews(), { limit: 1000 });
+    const news = await widgetNewsOrFallback(prisma, getRecentNews(), { limit: 1000, hiddenIds: hiddenNewsIds() });
     const categoriesWithStories = rows
       .map(mapCollectionRow)
       .sort((left, right) => left.sortOrder - right.sortOrder || left.id - right.id)
@@ -1190,7 +1196,8 @@ export function registerProductFeatureApi({
     const limit = normalizeLimit(req.query.limit, category.activeCount, 200);
     const news = await widgetNewsOrFallback(prisma, getRecentNews(), {
       limit: Math.max((limit + 1) * Math.max(category.feedUrls.length, 1), 100),
-      feedUrls: category.feedUrls
+      feedUrls: category.feedUrls,
+      hiddenIds: hiddenNewsIds()
     });
     const page = selectCategoryStories(category, news).slice(0, limit + 1);
     requestVisibleActionsFor(page.slice(0, limit));
@@ -1281,7 +1288,7 @@ export function registerProductFeatureApi({
     const action = String(body.action || '').trim() as WidgetStoryActionKind;
     const itemId = String(body.itemId || '').trim();
     const feedUrl = String(body.feedUrl || '').trim();
-    if (!itemId || !feedUrl || !['summary', 'research', 'translation', 'neutral_title', 'refresh'].includes(action)) {
+    if (!itemId || !feedUrl || !['summary', 'research', 'translation', 'neutral_title', 'refresh', 'hide'].includes(action)) {
       res.status(400).json({ error: 'Invalid story action payload.' });
       return;
     }

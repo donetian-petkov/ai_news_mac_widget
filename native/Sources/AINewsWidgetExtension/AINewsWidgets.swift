@@ -212,10 +212,17 @@ struct CategoryWidgetView: View {
                             .buttonStyle(.plain)
 
                             if family == .systemSmall {
-                                Button(intent: OpenShareIntent(categoryID: category.id, storyID: story.id, feedURL: story.feedUrl)) {
-                                    Image(systemName: "square.and.arrow.up")
+                                HStack(spacing: 8) {
+                                    Button(intent: OpenShareIntent(categoryID: category.id, storyID: story.id, feedURL: story.feedUrl)) {
+                                        Image(systemName: "square.and.arrow.up")
+                                    }
+                                    .buttonStyle(.plain)
+
+                                    Button(intent: HideStoryIntent(categoryID: category.id, storyID: story.id, feedURL: story.feedUrl)) {
+                                        Image(systemName: "eye.slash")
+                                    }
+                                    .buttonStyle(.plain)
                                 }
-                                .buttonStyle(.plain)
                                 .font(.caption.weight(.semibold))
                                 .foregroundStyle(AINewsTheme.textMuted)
                             }
@@ -245,6 +252,11 @@ struct CategoryWidgetView: View {
 
                                 Button(intent: PinStoryIntent(categoryID: category.id, storyID: story.id, feedURL: story.feedUrl)) {
                                     Image(systemName: category.isPinned(story) ? "pin.fill" : "pin")
+                                }
+                                .buttonStyle(.plain)
+
+                                Button(intent: HideStoryIntent(categoryID: category.id, storyID: story.id, feedURL: story.feedUrl)) {
+                                    Image(systemName: "eye.slash")
                                 }
                                 .buttonStyle(.plain)
                             }
@@ -564,17 +576,31 @@ struct KeywordWidgetView: View {
                         .buttonStyle(.plain)
 
                         if family == .systemSmall {
-                            Button(intent: OpenShareIntent(categoryID: 0, storyID: story.id, feedURL: story.feedUrl)) {
-                                Image(systemName: "square.and.arrow.up")
+                            HStack(spacing: 8) {
+                                Button(intent: OpenShareIntent(categoryID: 0, storyID: story.id, feedURL: story.feedUrl)) {
+                                    Image(systemName: "square.and.arrow.up")
+                                }
+                                .buttonStyle(.plain)
+
+                                Button(intent: HideStoryIntent(categoryID: 0, storyID: story.id, feedURL: story.feedUrl)) {
+                                    Image(systemName: "eye.slash")
+                                }
+                                .buttonStyle(.plain)
                             }
-                            .buttonStyle(.plain)
                             .font(.caption.weight(.semibold))
                             .foregroundStyle(AINewsTheme.textMuted)
                         } else {
-                            Button(intent: OpenShareIntent(categoryID: 0, storyID: story.id, feedURL: story.feedUrl)) {
-                                Image(systemName: "square.and.arrow.up")
+                            HStack(spacing: 10) {
+                                Button(intent: OpenShareIntent(categoryID: 0, storyID: story.id, feedURL: story.feedUrl)) {
+                                    Image(systemName: "square.and.arrow.up")
+                                }
+                                .buttonStyle(.plain)
+
+                                Button(intent: HideStoryIntent(categoryID: 0, storyID: story.id, feedURL: story.feedUrl)) {
+                                    Image(systemName: "eye.slash")
+                                }
+                                .buttonStyle(.plain)
                             }
-                            .buttonStyle(.plain)
                             .font(.caption.weight(.semibold))
                             .foregroundStyle(AINewsTheme.textMuted)
                         }

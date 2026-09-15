@@ -1108,6 +1108,7 @@ public enum WidgetStoryAction: String, CaseIterable, Codable, Sendable {
     case translation
     case neutralTitle = "neutral_title"
     case refresh
+    case hide
 }
 
 public enum WidgetDeepLinkAction: String, Codable, Sendable {
@@ -1130,6 +1131,7 @@ public struct WidgetCommand: Codable, Equatable, Hashable, Identifiable, Sendabl
         case openTranslation
         case openNeutralTitle
         case openShare
+        case hideStory
     }
 
     public var id: UUID
