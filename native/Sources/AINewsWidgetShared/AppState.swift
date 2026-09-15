@@ -506,18 +506,35 @@ public final class WidgetAppState: ObservableObject {
     }
 
     public func triggerStoryAction(_ action: WidgetStoryAction, story: WidgetStory, recordCommand: Bool) async {
+        if action == .hide {
+            removeStoryLocally(story)
+            statusMessage = "Hidden \(story.title)."
+            do {
+                let api = try makeAPIClient()
+                try await api.triggerStoryAction(action, story: story)
+            } catch {
+                errorMessage = error.localizedDescription
+            }
+            if recordCommand {
+                try? snapshotStore.appendCommand(
+                    WidgetCommand(
+                        kind: .hideStory,
+                        categoryID: selectedCategoryID,
+                        storyID: story.id,
+                        feedURL: story.feedUrl
+                    )
+                )
+            }
+            return
+        }
+
         await runBusy("Sending \(action.rawValue) request...") {
             let api = try self.makeAPIClient()
             try await api.triggerStoryAction(action, story: story)
-            if action == .hide {
-                self.removeStoryLocally(story)
-                self.statusMessage = "Hidden \(story.title)."
-            } else {
-                self.statusMessage = "\(action.rawValue.capitalized) queued for \(story.title)."
-                // The backend generates asynchronously. Poll the category so the freshly
-                // generated summary/research/translation shows up without a manual refresh.
-                await self.pollForStoryActionResult(action, story: story)
-            }
+            self.statusMessage = "\(action.rawValue.capitalized) queued for \(story.title)."
+            // The backend generates asynchronously. Poll the category so the freshly
+            // generated summary/research/translation shows up without a manual refresh.
+            await self.pollForStoryActionResult(action, story: story)
             if recordCommand {
                 try? self.snapshotStore.appendCommand(
                     WidgetCommand(

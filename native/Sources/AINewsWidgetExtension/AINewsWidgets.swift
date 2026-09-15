@@ -220,6 +220,7 @@ struct CategoryWidgetView: View {
 
                                     Button(intent: HideStoryIntent(categoryID: category.id, storyID: story.id, feedURL: story.feedUrl)) {
                                         Image(systemName: "eye.slash")
+                                            .frame(width: 20, height: 20)
                                     }
                                     .buttonStyle(.plain)
                                 }
@@ -257,6 +258,7 @@ struct CategoryWidgetView: View {
 
                                 Button(intent: HideStoryIntent(categoryID: category.id, storyID: story.id, feedURL: story.feedUrl)) {
                                     Image(systemName: "eye.slash")
+                                        .frame(width: 20, height: 20)
                                 }
                                 .buttonStyle(.plain)
                             }
@@ -584,6 +586,7 @@ struct KeywordWidgetView: View {
 
                                 Button(intent: HideStoryIntent(categoryID: 0, storyID: story.id, feedURL: story.feedUrl)) {
                                     Image(systemName: "eye.slash")
+                                        .frame(width: 20, height: 20)
                                 }
                                 .buttonStyle(.plain)
                             }
@@ -598,6 +601,7 @@ struct KeywordWidgetView: View {
 
                                 Button(intent: HideStoryIntent(categoryID: 0, storyID: story.id, feedURL: story.feedUrl)) {
                                     Image(systemName: "eye.slash")
+                                        .frame(width: 20, height: 20)
                                 }
                                 .buttonStyle(.plain)
                             }

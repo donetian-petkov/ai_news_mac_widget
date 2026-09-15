@@ -8,6 +8,18 @@ private enum FloatingWidgetLayoutMode: String, CaseIterable {
     case stack
 }
 
+private extension View {
+    func pointingHandCursor() -> some View {
+        onHover { isHovering in
+            if isHovering {
+                NSCursor.pointingHand.push()
+            } else {
+                NSCursor.pop()
+            }
+        }
+    }
+}
+
 struct SavedWidgetEntry: Codable, Equatable, Identifiable {
     var id: String = UUID().uuidString
     var categoryID: Int
@@ -1716,6 +1728,7 @@ private struct FloatingWidgetView: View {
                 .buttonStyle(.borderless)
                 .foregroundStyle(AINewsTheme.textMuted)
                 .help("Hide this story from widgets")
+                .pointingHandCursor()
 
                 Button {
                     Task { await state.shareStory(story) }
@@ -1732,6 +1745,7 @@ private struct FloatingWidgetView: View {
                 .buttonStyle(.borderless)
                 .foregroundStyle(copiedStoryKey == story.storyKey ? AINewsTheme.accentCyan : AINewsTheme.textMuted)
                 .help("Copy a share link for this story")
+                .pointingHandCursor()
             }
         }
         .padding(12)
@@ -1743,6 +1757,7 @@ private struct FloatingWidgetView: View {
             markStorySeen(story.storyKey)
             openStory(story)
         }
+        .pointingHandCursor()
         .onDrag {
             guard draggable else { return NSItemProvider() }
             draggedStoryKey = story.storyKey
