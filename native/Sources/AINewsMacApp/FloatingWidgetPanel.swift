@@ -8,6 +8,8 @@ private enum FloatingWidgetLayoutMode: String, CaseIterable {
     case stack
 }
 
+private let floatingWidgetHeaderPurple = Color(red: 0.56, green: 0.49, blue: 1.0)
+
 private struct PointingHandCursorView: NSViewRepresentable {
     func makeNSView(context _: Context) -> NSView {
         CursorView()
@@ -74,13 +76,13 @@ private struct FloatingPowerButtonChrome: ViewModifier {
             .frame(width: size, height: size)
             .background(
                 Circle()
-                    .fill(poweredOn ? AINewsTheme.textPrimary.opacity(0.96) : AINewsTheme.backgroundAlt.opacity(0.92))
+                    .fill(poweredOn ? floatingWidgetHeaderPurple : AINewsTheme.backgroundAlt.opacity(0.92))
             )
             .overlay(
                 Circle()
-                    .stroke(poweredOn ? AINewsTheme.textPrimary.opacity(0.96) : AINewsTheme.textSecondary.opacity(0.82), lineWidth: 1.3)
+                    .stroke(poweredOn ? floatingWidgetHeaderPurple : floatingWidgetHeaderPurple.opacity(0.82), lineWidth: 1.3)
             )
-            .shadow(color: poweredOn ? AINewsTheme.textPrimary.opacity(0.18) : Color.clear, radius: 6, x: 0, y: 0)
+            .shadow(color: poweredOn ? floatingWidgetHeaderPurple.opacity(0.28) : Color.clear, radius: 6, x: 0, y: 0)
     }
 }
 
@@ -1317,12 +1319,12 @@ private struct FloatingWidgetView: View {
                 .frame(width: size, height: size)
                 .background(
                     RoundedRectangle(cornerRadius: 9, style: .continuous)
-                        .fill(layoutMode == mode ? AINewsTheme.textPrimary.opacity(0.14) : AINewsTheme.backgroundAlt.opacity(0.9))
+                        .fill(layoutMode == mode ? floatingWidgetHeaderPurple.opacity(0.22) : AINewsTheme.backgroundAlt.opacity(0.9))
                 )
                 .overlay(
                     RoundedRectangle(cornerRadius: 9, style: .continuous)
                         .stroke(
-                            layoutMode == mode ? AINewsTheme.textPrimary.opacity(0.82) : AINewsTheme.panelBorder.opacity(0.55),
+                            layoutMode == mode ? floatingWidgetHeaderPurple.opacity(0.9) : AINewsTheme.panelBorder.opacity(0.55),
                             lineWidth: 1
                         )
                 )
@@ -1344,7 +1346,7 @@ private struct FloatingWidgetView: View {
         } label: {
             Image(systemName: "power")
                 .font(widgetFont(fontSize + 1.5, weight: .bold))
-                .foregroundStyle(state.isRuntimePoweredOn ? AINewsTheme.background : AINewsTheme.textSecondary)
+                .foregroundStyle(state.isRuntimePoweredOn ? Color.black.opacity(0.88) : floatingWidgetHeaderPurple)
                 .modifier(FloatingPowerButtonChrome(poweredOn: state.isRuntimePoweredOn, size: size))
         }
         .buttonStyle(.borderless)
