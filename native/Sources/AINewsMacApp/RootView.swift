@@ -85,6 +85,8 @@ private struct LoginView: View {
                 .font(.subheadline)
                 .foregroundStyle(AINewsTheme.textMuted)
 
+            RuntimePowerControls()
+
             VStack(alignment: .leading, spacing: 14) {
                 Text("Backend URL")
                     .foregroundStyle(AINewsTheme.textSecondary)
@@ -147,6 +149,116 @@ private struct LoginView: View {
             Text("Set the local password for \(username) to the password entered above.")
         }
     }
+}
+
+private struct RuntimePowerControls: View {
+    @EnvironmentObject private var state: WidgetAppState
+    @State private var autoOffHours = 2.0
+    var compact = false
+
+    private var title: String {
+        state.isRuntimePoweredOn ? "Runtime on" : "Runtime off"
+    }
+
+    private var subtitle: String {
+        if state.isRuntimePoweredOn {
+            if let autoPowerOffAt = state.autoPowerOffAt {
+                return "Auto power-off at \(Self.timeFormatter.string(from: autoPowerOffAt))."
+            }
+            return "Local server and AI are running."
+        }
+        return "Local server and AI are stopped."
+    }
+
+    private var hoursLabel: String {
+        autoOffHours == floor(autoOffHours)
+            ? "\(Int(autoOffHours))h"
+            : String(format: "%.1fh", autoOffHours)
+    }
+
+    var body: some View {
+        Group {
+            if compact {
+                VStack(alignment: .leading, spacing: 8) {
+                    powerButton
+                    Text(subtitle)
+                        .font(.caption2)
+                        .foregroundStyle(AINewsTheme.textMuted)
+                        .lineLimit(2)
+                    if state.isRuntimePoweredOn {
+                        scheduleRow
+                    }
+                }
+            } else {
+                VStack(alignment: .leading, spacing: 12) {
+                    HStack(alignment: .center) {
+                        Label(title, systemImage: state.isRuntimePoweredOn ? "power.circle.fill" : "power.circle")
+                            .font(.headline)
+                            .foregroundStyle(state.isRuntimePoweredOn ? AINewsTheme.accentCyan : AINewsTheme.textSecondary)
+                        Spacer()
+                        powerButton
+                    }
+                    Text(subtitle)
+                        .font(.caption)
+                        .foregroundStyle(AINewsTheme.textMuted)
+                    if state.isRuntimePoweredOn {
+                        scheduleRow
+                    }
+                }
+                .padding(16)
+                .aiNewsPanelStyle()
+            }
+        }
+    }
+
+    private var powerButton: some View {
+        Button {
+            Task {
+                if state.isRuntimePoweredOn {
+                    await state.powerOff()
+                } else {
+                    await state.powerOn()
+                }
+            }
+        } label: {
+            Label(state.isRuntimePoweredOn ? "Power Off" : "Power On", systemImage: "power")
+        }
+        .buttonStyle(.borderedProminent)
+        .tint(state.isRuntimePoweredOn ? AINewsTheme.accentGold : AINewsTheme.accentCyan)
+        .disabled(state.isBusy)
+        .help(state.isRuntimePoweredOn ? "Stop the local server and AI queue" : "Start the local server and AI queue")
+    }
+
+    private var scheduleRow: some View {
+        HStack(spacing: 10) {
+            Stepper(value: $autoOffHours, in: 0.5...24, step: 0.5) {
+                Text("Auto off in \(hoursLabel)")
+                    .font(compact ? .caption : .subheadline)
+                    .foregroundStyle(AINewsTheme.textSecondary)
+            }
+            .frame(maxWidth: compact ? 180 : 240, alignment: .leading)
+
+            Button("Set") {
+                Task { await state.schedulePowerOff(afterHours: autoOffHours) }
+            }
+            .buttonStyle(.bordered)
+            .disabled(state.isBusy)
+
+            if state.autoPowerOffAt != nil {
+                Button("Cancel") {
+                    state.cancelScheduledPowerOff()
+                }
+                .buttonStyle(.bordered)
+            }
+        }
+    }
+
+    private static let timeFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateStyle = .none
+        formatter.timeStyle = .short
+        return formatter
+    }()
 }
 
 private struct DashboardView: View {
@@ -478,6 +590,8 @@ private struct DashboardView: View {
             }
             .buttonStyle(.borderedProminent)
             .tint(AINewsTheme.accentCyan)
+
+            RuntimePowerControls(compact: true)
 
             Button("Workspace") {
                 state.showingWorkspace = true
@@ -2722,6 +2836,8 @@ private struct SettingsView: View {
             appearancePanel
 
             personalizationPanel
+
+            RuntimePowerControls()
 
             if let runtimeConfig = state.runtimeConfig {
                 VStack(alignment: .leading, spacing: 10) {

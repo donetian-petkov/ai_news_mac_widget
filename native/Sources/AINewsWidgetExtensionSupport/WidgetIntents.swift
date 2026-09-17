@@ -34,6 +34,26 @@ private func hideStoryImmediately(categoryID: Int, storyID: String, feedURL: Str
 }
 
 @available(macOS 14.0, *)
+public struct ToggleRuntimePowerIntent: AppIntent {
+    public static let title: LocalizedStringResource = "Toggle AI News Power"
+    public static let openAppWhenRun = true
+
+    public init() {}
+
+    public func perform() async throws -> some IntentResult {
+        try await MainActor.run {
+            let store = SnapshotStore.shared
+            let snapshot = store.loadSnapshot()
+            let current = snapshot.runtimePower.normalized()
+            let next = RuntimePowerState(isPoweredOn: !current.isPoweredOn, autoPowerOffAt: nil)
+            try store.setRuntimePower(next)
+            try store.appendCommand(WidgetCommand(kind: next.isPoweredOn ? .powerOn : .powerOff))
+        }
+        return .result()
+    }
+}
+
+@available(macOS 14.0, *)
 public struct RefreshCategoryIntent: AppIntent {
     public static let title: LocalizedStringResource = "Refresh Category"
     public static let openAppWhenRun = true

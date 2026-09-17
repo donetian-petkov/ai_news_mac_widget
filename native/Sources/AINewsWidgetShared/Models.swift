@@ -1057,6 +1057,8 @@ public struct WidgetSnapshot: Codable, Equatable, Sendable {
     public var filteredPendingCount: Int
     /// Total pending AI outputs across the entire app queue.
     public var totalPendingCount: Int
+    /// Desired local runtime state shared by the Mac app and widgets.
+    public var runtimePower: RuntimePowerState
 
     public init(
         lastUpdated: Date = Date(),
@@ -1068,7 +1070,8 @@ public struct WidgetSnapshot: Codable, Equatable, Sendable {
         keywordMatches: [WidgetStory] = [],
         monitorAlerts: [HistoryEntry] = [],
         filteredPendingCount: Int = 0,
-        totalPendingCount: Int = 0
+        totalPendingCount: Int = 0,
+        runtimePower: RuntimePowerState = RuntimePowerState()
     ) {
         self.lastUpdated = lastUpdated
         self.categories = categories
@@ -1080,10 +1083,11 @@ public struct WidgetSnapshot: Codable, Equatable, Sendable {
         self.monitorAlerts = monitorAlerts
         self.filteredPendingCount = filteredPendingCount
         self.totalPendingCount = totalPendingCount
+        self.runtimePower = runtimePower
     }
 
     enum CodingKeys: String, CodingKey {
-        case lastUpdated, categories, activeCategoryID, storiesByCategory, pendingByCategory, keywords, keywordMatches, monitorAlerts, filteredPendingCount, totalPendingCount
+        case lastUpdated, categories, activeCategoryID, storiesByCategory, pendingByCategory, keywords, keywordMatches, monitorAlerts, filteredPendingCount, totalPendingCount, runtimePower
     }
 
     public init(from decoder: Decoder) throws {
@@ -1099,6 +1103,28 @@ public struct WidgetSnapshot: Codable, Equatable, Sendable {
         monitorAlerts = try container.decodeIfPresent([HistoryEntry].self, forKey: .monitorAlerts) ?? []
         filteredPendingCount = try container.decodeIfPresent(Int.self, forKey: .filteredPendingCount) ?? 0
         totalPendingCount = try container.decodeIfPresent(Int.self, forKey: .totalPendingCount) ?? 0
+        runtimePower = try container.decodeIfPresent(RuntimePowerState.self, forKey: .runtimePower) ?? RuntimePowerState()
+    }
+}
+
+public struct RuntimePowerState: Codable, Equatable, Sendable {
+    public var isPoweredOn: Bool
+    public var autoPowerOffAt: Date?
+
+    public init(isPoweredOn: Bool = true, autoPowerOffAt: Date? = nil) {
+        self.isPoweredOn = isPoweredOn
+        self.autoPowerOffAt = autoPowerOffAt
+    }
+
+    public func normalized(now: Date = Date()) -> RuntimePowerState {
+        if let autoPowerOffAt, autoPowerOffAt <= now {
+            return RuntimePowerState(isPoweredOn: false, autoPowerOffAt: nil)
+        }
+        return self
+    }
+
+    public var isEffectivelyPoweredOn: Bool {
+        normalized().isPoweredOn
     }
 }
 
@@ -1132,6 +1158,8 @@ public struct WidgetCommand: Codable, Equatable, Hashable, Identifiable, Sendabl
         case openNeutralTitle
         case openShare
         case hideStory
+        case powerOn
+        case powerOff
     }
 
     public var id: UUID

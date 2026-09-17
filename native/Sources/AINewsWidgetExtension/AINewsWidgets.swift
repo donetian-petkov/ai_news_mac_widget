@@ -54,6 +54,7 @@ struct CategoryWidgetEntry: TimelineEntry {
     let stories: [WidgetStory]
     let pendingCount: Int
     let alertCount: Int
+    let runtimePower: RuntimePowerState
 }
 
 @available(macOS 14.0, *)
@@ -73,7 +74,8 @@ struct CategoryWidgetProvider: AppIntentTimelineProvider {
                 WidgetStory(id: "2", feedUrl: "feed", title: "A new material solved a long-time engineering issue", summary: "Another compact summary line.")
             ],
             pendingCount: 2,
-            alertCount: 1
+            alertCount: 1,
+            runtimePower: RuntimePowerState()
         )
     }
 
@@ -94,7 +96,14 @@ struct CategoryWidgetProvider: AppIntentTimelineProvider {
         } ?? visibleCategories.first ?? snapshot.categories.first
         let stories = category.flatMap { snapshot.storiesByCategory[String($0.id)] } ?? []
         let pendingCount = category.flatMap { snapshot.pendingByCategory[String($0.id)] } ?? 0
-        return CategoryWidgetEntry(date: Date(), category: category, stories: stories, pendingCount: pendingCount, alertCount: snapshot.monitorAlerts.count)
+        return CategoryWidgetEntry(
+            date: Date(),
+            category: category,
+            stories: stories,
+            pendingCount: pendingCount,
+            alertCount: snapshot.monitorAlerts.count,
+            runtimePower: snapshot.runtimePower.normalized()
+        )
     }
 }
 
@@ -143,6 +152,7 @@ struct CategoryWidgetView: View {
                         .font(.headline)
                         .foregroundStyle(AINewsTheme.textPrimary)
                     Spacer()
+                    RuntimePowerButton(power: entry.runtimePower, compact: true)
                     if family != .systemSmall {
                         if category.activeCount > category.preferredCount {
                             Button(intent: ResetCategoryIntent(categoryID: category.id)) {
@@ -166,6 +176,11 @@ struct CategoryWidgetView: View {
                     Text("\(entry.pendingCount) pending")
                         .font(.caption2.weight(.semibold))
                         .foregroundStyle(AINewsTheme.accentGold)
+                }
+                if !entry.runtimePower.isPoweredOn {
+                    Label("Server and AI off", systemImage: "power")
+                        .font(.caption2.weight(.semibold))
+                        .foregroundStyle(AINewsTheme.textMuted)
                 }
                 if entry.alertCount > 0 {
                     Label("\(entry.alertCount) monitor alert\(entry.alertCount == 1 ? "" : "s")", systemImage: "bell.badge.fill")
@@ -334,9 +349,16 @@ struct MasterWidgetView: View {
                     .font(.headline)
                     .foregroundStyle(AINewsTheme.textPrimary)
                 Spacer()
+                RuntimePowerButton(power: entry.snapshot.runtimePower.normalized(), compact: true)
                 Text(totalPending > 0 ? "\(visibleCategories.count) live · \(totalPending) pending" : "\(visibleCategories.count) live")
                     .font(.caption)
                     .foregroundStyle(totalPending > 0 ? AINewsTheme.accentGold : AINewsTheme.textMuted)
+            }
+
+            if !entry.snapshot.runtimePower.normalized().isPoweredOn {
+                Label("Server and AI off", systemImage: "power")
+                    .font(.caption2.weight(.semibold))
+                    .foregroundStyle(AINewsTheme.textMuted)
             }
 
             if alertCount > 0 {
@@ -456,6 +478,7 @@ struct KeywordWidgetEntry: TimelineEntry {
     let stories: [WidgetStory]
     let pendingCount: Int
     let alertCount: Int
+    let runtimePower: RuntimePowerState
 }
 
 @available(macOS 14.0, *)
@@ -469,7 +492,8 @@ struct KeywordWidgetProvider: TimelineProvider {
                 WidgetStory(id: "2", feedUrl: "feed", title: "Humanoid robotics startup raises a large round", summary: "Another tracked-topic match.")
             ],
             pendingCount: 16,
-            alertCount: 1
+            alertCount: 1,
+            runtimePower: RuntimePowerState()
         )
     }
 
@@ -493,7 +517,8 @@ struct KeywordWidgetProvider: TimelineProvider {
             keywords: snapshot.keywords,
             stories: snapshot.keywordMatches,
             pendingCount: snapshot.totalPendingCount,
-            alertCount: snapshot.monitorAlerts.count
+            alertCount: snapshot.monitorAlerts.count,
+            runtimePower: snapshot.runtimePower.normalized()
         )
     }
 }
@@ -525,11 +550,18 @@ struct KeywordWidgetView: View {
                     .font(.headline)
                     .foregroundStyle(AINewsTheme.textPrimary)
                 Spacer()
+                RuntimePowerButton(power: entry.runtimePower, compact: true)
                 Text(entry.pendingCount > 0
                      ? "\(entry.stories.count) match\(entry.stories.count == 1 ? "" : "es") · \(entry.pendingCount) pending"
                      : "\(entry.stories.count) match\(entry.stories.count == 1 ? "" : "es")")
                     .font(.caption)
                     .foregroundStyle(entry.pendingCount > 0 ? AINewsTheme.accentGold : AINewsTheme.textMuted)
+            }
+
+            if !entry.runtimePower.isPoweredOn {
+                Label("Server and AI off", systemImage: "power")
+                    .font(.caption2.weight(.semibold))
+                    .foregroundStyle(AINewsTheme.textMuted)
             }
 
             if entry.alertCount > 0 {
@@ -636,6 +668,26 @@ struct KeywordWidget: Widget {
         .configurationDisplayName("AI News Keywords")
         .description("Show the latest stories that match your tracked topics.")
         .supportedFamilies([.systemSmall, .systemMedium, .systemLarge])
+    }
+}
+
+@available(macOS 14.0, *)
+private struct RuntimePowerButton: View {
+    let power: RuntimePowerState
+    let compact: Bool
+
+    var body: some View {
+        Button(intent: ToggleRuntimePowerIntent()) {
+            if compact {
+                Image(systemName: power.isPoweredOn ? "power.circle.fill" : "power.circle")
+                    .accessibilityLabel(power.isPoweredOn ? "Power off" : "Power on")
+            } else {
+                Label(power.isPoweredOn ? "On" : "Off", systemImage: power.isPoweredOn ? "power.circle.fill" : "power.circle")
+            }
+        }
+        .buttonStyle(.plain)
+        .foregroundStyle(power.isPoweredOn ? AINewsTheme.accentCyan : AINewsTheme.textMuted)
+        .help(power.isPoweredOn ? "Power off local server and AI" : "Power on local server and AI")
     }
 }
 

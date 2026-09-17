@@ -30,10 +30,13 @@ public final class WidgetAppState: ObservableObject {
     @Published public var lastSharedStoryKey: String?
     @Published public var lastShareMessage: String?
     @Published public var scrollToTopSignal = 0
+    @Published public var runtimePower = RuntimePowerState()
 
     private let sessionStore: SessionStore
     private let snapshotStore: SnapshotStore
     private var isProcessingCommands = false
+    private var startBackend: (@MainActor () -> Void)?
+    private var stopBackend: (@MainActor () -> Void)?
 
     public init(
         sessionStore: SessionStore? = nil,
@@ -43,6 +46,11 @@ public final class WidgetAppState: ObservableObject {
         self.snapshotStore = snapshotStore ?? .shared
         self.session = self.sessionStore.session
         let snapshot = self.snapshotStore.loadSnapshot()
+        let normalizedPower = snapshot.runtimePower.normalized()
+        self.runtimePower = normalizedPower
+        if normalizedPower != snapshot.runtimePower {
+            try? self.snapshotStore.setRuntimePower(normalizedPower)
+        }
         self.categories = snapshot.categories
         self.selectedCategoryID = snapshot.activeCategoryID ?? snapshot.categories.first?.id
         self.keywords = snapshot.keywords
@@ -64,6 +72,19 @@ public final class WidgetAppState: ObservableObject {
         sessionStore.synchronizeDiscoveredBaseURL()
     }
 
+    public func configureBackendPower(start: @escaping @MainActor () -> Void, stop: @escaping @MainActor () -> Void) {
+        startBackend = start
+        stopBackend = stop
+    }
+
+    public var isRuntimePoweredOn: Bool {
+        runtimePower.normalized().isPoweredOn
+    }
+
+    public var autoPowerOffAt: Date? {
+        runtimePower.normalized().autoPowerOffAt
+    }
+
     public var selectedCategory: WidgetCategory? {
         categories.first(where: { $0.id == selectedCategoryID })
     }
@@ -73,6 +94,11 @@ public final class WidgetAppState: ObservableObject {
     }
 
     public func bootstrapIfNeeded() async {
+        normalizeRuntimePower()
+        guard runtimePower.isPoweredOn else {
+            statusMessage = "Runtime is powered off. Use Power On to start the local server and AI."
+            return
+        }
         refreshDiscoveredBackendURL()
         await waitForBackendReady()
         guard session != nil else { return }
@@ -125,7 +151,7 @@ public final class WidgetAppState: ObservableObject {
         statusMessage = nil
         lastSharedStoryKey = nil
         lastShareMessage = nil
-        try? snapshotStore.saveSnapshot(WidgetSnapshot())
+        try? snapshotStore.saveSnapshot(WidgetSnapshot(runtimePower: runtimePower))
     }
 
     public func reloadEverything(selectFirstCategory: Bool = false, suppressUnauthorizedAlert: Bool = false) async {
@@ -761,6 +787,66 @@ public final class WidgetAppState: ObservableObject {
         }
     }
 
+    public func powerOn() async {
+        await setRuntimePower(poweredOn: true, autoPowerOffAt: nil, status: "Powering on local server and AI…")
+    }
+
+    public func powerOff() async {
+        await setRuntimePower(poweredOn: false, autoPowerOffAt: nil, status: "Powering off local server and AI…")
+    }
+
+    public func schedulePowerOff(afterHours hours: Double) async {
+        let clampedHours = min(max(hours, 0.25), 24)
+        guard runtimePower.isPoweredOn else {
+            statusMessage = "Runtime is already powered off."
+            return
+        }
+        let deadline = Date().addingTimeInterval(clampedHours * 3600)
+        runtimePower = RuntimePowerState(isPoweredOn: true, autoPowerOffAt: deadline)
+        persistRuntimePower()
+        let formatted = Self.powerDateFormatter.string(from: deadline)
+        statusMessage = "Auto power-off scheduled for \(formatted)."
+    }
+
+    public func cancelScheduledPowerOff() {
+        guard runtimePower.autoPowerOffAt != nil else { return }
+        runtimePower = RuntimePowerState(isPoweredOn: runtimePower.isPoweredOn, autoPowerOffAt: nil)
+        persistRuntimePower()
+        statusMessage = "Auto power-off cancelled."
+    }
+
+    private func setRuntimePower(poweredOn: Bool, autoPowerOffAt: Date?, status: String) async {
+        isBusy = true
+        errorMessage = nil
+        statusMessage = status
+        runtimePower = RuntimePowerState(isPoweredOn: poweredOn, autoPowerOffAt: autoPowerOffAt).normalized()
+        persistRuntimePower()
+
+        if poweredOn {
+            startBackend?()
+            await waitForBackendReady(maxAttempts: 12)
+            if session != nil, let api = try? makeAPIClient() {
+                _ = try? await api.controlOpsAiQueue(action: "resume")
+                await loadRuntimeContext(suppressUnauthorizedAlert: true)
+                await refreshAiProgress()
+            }
+            statusMessage = "Local server and AI are powered on."
+        } else {
+            if session != nil, let api = try? makeAPIClient() {
+                _ = try? await api.controlOpsAiQueue(action: "pause")
+            }
+            stopBackend?()
+            if var config = runtimeConfig {
+                config.aiEnabled = false
+                runtimeConfig = config
+            }
+            backendOps = nil
+            statusMessage = "Local server and AI are powered off."
+        }
+
+        isBusy = false
+    }
+
     public func createDatabaseBackup(reason: String = "manual") async {
         await runBusy("Creating database backup...") {
             let api = try self.makeAPIClient()
@@ -801,9 +887,8 @@ public final class WidgetAppState: ObservableObject {
 
     public func startCommandLoop() async {
         while !Task.isCancelled {
-            if session != nil {
-                await processPendingCommands()
-            }
+            await enforcePowerSchedule()
+            await processPendingCommands()
             try? await Task.sleep(nanoseconds: 2_000_000_000)
         }
     }
@@ -884,7 +969,21 @@ public final class WidgetAppState: ObservableObject {
         snapshot.pendingByCategory = Dictionary(uniqueKeysWithValues: categories.map { (String($0.id), pendingCount(for: $0)) })
         snapshot.filteredPendingCount = aiProgress[FilteredFeedURL]?.pending ?? pendingOutputCount(in: snapshot.keywordMatches)
         snapshot.totalPendingCount = aiProgress.values.reduce(0) { $0 + $1.pending }
+        snapshot.runtimePower = runtimePower.normalized()
         try? snapshotStore.saveSnapshot(snapshot)
+    }
+
+    private func persistRuntimePower() {
+        runtimePower = runtimePower.normalized()
+        try? snapshotStore.setRuntimePower(runtimePower)
+    }
+
+    private func normalizeRuntimePower() {
+        let normalized = runtimePower.normalized()
+        if normalized != runtimePower {
+            runtimePower = normalized
+            persistRuntimePower()
+        }
     }
 
     private func removeStoryLocally(_ story: WidgetStory) {
@@ -971,6 +1070,19 @@ public final class WidgetAppState: ObservableObject {
     }
 
     private func execute(_ command: WidgetCommand) async {
+        switch command.kind {
+        case .powerOn:
+            await powerOn()
+            return
+        case .powerOff:
+            await powerOff()
+            return
+        default:
+            break
+        }
+
+        guard session != nil, runtimePower.isPoweredOn else { return }
+
         if let categoryID = command.categoryID {
             if categoryID == FilteredCategoryID {
                 selectedCategoryID = FilteredCategoryID
@@ -1012,6 +1124,8 @@ public final class WidgetAppState: ObservableObject {
         case .hideStory:
             guard let story = story(for: command) else { return }
             await triggerStoryAction(.hide, story: story, recordCommand: false)
+        case .powerOn, .powerOff:
+            break
         }
     }
 
@@ -1087,6 +1201,19 @@ public final class WidgetAppState: ObservableObject {
             }
         }
     }
+
+    private func enforcePowerSchedule() async {
+        guard runtimePower.isPoweredOn, let deadline = runtimePower.autoPowerOffAt else { return }
+        guard deadline <= Date() else { return }
+        await setRuntimePower(poweredOn: false, autoPowerOffAt: nil, status: "Auto power-off reached. Stopping local server and AI…")
+    }
+
+    private static let powerDateFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateStyle = .none
+        formatter.timeStyle = .short
+        return formatter
+    }()
 
     private func updateRuntimeFeed(_ feed: RuntimeFeed) {
         guard var runtimeConfig else { return }

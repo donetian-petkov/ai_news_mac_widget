@@ -79,6 +79,14 @@ public final class SnapshotStore {
         writeDiagnostic("hideStory storyKey=\(storyKey)")
     }
 
+    public func setRuntimePower(_ runtimePower: RuntimePowerState) throws {
+        var snapshot = loadSnapshot()
+        snapshot.runtimePower = runtimePower.normalized()
+        snapshot.lastUpdated = Date()
+        try saveSnapshot(snapshot)
+        writeDiagnostic("setRuntimePower poweredOn=\(snapshot.runtimePower.isPoweredOn)")
+    }
+
     public func loadCommands() -> [WidgetCommand] {
         for url in commandURLs {
             guard let data = try? Data(contentsOf: url),

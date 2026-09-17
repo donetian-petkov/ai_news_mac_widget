@@ -16,6 +16,7 @@ extension Notification.Name {
     static let aiNewsSavedWidgetViewsChanged = Notification.Name("AINewsSavedWidgetViewsChanged")
 }
 
+@MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private var statusItem: NSStatusItem?
     private var appState: WidgetAppState?
@@ -25,10 +26,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     @MainActor
     func attach(state: WidgetAppState) {
         appState = state
+        state.configureBackendPower(
+            start: { BackendSupervisor.shared.ensureBackendStarted() },
+            stop: { BackendSupervisor.shared.stopBackend() }
+        )
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
-        BackendSupervisor.shared.ensureBackendStarted()
+        if Self.shouldStartBackendOnLaunch() {
+            BackendSupervisor.shared.ensureBackendStarted()
+        } else {
+            BackendSupervisor.shared.stopBackend()
+        }
         NSApp.setActivationPolicy(.regular)
         if let bundledIcon = NSImage(named: "AppIcon") {
             NSApp.applicationIconImage = bundledIcon
@@ -208,6 +217,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationWillTerminate(_ notification: Notification) {
         // Don't leave the backend running as a stale orphan for the next launch.
         BackendSupervisor.shared.stopBackend()
+    }
+
+    private static func shouldStartBackendOnLaunch() -> Bool {
+        let store = SnapshotStore.shared
+        var snapshot = store.loadSnapshot()
+        let normalized = snapshot.runtimePower.normalized()
+        if normalized != snapshot.runtimePower {
+            snapshot.runtimePower = normalized
+            try? store.saveSnapshot(snapshot)
+        }
+        return normalized.isPoweredOn
     }
 }
 
