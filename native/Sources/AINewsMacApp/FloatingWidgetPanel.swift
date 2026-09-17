@@ -61,6 +61,25 @@ private extension View {
                     .stroke(AINewsTheme.panelBorder.opacity(0.85), lineWidth: 1)
             )
     }
+
+}
+
+private struct FloatingPowerButtonChrome: ViewModifier {
+    let poweredOn: Bool
+    let size: CGFloat
+
+    func body(content: Content) -> some View {
+        content
+            .frame(width: size, height: size)
+            .background(
+                Circle()
+                    .fill(poweredOn ? AINewsTheme.accentCyan.opacity(0.16) : AINewsTheme.backgroundAlt.opacity(0.96))
+            )
+            .overlay(
+                Circle()
+                    .stroke(poweredOn ? AINewsTheme.accentCyan.opacity(0.9) : AINewsTheme.panelBorder.opacity(0.85), lineWidth: 1)
+            )
+    }
 }
 
 struct SavedWidgetEntry: Codable, Equatable, Identifiable {
@@ -1257,10 +1276,10 @@ private struct FloatingWidgetView: View {
                 }
             }
         } label: {
-            Image(systemName: state.isRuntimePoweredOn ? "power.circle.fill" : "power.circle")
-                .font(widgetFont(fontSize, weight: .semibold))
+            Image(systemName: "power")
+                .font(widgetFont(fontSize + 1.5, weight: .bold))
                 .foregroundStyle(state.isRuntimePoweredOn ? AINewsTheme.accentCyan : AINewsTheme.textMuted)
-                .floatingHeaderCircle(size: size)
+                .modifier(FloatingPowerButtonChrome(poweredOn: state.isRuntimePoweredOn, size: size))
         }
         .buttonStyle(.borderless)
         .disabled(state.isBusy)
