@@ -48,6 +48,19 @@ private extension View {
     func pointingHandCursor() -> some View {
         background(PointingHandCursorView())
     }
+
+    func floatingHeaderCircle(size: CGFloat) -> some View {
+        self
+            .frame(width: size, height: size)
+            .background(
+                Circle()
+                    .fill(AINewsTheme.backgroundAlt.opacity(0.96))
+            )
+            .overlay(
+                Circle()
+                    .stroke(AINewsTheme.panelBorder.opacity(0.85), lineWidth: 1)
+            )
+    }
 }
 
 struct SavedWidgetEntry: Codable, Equatable, Identifiable {
@@ -1137,6 +1150,7 @@ private struct FloatingWidgetView: View {
 
     private var compactHeaderActions: some View {
         HStack(spacing: 5) {
+            headerPowerButton(size: 28, fontSize: 12.5)
             headerModeButton(.column, systemImage: "rectangle.grid.1x2", size: 26)
             headerModeButton(.stack, systemImage: "square.stack.3d.up", size: 26)
             if loading {
@@ -1147,25 +1161,18 @@ private struct FloatingWidgetView: View {
             } label: {
                 Image(systemName: "arrow.clockwise")
                     .font(widgetFont(12.5, weight: .semibold))
-                    .foregroundStyle(AINewsTheme.textPrimary)
-                    .frame(width: 28, height: 28)
-                    .background(
-                        Circle()
-                            .fill(AINewsTheme.backgroundAlt.opacity(0.96))
-                    )
-                    .overlay(
-                        Circle()
-                            .stroke(AINewsTheme.panelBorder.opacity(0.82), lineWidth: 1)
-                    )
+                    .floatingHeaderCircle(size: 28)
             }
             .buttonStyle(.borderless)
             .help("Reload this category")
+            .pointingHandCursor()
         }
         .fixedSize(horizontal: true, vertical: false)
     }
 
     private var headerActions: some View {
         HStack(spacing: 6) {
+            headerPowerButton()
             headerModeButton(.column, systemImage: "rectangle.grid.1x2")
             headerModeButton(.stack, systemImage: "square.stack.3d.up")
             if loading {
@@ -1176,19 +1183,11 @@ private struct FloatingWidgetView: View {
             } label: {
                 Image(systemName: "arrow.clockwise")
                     .font(widgetFont(14, weight: .semibold))
-                    .foregroundStyle(AINewsTheme.textPrimary)
-                    .frame(width: 30, height: 30)
-                    .background(
-                        Circle()
-                            .fill(AINewsTheme.backgroundAlt.opacity(0.96))
-                    )
-                    .overlay(
-                        Circle()
-                            .stroke(AINewsTheme.panelBorder.opacity(0.85), lineWidth: 1)
-                    )
+                    .floatingHeaderCircle(size: 30)
             }
             .buttonStyle(.borderless)
             .help("Reload this category")
+            .pointingHandCursor()
         }
         .fixedSize(horizontal: true, vertical: false)
     }
@@ -1245,6 +1244,28 @@ private struct FloatingWidgetView: View {
         }
         .buttonStyle(.borderless)
         .help(mode == .column ? "Column view" : "Stack view")
+        .pointingHandCursor()
+    }
+
+    private func headerPowerButton(size: CGFloat = 30, fontSize: CGFloat = 14) -> some View {
+        Button {
+            Task {
+                if state.isRuntimePoweredOn {
+                    await state.powerOff()
+                } else {
+                    await state.powerOn()
+                }
+            }
+        } label: {
+            Image(systemName: state.isRuntimePoweredOn ? "power.circle.fill" : "power.circle")
+                .font(widgetFont(fontSize, weight: .semibold))
+                .foregroundStyle(state.isRuntimePoweredOn ? AINewsTheme.accentCyan : AINewsTheme.textMuted)
+                .floatingHeaderCircle(size: size)
+        }
+        .buttonStyle(.borderless)
+        .disabled(state.isBusy)
+        .help(state.isRuntimePoweredOn ? "Power off local server and AI" : "Power on local server and AI")
+        .pointingHandCursor()
     }
 
     private var tokenText: String {
