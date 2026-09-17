@@ -731,6 +731,63 @@ private struct FloatingWidgetView: View {
         }
     }
 
+    private var pollingFeedStatus: (enabled: Int, total: Int) {
+        guard let feeds = state.runtimeConfig?.feeds else { return (0, 0) }
+        let feedByURL = Dictionary(uniqueKeysWithValues: feeds.map { ($0.url, $0) })
+        let feedURLs: [String]
+        if isFiltered {
+            feedURLs = feeds.map(\.url)
+        } else {
+            feedURLs = allCategoryIDs.flatMap { id in
+                state.categories.first(where: { $0.id == id })?.feedUrls ?? []
+            }
+        }
+        let uniqueFeedURLs = Array(Set(feedURLs))
+        let knownFeeds = uniqueFeedURLs.compactMap { feedByURL[$0] }
+        return (
+            knownFeeds.filter { $0.settings.pollingEnabled }.count,
+            knownFeeds.count
+        )
+    }
+
+    private var serverStatusText: String {
+        state.isRuntimePoweredOn ? "Server on" : "Server off"
+    }
+
+    private var fetchStatusText: String {
+        if !state.isRuntimePoweredOn {
+            return "Fetch off"
+        }
+        if loading {
+            return "Fetching..."
+        }
+        let status = pollingFeedStatus
+        if status.total == 0 {
+            return "Fetch unknown"
+        }
+        if status.enabled == 0 {
+            return "Fetch off"
+        }
+        if status.enabled == status.total {
+            return "Fetch on"
+        }
+        return "Fetch \(status.enabled)/\(status.total)"
+    }
+
+    private var runtimeStatusTint: Color {
+        if !state.isRuntimePoweredOn || pollingFeedStatus.enabled == 0 {
+            return AINewsTheme.accentGold
+        }
+        if loading {
+            return AINewsTheme.accentCyan
+        }
+        return AINewsTheme.textMuted
+    }
+
+    private var runtimeStatusLine: String {
+        "\(serverStatusText) · \(fetchStatusText)"
+    }
+
     private var widgetFontScale: CGFloat {
         theme.widgetFontSize.scale
     }
@@ -1107,6 +1164,9 @@ private struct FloatingWidgetView: View {
                 Text("\(tokenText) tokens")
                     .font(widgetHeaderStat(weight: .bold))
                     .foregroundStyle(AINewsTheme.accentCyan)
+                Text(runtimeStatusLine)
+                    .font(widgetHeaderStat())
+                    .foregroundStyle(runtimeStatusTint)
                 Text("\(pendingCount) pending")
                     .font(widgetHeaderStat())
                     .foregroundStyle(pendingCount > 0 ? AINewsTheme.accentGold : AINewsTheme.textMuted)
@@ -1153,6 +1213,10 @@ private struct FloatingWidgetView: View {
                 Text("\(tokenText) tokens")
                     .font(widgetFont(10.75, weight: .bold))
                     .foregroundStyle(AINewsTheme.accentCyan)
+                Text(runtimeStatusLine)
+                    .font(widgetFont(10.25, weight: .semibold))
+                    .foregroundStyle(runtimeStatusTint)
+                    .minimumScaleFactor(0.72)
                 Text("\(pendingCount) pending")
                     .font(widgetFont(10.75, weight: .semibold))
                     .foregroundStyle(pendingCount > 0 ? AINewsTheme.accentGold : AINewsTheme.textMuted)
@@ -1283,7 +1347,7 @@ private struct FloatingWidgetView: View {
         }
         .buttonStyle(.borderless)
         .disabled(state.isBusy)
-        .help(state.isRuntimePoweredOn ? "Power off local server and AI" : "Power on local server and AI")
+        .help(state.isRuntimePoweredOn ? "Power off local server and AI. \(runtimeStatusLine)" : "Power on local server and AI. \(runtimeStatusLine)")
         .pointingHandCursor()
     }
 
