@@ -51,14 +51,15 @@ private extension View {
 
     func floatingHeaderCircle(size: CGFloat) -> some View {
         self
+            .foregroundStyle(AINewsTheme.textSecondary)
             .frame(width: size, height: size)
             .background(
                 Circle()
-                    .fill(AINewsTheme.backgroundAlt.opacity(0.96))
+                    .fill(AINewsTheme.backgroundAlt.opacity(0.92))
             )
             .overlay(
                 Circle()
-                    .stroke(AINewsTheme.panelBorder.opacity(0.85), lineWidth: 1)
+                    .stroke(AINewsTheme.panelBorder.opacity(0.55), lineWidth: 1)
             )
     }
 
@@ -73,12 +74,13 @@ private struct FloatingPowerButtonChrome: ViewModifier {
             .frame(width: size, height: size)
             .background(
                 Circle()
-                    .fill(poweredOn ? AINewsTheme.accentCyan.opacity(0.16) : AINewsTheme.backgroundAlt.opacity(0.96))
+                    .fill(poweredOn ? AINewsTheme.textPrimary.opacity(0.96) : AINewsTheme.backgroundAlt.opacity(0.92))
             )
             .overlay(
                 Circle()
-                    .stroke(poweredOn ? AINewsTheme.accentCyan.opacity(0.9) : AINewsTheme.panelBorder.opacity(0.85), lineWidth: 1)
+                    .stroke(poweredOn ? AINewsTheme.textPrimary.opacity(0.96) : AINewsTheme.textSecondary.opacity(0.82), lineWidth: 1.3)
             )
+            .shadow(color: poweredOn ? AINewsTheme.textPrimary.opacity(0.18) : Color.clear, radius: 6, x: 0, y: 0)
     }
 }
 
@@ -776,12 +778,12 @@ private struct FloatingWidgetView: View {
 
     private var runtimeStatusTint: Color {
         if !state.isRuntimePoweredOn || pollingFeedStatus.enabled == 0 {
-            return AINewsTheme.accentGold
+            return AINewsTheme.textPrimary
         }
         if loading {
-            return AINewsTheme.accentCyan
+            return AINewsTheme.textPrimary
         }
-        return AINewsTheme.textMuted
+        return AINewsTheme.textSecondary
     }
 
     private var runtimeStatusLine: String {
@@ -1139,7 +1141,7 @@ private struct FloatingWidgetView: View {
             HStack(spacing: 10) {
                 Image(systemName: "newspaper.fill")
                     .font(widgetFont(17, weight: .bold))
-                    .foregroundStyle(AINewsTheme.accentBlue)
+                    .foregroundStyle(AINewsTheme.textSecondary)
                 Text(displayCategoryName)
                     .font(widgetHeaderTitle())
                     .foregroundStyle(AINewsTheme.textPrimary)
@@ -1163,13 +1165,13 @@ private struct FloatingWidgetView: View {
                     .foregroundStyle(AINewsTheme.textSecondary)
                 Text("\(tokenText) tokens")
                     .font(widgetHeaderStat(weight: .bold))
-                    .foregroundStyle(AINewsTheme.accentCyan)
+                    .foregroundStyle(AINewsTheme.textSecondary)
                 Text(runtimeStatusLine)
                     .font(widgetHeaderStat())
                     .foregroundStyle(runtimeStatusTint)
                 Text("\(pendingCount) pending")
                     .font(widgetHeaderStat())
-                    .foregroundStyle(pendingCount > 0 ? AINewsTheme.accentGold : AINewsTheme.textMuted)
+                    .foregroundStyle(pendingCount > 0 ? AINewsTheme.textPrimary : AINewsTheme.textMuted)
             }
             .lineLimit(1)
             .padding(.horizontal, 14)
@@ -1188,7 +1190,7 @@ private struct FloatingWidgetView: View {
             HStack(spacing: 7) {
                 Image(systemName: "newspaper.fill")
                     .font(widgetFont(14, weight: .bold))
-                    .foregroundStyle(AINewsTheme.accentBlue)
+                    .foregroundStyle(AINewsTheme.textSecondary)
                 Text(displayCategoryName)
                     .font(widgetFont(15, weight: .bold))
                     .foregroundStyle(AINewsTheme.textPrimary)
@@ -1212,14 +1214,14 @@ private struct FloatingWidgetView: View {
                     .foregroundStyle(AINewsTheme.textSecondary)
                 Text("\(tokenText) tokens")
                     .font(widgetFont(10.75, weight: .bold))
-                    .foregroundStyle(AINewsTheme.accentCyan)
+                    .foregroundStyle(AINewsTheme.textSecondary)
                 Text(runtimeStatusLine)
                     .font(widgetFont(10.25, weight: .semibold))
                     .foregroundStyle(runtimeStatusTint)
                     .minimumScaleFactor(0.72)
                 Text("\(pendingCount) pending")
                     .font(widgetFont(10.75, weight: .semibold))
-                    .foregroundStyle(pendingCount > 0 ? AINewsTheme.accentGold : AINewsTheme.textMuted)
+                    .foregroundStyle(pendingCount > 0 ? AINewsTheme.textPrimary : AINewsTheme.textMuted)
             }
             .lineLimit(1)
             .multilineTextAlignment(.center)
@@ -1233,7 +1235,7 @@ private struct FloatingWidgetView: View {
 
     private var compactHeaderActions: some View {
         HStack(spacing: 5) {
-            headerPowerButton(size: 28, fontSize: 12.5)
+            headerPowerButton(size: 32, fontSize: 14)
             headerModeButton(.column, systemImage: "rectangle.grid.1x2", size: 26)
             headerModeButton(.stack, systemImage: "square.stack.3d.up", size: 26)
             if loading {
@@ -1255,7 +1257,7 @@ private struct FloatingWidgetView: View {
 
     private var headerActions: some View {
         HStack(spacing: 6) {
-            headerPowerButton()
+            headerPowerButton(size: 34, fontSize: 15)
             headerModeButton(.column, systemImage: "rectangle.grid.1x2")
             headerModeButton(.stack, systemImage: "square.stack.3d.up")
             if loading {
@@ -1311,16 +1313,16 @@ private struct FloatingWidgetView: View {
         } label: {
             Image(systemName: systemImage)
                 .font(widgetFont(size == 28 ? 12 : 11, weight: .semibold))
-                .foregroundStyle(layoutMode == mode ? Color.black : AINewsTheme.textPrimary)
+                .foregroundStyle(layoutMode == mode ? AINewsTheme.textPrimary : AINewsTheme.textSecondary)
                 .frame(width: size, height: size)
                 .background(
                     RoundedRectangle(cornerRadius: 9, style: .continuous)
-                        .fill(layoutMode == mode ? AINewsTheme.accentCyan.opacity(0.95) : AINewsTheme.backgroundAlt.opacity(0.9))
+                        .fill(layoutMode == mode ? AINewsTheme.textPrimary.opacity(0.14) : AINewsTheme.backgroundAlt.opacity(0.9))
                 )
                 .overlay(
                     RoundedRectangle(cornerRadius: 9, style: .continuous)
                         .stroke(
-                            layoutMode == mode ? AINewsTheme.accentCyan.opacity(0.98) : AINewsTheme.panelBorder.opacity(0.75),
+                            layoutMode == mode ? AINewsTheme.textPrimary.opacity(0.82) : AINewsTheme.panelBorder.opacity(0.55),
                             lineWidth: 1
                         )
                 )
@@ -1342,7 +1344,7 @@ private struct FloatingWidgetView: View {
         } label: {
             Image(systemName: "power")
                 .font(widgetFont(fontSize + 1.5, weight: .bold))
-                .foregroundStyle(state.isRuntimePoweredOn ? AINewsTheme.accentCyan : AINewsTheme.textMuted)
+                .foregroundStyle(state.isRuntimePoweredOn ? AINewsTheme.background : AINewsTheme.textSecondary)
                 .modifier(FloatingPowerButtonChrome(poweredOn: state.isRuntimePoweredOn, size: size))
         }
         .buttonStyle(.borderless)
