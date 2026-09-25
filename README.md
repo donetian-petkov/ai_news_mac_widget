@@ -1,6 +1,6 @@
-# Signal Widgets for macOS
+# AI News macOS Floating Widgets
 
-Signal Widgets for macOS is a standalone macOS AI news product derived from `ai_news_deploy_ready`.
+AI News macOS Floating Widgets is a standalone macOS AI news product derived from `ai_news_deploy_ready`.
 
 It ships as an installed macOS app that supervises its own local Node/Prisma backend, plus native floating widgets for individual feeds, merged feeds, and the filtered feed.
 
