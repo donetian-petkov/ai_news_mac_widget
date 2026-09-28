@@ -6,7 +6,7 @@ It ships as an installed macOS app that supervises its own local Node/Prisma bac
 
 ## Screenshots
 
-Screenshots below are generated from the macOS SwiftUI source with representative local widget data.
+The screenshots below show the companion dashboard and the floating widget feed state.
 
 | Dashboard summary | Floating widget preview |
 | --- | --- |
