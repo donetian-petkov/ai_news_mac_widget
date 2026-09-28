@@ -6,11 +6,13 @@ It ships as an installed macOS app that supervises its own local Node/Prisma bac
 
 ## Screenshots
 
-The screenshots below show the companion dashboard and the floating widget feed state.
+The screenshots below show the companion dashboard and a live floating widget: scrolling the column view and stepping through stories in the stack view.
 
-| Dashboard summary | Floating widget preview |
+![AI News for Mac dashboard summary](docs/screenshots/dashboard-summary.png)
+
+| Floating widget, column view | Floating widget, stack view |
 | --- | --- |
-| ![AI News for Mac dashboard summary](docs/screenshots/dashboard-summary.png) | ![AI News floating widget preview](docs/screenshots/floating-widget-preview.png) |
+| ![Scrolling the floating widget in column view](docs/screenshots/widget-column.gif) | ![Stepping through stories in the floating widget stack view](docs/screenshots/widget-stack.gif) |
 
 ## Structure
 
