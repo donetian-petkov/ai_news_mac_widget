@@ -542,7 +542,12 @@ public struct APIClient: Sendable {
             throw APIClientError.server(message: message)
         }
         if http.statusCode == 404 {
-            throw APIClientError.notFound
+            let errorEnvelope = try? JSONDecoder().decode(ErrorEnvelope.self, from: data)
+            let message = (errorEnvelope?.error ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+            if message.isEmpty {
+                throw APIClientError.notFound
+            }
+            throw APIClientError.server(message: message)
         }
         if !(200...299).contains(http.statusCode) {
             let errorEnvelope = try? JSONDecoder().decode(ErrorEnvelope.self, from: data)
