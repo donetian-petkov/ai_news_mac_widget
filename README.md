@@ -4,6 +4,14 @@ AI News macOS Floating Widgets is a standalone macOS AI news product derived fro
 
 It ships as an installed macOS app that supervises its own local Node/Prisma backend, plus native floating widgets for individual feeds, merged feeds, and the filtered feed.
 
+## Screenshots
+
+Screenshots below are generated from the macOS SwiftUI source with representative local widget data.
+
+| Dashboard summary | Floating widget preview |
+| --- | --- |
+| ![AI News for Mac dashboard summary](docs/screenshots/dashboard-summary.png) | ![AI News floating widget preview](docs/screenshots/floating-widget-preview.png) |
+
 ## Structure
 
 - `backend/` - local Node/Prisma API, RSS ingestion, AI jobs, filtered-feed matching, saved views, and widget endpoints.
