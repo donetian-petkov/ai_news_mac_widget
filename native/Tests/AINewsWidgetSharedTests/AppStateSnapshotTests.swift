@@ -43,3 +43,22 @@ final class AppStateSnapshotTests: XCTestCase {
         XCTAssertEqual(snapshot.storiesByCategory["7"]?.map(\.id), ["s1"])
     }
 }
+
+final class AppStateUsageThrottleTests: XCTestCase {
+    @MainActor
+    func testBackgroundUsageRefreshIsThrottledButForceIsNot() {
+        let root = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let state = WidgetAppState(
+            sessionStore: SessionStore(defaults: UserDefaults(suiteName: UUID().uuidString)!),
+            snapshotStore: SnapshotStore(rootDirectory: root)
+        )
+        let start = Date(timeIntervalSince1970: 10_000)
+        XCTAssertTrue(state.claimUsageRefresh(force: false, now: start))
+        XCTAssertFalse(state.claimUsageRefresh(force: false, now: start.addingTimeInterval(5)))
+        XCTAssertFalse(state.claimUsageRefresh(force: false, now: start.addingTimeInterval(29)))
+        XCTAssertTrue(state.claimUsageRefresh(force: true, now: start.addingTimeInterval(29.5)))
+        // The forced refresh restarts the window.
+        XCTAssertFalse(state.claimUsageRefresh(force: false, now: start.addingTimeInterval(40)))
+        XCTAssertTrue(state.claimUsageRefresh(force: false, now: start.addingTimeInterval(60)))
+    }
+}

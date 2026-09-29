@@ -1505,7 +1505,7 @@ private struct DiagnosticsWorkspaceTab: View {
     private func reload() async {
         loading = true
         defer { loading = false }
-        await state.refreshUsage()
+        await state.refreshUsage(force: true)
         if let api = try? state.authorizedAPIClient() {
             ops = try? await api.fetchOpsAiJobs(limit: 150)
         }
@@ -3058,7 +3058,7 @@ private struct SettingsView: View {
                             .font(.headline)
                             .foregroundStyle(AINewsTheme.textSecondary)
                         Spacer()
-                        Button("Refresh") { Task { await state.refreshUsage() } }
+                        Button("Refresh") { Task { await state.refreshUsage(force: true) } }
                         Button("Export JSON") { Task { await state.exportUsageJSON() } }
                         Button("Export CSV") { Task { await state.exportUsageCSV() } }
                         Button("Reset usage") { Task { await state.resetUsage() } }

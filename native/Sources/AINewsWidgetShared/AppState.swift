@@ -632,7 +632,25 @@ public final class WidgetAppState: ObservableObject {
         }
     }
 
-    public func refreshUsage() async {
+    /// Minimum gap between background usage refreshes. Every floating widget
+    /// reload asks for usage, so without this the backend is hit once per widget
+    /// every few seconds for numbers that barely change.
+    static let usageRefreshInterval: TimeInterval = 30
+    private var lastUsageRefreshAt: Date?
+
+    /// Returns true when a usage refresh should run now, and records it.
+    func claimUsageRefresh(force: Bool, now: Date = Date()) -> Bool {
+        if !force, let last = lastUsageRefreshAt, now.timeIntervalSince(last) < Self.usageRefreshInterval {
+            return false
+        }
+        lastUsageRefreshAt = now
+        return true
+    }
+
+    /// Refreshes AI usage numbers. Background callers are throttled to one fetch
+    /// per `usageRefreshInterval`; pass `force: true` for an explicit user refresh.
+    public func refreshUsage(force: Bool = false) async {
+        guard claimUsageRefresh(force: force) else { return }
         do {
             refreshDiscoveredBackendURL()
             let api = try makeAPIClient()
