@@ -11,6 +11,7 @@ import { PrismaClient, type Prisma } from '@prisma/client';
 import { aiFeatureSettingsSchema, aiProviderSchema, clientMsgSchema, type ClientMsg } from '@ai-news/shared';
 import { z } from 'zod';
 import { registerProductFeatureApi, type ProductFeatureRuntime } from './productFeatures';
+import { chunk, fingerprintRecord, takeChangedRecords } from './newsPersistence';
 
 function bootstrapEnv() {
   const randomSecret = (bytes = 48) => crypto.randomBytes(bytes).toString('base64url');
@@ -2823,16 +2824,62 @@ async function readStateFromDb(): Promise<PersistedState | null> {
   }
 }
 
+// Fingerprint of each news row as this process last wrote it, keyed by record
+// key. Lets bulk re-evaluations skip rows that did not change. Every write path
+// updates it and every delete clears it, so it never claims a row is current
+// when it is not.
+const persistedNewsFingerprints = new Map<string, string>();
+const PERSIST_BATCH_SIZE = 100;
+
 async function upsertPersistedNewsItem(it: NewsInternal) {
+  let key: string | undefined;
   try {
     const data = buildPersistedNewsUpdate(it);
+    key = data.key;
     await prisma.newsItemRecord.upsert({
       where: { key: data.key },
       create: data,
       update: data
     });
+    persistedNewsFingerprints.set(data.key, fingerprintRecord(data));
   } catch (e) {
+    if (key) persistedNewsFingerprints.delete(key);
     console.error('Failed to persist news item:', (e as Error).message);
+  }
+}
+
+/**
+ * Persist many items at once: only rows that changed since this process last
+ * wrote them, in batched transactions. If a batch fails, its items fall back to
+ * one-by-one writes so a single bad row cannot block the rest.
+ */
+async function persistChangedNewsItems(items: NewsInternal[]) {
+  const itemByKey = new Map<string, NewsInternal>();
+  const records: Prisma.NewsItemRecordUncheckedCreateInput[] = [];
+  for (const it of items) {
+    try {
+      const data = buildPersistedNewsUpdate(it);
+      itemByKey.set(data.key, it);
+      records.push(data);
+    } catch (e) {
+      console.error('Failed to persist news item:', (e as Error).message);
+    }
+  }
+  const changed = takeChangedRecords(records, persistedNewsFingerprints);
+  for (const batch of chunk(changed, PERSIST_BATCH_SIZE)) {
+    try {
+      await prisma.$transaction(batch.map(data => prisma.newsItemRecord.upsert({
+        where: { key: data.key },
+        create: data,
+        update: data
+      })));
+    } catch {
+      for (const data of batch) {
+        persistedNewsFingerprints.delete(data.key);
+        const it = itemByKey.get(data.key);
+        if (it) await upsertPersistedNewsItem(it);
+      }
+    }
   }
 }
 
@@ -2993,6 +3040,7 @@ async function prunePersistedNewsArchive(nowMs = Date.now()) {
         publishedMs: { lt: BigInt(retentionCutoffMs) }
       }
     });
+    persistedNewsFingerprints.clear();
 
     const feedUrls = await prisma.newsItemRecord.findMany({
       distinct: ['feedUrl'],
@@ -3019,6 +3067,7 @@ async function prunePersistedNewsArchive(nowMs = Date.now()) {
             key: { in: overflowRows.map(row => row.key) }
           }
         });
+        overflowRows.forEach(row => persistedNewsFingerprints.delete(row.key));
 
         if (overflowRows.length < 250) break;
       }
@@ -3885,8 +3934,8 @@ async function refreshMatchStateForRecent() {
     it.matchScore = hit ? 1 : 0;
     it.filteredOk = hit;
     refreshDerivedDataForItem(it);
-    await upsertPersistedNewsItem(it);
   }
+  await persistChangedNewsItems(sorted);
 
   for (const it of sorted) {
     broadcastNewsUpdate(it);
@@ -5052,9 +5101,9 @@ function refreshDerivedDataForItem(item: NewsInternal) {
 function reprocessCachedItems(broadcast = false, persist = true) {
   recent.forEach(item => {
     refreshDerivedDataForItem(item);
-    if (persist) void upsertPersistedNewsItem(item);
     if (broadcast) broadcastNewsUpdate(item);
   });
+  if (persist) void persistChangedNewsItems(recent.slice());
 }
 
 function canGenerateDailyBriefing(feedUrls: string[]): { ok: true; items: NewsInternal[] } | { ok: false; reason: string } {
@@ -9645,7 +9694,9 @@ socketServer.on('connection', (ws: WebSocket) => {
       for (let i = recent.length - 1; i >= 0; i--) {
         if (recent[i].feedUrl === feedUrl) recent.splice(i, 1);
       }
-      void prisma.newsItemRecord.deleteMany({ where: { feedUrl } }).catch(err => {
+      void prisma.newsItemRecord.deleteMany({ where: { feedUrl } }).then(() => {
+        persistedNewsFingerprints.clear();
+      }).catch(err => {
         console.error(`Failed to delete archived news for removed feed ${feedUrl}:`, (err as Error).message);
       });
 
