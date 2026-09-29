@@ -48,7 +48,6 @@ public final class SnapshotStore {
                 firstDecodedSnapshot = snapshot
             }
             if !snapshot.categories.isEmpty || !snapshot.storiesByCategory.isEmpty {
-                writeDiagnostic("loadSnapshot hit \(url.path) categories=\(snapshot.categories.count) storyBuckets=\(snapshot.storiesByCategory.count)")
                 return snapshot
             }
         }
@@ -78,7 +77,6 @@ public final class SnapshotStore {
         snapshotWriteCount += 1
         lastWrittenSnapshotFingerprint = fingerprint
         lastWrittenSnapshotModificationDate = snapshotModificationDate()
-        writeDiagnostic("saveSnapshot categories=\(snapshot.categories.count) storyBuckets=\(snapshot.storiesByCategory.count)")
         reloadWidgetTimelines()
     }
 
@@ -123,7 +121,6 @@ public final class SnapshotStore {
                 continue
             }
             if !commands.isEmpty {
-                writeDiagnostic("loadCommands hit \(url.path) count=\(commands.count)")
                 return commands
             }
         }
@@ -180,23 +177,17 @@ public final class SnapshotStore {
         }
     }
 
+    private let diagnosticFormatter = ISO8601DateFormatter()
+
     private func writeDiagnostic(_ message: String) {
-        let timestamp = ISO8601DateFormatter().string(from: Date())
+        let timestamp = diagnosticFormatter.string(from: Date())
         let line = "\(timestamp) \(message)\n"
         guard let data = line.data(using: .utf8) else { return }
 
         for directory in storageDirectories {
             do {
                 try fm.createDirectory(at: directory, withIntermediateDirectories: true)
-                let logURL = directory.appendingPathComponent("widget-debug.log")
-                if fm.fileExists(atPath: logURL.path),
-                   let handle = try? FileHandle(forWritingTo: logURL) {
-                    try handle.seekToEnd()
-                    try handle.write(contentsOf: data)
-                    try handle.close()
-                } else {
-                    try data.write(to: logURL, options: .atomic)
-                }
+                try LogFile.append(data, to: directory.appendingPathComponent("widget-debug.log"))
                 if usesExplicitRoot { break }
             } catch {
                 continue
