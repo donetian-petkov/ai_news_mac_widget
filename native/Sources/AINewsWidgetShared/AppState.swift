@@ -959,20 +959,25 @@ public final class WidgetAppState: ObservableObject {
         saveSnapshot()
     }
 
-    private func saveSnapshot() {
+    /// Internal (not private) so tests can exercise it directly.
+    func saveSnapshot() {
         var snapshot = snapshotStore.loadSnapshot()
         snapshot.lastUpdated = Date()
         snapshot.categories = categories
         snapshot.activeCategoryID = selectedCategoryID
+        snapshot.keywordMatches = keywordMatches
         if let selectedCategoryID {
             if selectedCategoryID == FilteredCategoryID {
-                snapshot.keywordMatches = keywordMatches.isEmpty ? stories : keywordMatches
+                // While the Filtered view is open, fall back to the stories on screen
+                // if the keyword-match list itself is empty.
+                if keywordMatches.isEmpty {
+                    snapshot.keywordMatches = stories
+                }
             } else {
                 snapshot.storiesByCategory[String(selectedCategoryID)] = stories
             }
         }
         snapshot.keywords = keywords
-        snapshot.keywordMatches = keywordMatches
         snapshot.monitorAlerts = monitorAlerts
         snapshot.pendingByCategory = Dictionary(uniqueKeysWithValues: categories.map { (String($0.id), pendingCount(for: $0)) })
         snapshot.filteredPendingCount = aiProgress[FilteredFeedURL]?.pending ?? pendingOutputCount(in: snapshot.keywordMatches)
