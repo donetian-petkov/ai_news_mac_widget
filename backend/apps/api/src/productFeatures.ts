@@ -486,18 +486,20 @@ async function createDefaultCollectionsIfMissing(prisma: PrismaClient, userId: n
   }
 }
 
-function selectCategoryStories(category: WidgetCollectionPayload, allNews: ProductNews[]) {
+export function selectCategoryStories(category: WidgetCollectionPayload, allNews: ProductNews[]) {
   const feedUrlSet = new Set(category.feedUrls.map(url => String(url).trim()).filter(Boolean));
-  const eligible = allNews
-    .filter(item => feedUrlSet.size === 0 || feedUrlSet.has(item.feedUrl))
-    .sort((a, b) => Number(b.publishedMs || 0) - Number(a.publishedMs || 0));
   const pinnedKey = buildStoryLookupKey(category.pinnedStoryId, category.pinnedFeedUrl);
-  const withPinnedFirst = [...eligible].sort((left, right) => {
-    const leftPinned = buildStoryLookupKey(left.id, left.feedUrl) === pinnedKey ? 1 : 0;
-    const rightPinned = buildStoryLookupKey(right.id, right.feedUrl) === pinnedKey ? 1 : 0;
-    return rightPinned - leftPinned;
-  });
-  return withPinnedFirst;
+  // One stable sort: the pinned story first, then newest first. Keys and dates
+  // are computed once per story instead of inside the comparator.
+  const ranked = allNews
+    .filter(item => feedUrlSet.size === 0 || feedUrlSet.has(item.feedUrl))
+    .map(item => ({
+      item,
+      pinned: buildStoryLookupKey(item.id, item.feedUrl) === pinnedKey ? 1 : 0,
+      publishedMs: Number(item.publishedMs || 0)
+    }));
+  ranked.sort((left, right) => (right.pinned - left.pinned) || (right.publishedMs - left.publishedMs));
+  return ranked.map(entry => entry.item);
 }
 
 // The CREATE ... IF NOT EXISTS statements only need to run once per database
