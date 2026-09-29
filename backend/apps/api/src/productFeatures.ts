@@ -443,7 +443,32 @@ function toWidgetStory(news: ProductNews) {
   };
 }
 
-async function ensureDefaultCollectionsForUser(prisma: PrismaClient, userId: number, feeds: ProductFeed[]) {
+// Per database client: users whose default widget categories are known to exist.
+// Cleared for a user whenever one of their records is archived, so the "recreate
+// defaults when every category is gone" behaviour still works.
+const defaultCollectionsEnsured = new WeakMap<PrismaClient, Map<number, Promise<void>>>();
+
+export function forgetDefaultCollectionsForUser(prisma: PrismaClient, userId: number) {
+  defaultCollectionsEnsured.get(prisma)?.delete(userId);
+}
+
+export function ensureDefaultCollectionsForUser(prisma: PrismaClient, userId: number, feeds: ProductFeed[]): Promise<void> {
+  let perUser = defaultCollectionsEnsured.get(prisma);
+  if (!perUser) {
+    perUser = new Map();
+    defaultCollectionsEnsured.set(prisma, perUser);
+  }
+  const cached = perUser.get(userId);
+  if (cached) return cached;
+  const pending = createDefaultCollectionsIfMissing(prisma, userId, feeds);
+  perUser.set(userId, pending);
+  pending.catch(() => {
+    if (perUser?.get(userId) === pending) perUser.delete(userId);
+  });
+  return pending;
+}
+
+async function createDefaultCollectionsIfMissing(prisma: PrismaClient, userId: number, feeds: ProductFeed[]) {
   const existing = await listFeatureRows(prisma, userId, 'collection', 1);
   if (existing.length > 0) return;
   for (const [index, feed] of feeds.entries()) {
@@ -474,7 +499,23 @@ function selectCategoryStories(category: WidgetCollectionPayload, allNews: Produ
   return withPinnedFirst;
 }
 
-async function ensureProductFeatureTables(prisma: PrismaClient) {
+// The CREATE ... IF NOT EXISTS statements only need to run once per database
+// client; later callers reuse the same promise. A failure is forgotten so the
+// next caller retries.
+const productTablesReady = new WeakMap<PrismaClient, Promise<void>>();
+
+export function ensureProductFeatureTables(prisma: PrismaClient): Promise<void> {
+  const cached = productTablesReady.get(prisma);
+  if (cached) return cached;
+  const pending = createProductFeatureTables(prisma);
+  productTablesReady.set(prisma, pending);
+  pending.catch(() => {
+    if (productTablesReady.get(prisma) === pending) productTablesReady.delete(prisma);
+  });
+  return pending;
+}
+
+async function createProductFeatureTables(prisma: PrismaClient) {
   await prisma.$executeRawUnsafe(`
     CREATE TABLE IF NOT EXISTS "UserFeatureRecord" (
       "id" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
@@ -587,6 +628,7 @@ async function updateFeatureRecord(prisma: PrismaClient, userId: number, id: num
     userId,
     id
   );
+  if (archived) forgetDefaultCollectionsForUser(prisma, userId);
   return findFeatureRow(prisma, userId, id);
 }
 
@@ -1001,6 +1043,7 @@ export function registerProductFeatureApi({
         user.id,
         id
       );
+      forgetDefaultCollectionsForUser(prisma, user.id);
       res.json({ ok: true });
     });
   };
