@@ -139,6 +139,9 @@ async function startApi() {
     KEYWORDS: '',
     // This suite checks keyword matching, not the sign-in gate, so let news flow without an account.
     REQUIRE_LOGIN_AND_KEY_FOR_NEWS: 'false',
+    // Never touch the real app's runtime file: the installed app follows it to find its backend,
+    // so a test server writing there makes the app switch to a server that is about to exit.
+    AI_NEWS_MAC_WIDGET_RUNTIME_FILE: path.join(os.tmpdir(), `ai-news-api-int-runtime-${Date.now()}.json`),
     DATABASE_URL: `file:${dbPath}`
   };
 
