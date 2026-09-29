@@ -235,9 +235,17 @@ public final class WidgetAppState: ObservableObject {
 
     public func refreshAiProgress() async {
         guard let api = try? makeAPIClient(), let feeds = try? await api.fetchAiProgress() else { return }
-        aiProgress = Dictionary(uniqueKeysWithValues: feeds.map { ($0.feedUrl, $0) })
+        let progress = Dictionary(uniqueKeysWithValues: feeds.map { ($0.feedUrl, $0) })
+        let progressChanged = progress != aiProgress
+        if progressChanged {
+            aiProgress = progress
+        }
         backendOps = try? await api.fetchOpsAiJobs(limit: 80)
-        saveSnapshot()
+        // Pending counts in the widget snapshot come from aiProgress; only rewrite
+        // the snapshot when those numbers actually moved.
+        if progressChanged {
+            saveSnapshot()
+        }
     }
 
     public func loadRuntimeContext(suppressUnauthorizedAlert: Bool = false) async {

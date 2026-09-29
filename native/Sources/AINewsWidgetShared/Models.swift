@@ -925,7 +925,7 @@ public struct DatabaseBackupResponse: Codable, Sendable {
     public var backup: DatabaseBackup
 }
 
-public struct AiFeedProgress: Codable, Sendable, Identifiable {
+public struct AiFeedProgress: Codable, Equatable, Sendable, Identifiable {
     public var feedUrl: String
     public var label: String
     public var done: Int

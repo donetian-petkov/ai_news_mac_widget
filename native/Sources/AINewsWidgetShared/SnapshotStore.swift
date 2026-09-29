@@ -13,6 +13,14 @@ public final class SnapshotStore {
     private let rootDirectory: URL
     private let storageDirectories: [URL]
     private let usesExplicitRoot: Bool
+    /// Encoded form (with `lastUpdated` blanked) of the snapshot this process last
+    /// wrote, plus the file's modification date right after that write. Lets
+    /// `saveSnapshot` skip rewriting the file and reloading every widget timeline
+    /// when nothing the widgets show has changed.
+    private var lastWrittenSnapshotFingerprint: Data?
+    private var lastWrittenSnapshotModificationDate: Date?
+    /// Number of times `saveSnapshot` actually wrote the file (used by tests).
+    public private(set) var snapshotWriteCount = 0
 
     public init(rootDirectory: URL? = nil) {
         let directories = rootDirectory.map { [$0] } ?? Self.containerCandidates(fileManager: fm)
@@ -23,6 +31,8 @@ public final class SnapshotStore {
         self.storageDirectories = directories.isEmpty ? [baseDirectory] : directories
         self.usesExplicitRoot = rootDirectory != nil
         encoder.dateEncodingStrategy = .iso8601
+        // Stable key order so identical snapshots encode to identical bytes.
+        encoder.outputFormatting = [.sortedKeys]
         decoder.dateDecodingStrategy = .iso8601
     }
 
@@ -53,10 +63,29 @@ public final class SnapshotStore {
     }
 
     public func saveSnapshot(_ snapshot: WidgetSnapshot) throws {
+        var comparable = snapshot
+        comparable.lastUpdated = Date(timeIntervalSince1970: 0)
+        let fingerprint = try encoder.encode(comparable)
+        if fingerprint == lastWrittenSnapshotFingerprint,
+           let recordedDate = lastWrittenSnapshotModificationDate,
+           snapshotModificationDate() == recordedDate {
+            // Same content as our last write and nobody else (e.g. the widget
+            // extension) has touched the file since: nothing to do.
+            return
+        }
         let data = try encoder.encode(snapshot)
         try write(data, filename: "widget-snapshot.json")
+        snapshotWriteCount += 1
+        lastWrittenSnapshotFingerprint = fingerprint
+        lastWrittenSnapshotModificationDate = snapshotModificationDate()
         writeDiagnostic("saveSnapshot categories=\(snapshot.categories.count) storyBuckets=\(snapshot.storiesByCategory.count)")
         reloadWidgetTimelines()
+    }
+
+    private func snapshotModificationDate() -> Date? {
+        guard let url = snapshotURLs.first,
+              let attributes = try? fm.attributesOfItem(atPath: url.path) else { return nil }
+        return attributes[.modificationDate] as? Date
     }
 
     public func appendCommand(_ command: WidgetCommand) throws {
