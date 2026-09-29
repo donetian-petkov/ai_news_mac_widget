@@ -10,6 +10,40 @@ private enum FloatingWidgetLayoutMode: String, CaseIterable {
 
 private let floatingWidgetHeaderPurple = Color(red: 0.56, green: 0.49, blue: 1.0)
 
+/// Holds a weak reference to the window a SwiftUI view is hosted in, so polling
+/// code can check whether that window is actually on screen.
+private final class HostingWindowBox {
+    weak var window: NSWindow?
+}
+
+private struct HostingWindowReader: NSViewRepresentable {
+    let box: HostingWindowBox
+
+    func makeNSView(context _: Context) -> NSView {
+        ReaderView(box: box)
+    }
+
+    func updateNSView(_ nsView: NSView, context _: Context) {
+        box.window = nsView.window ?? box.window
+    }
+
+    private final class ReaderView: NSView {
+        let box: HostingWindowBox
+
+        init(box: HostingWindowBox) {
+            self.box = box
+            super.init(frame: .zero)
+        }
+
+        required init?(coder: NSCoder) { nil }
+
+        override func viewDidMoveToWindow() {
+            super.viewDidMoveToWindow()
+            box.window = window
+        }
+    }
+}
+
 private struct PointingHandCursorView: NSViewRepresentable {
     func makeNSView(context _: Context) -> NSView {
         CursorView()
@@ -690,6 +724,7 @@ private struct FloatingWidgetView: View {
     @State private var suppressResizeDrivenLayoutSwitch = false
     @State private var suppressResizeDuringRefresh = false
     @State private var lastSourceRefreshAt: Date?
+    @State private var windowBox = HostingWindowBox()
     /// How many stories to show. Grows by `pageStep` via "Show More", resets to
     /// `pageStep` via "Reset". Mirrors ai_news_deploy_ready's column behaviour.
     @State private var visibleCount = 10
@@ -1016,16 +1051,31 @@ private struct FloatingWidgetView: View {
                 windowSize = window.frame.size
             }
         }
+        .background(HostingWindowReader(box: windowBox))
         .task {
             // Load now, then auto-refresh so the widget picks up new stories and
             // freshly generated summaries/translations without clicking reload.
+            // While the panel is closed or the runtime is powered off, only check
+            // cheaply every couple of seconds and reload as soon as it is back.
+            // After failed reloads (backend down), wait longer each time.
+            var consecutiveFailures = 0
             while !Task.isCancelled {
-                await reload()
-                try? await Task.sleep(nanoseconds: isFiltered ? 3_000_000_000 : 12_000_000_000)
+                guard shouldAutoRefresh else {
+                    try? await Task.sleep(nanoseconds: 2_000_000_000)
+                    continue
+                }
+                let succeeded = await reload()
+                consecutiveFailures = succeeded ? 0 : consecutiveFailures + 1
+                let delay = WidgetPollSchedule.delay(
+                    base: isFiltered ? 3 : 12,
+                    consecutiveFailures: consecutiveFailures
+                )
+                try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
             }
         }
         // Refresh immediately when the app signals new AI content (summary/research/translation done).
         .onReceive(NotificationCenter.default.publisher(for: Notification.Name("AINewsWidgetShouldRefresh"))) { _ in
+            guard shouldAutoRefresh else { return }
             Task { await reload() }
         }
         .onChange(of: state.lastSharedStoryKey) { _, newValue in
@@ -1994,7 +2044,19 @@ private struct FloatingWidgetView: View {
         .fixedSize()
     }
 
-    private func reload(clearUnchangedNewLabels: Bool = false) async {
+    /// Background refreshes only make sense while the panel is on screen and the
+    /// local runtime is powered on. Before the view is attached to a window we
+    /// allow the first load.
+    private var shouldAutoRefresh: Bool {
+        guard state.isRuntimePoweredOn else { return false }
+        guard let window = windowBox.window else { return true }
+        return window.isVisible
+    }
+
+    /// Returns false when the widget could not fetch any stories (for example
+    /// because the backend is unreachable), so the poll loop can back off.
+    @discardableResult
+    private func reload(clearUnchangedNewLabels: Bool = false) async -> Bool {
         suppressResizeDuringRefresh = true
         loading = true
         let previousStoryKeys = Set(stories.map(\.storyKey))
@@ -2004,11 +2066,13 @@ private struct FloatingWidgetView: View {
                 suppressResizeDuringRefresh = false
             }
         }
-        guard let api = try? state.authorizedAPIClient() else { return }
+        guard let api = try? state.authorizedAPIClient() else { return false }
+        var fetchedAnything = false
         AINewsDebugLog.log("floating reload start filtered=\(isFiltered) categories=\(allCategoryIDs) limit=\(visibleCount)")
         await refreshSourceFeedsIfDue(api: api)
         if isFiltered {
             if let response = try? await api.fetchKeywordMatchesPage(limit: visibleCount) {
+                fetchedAnything = true
                 updateStories(
                     response.stories,
                     resizeAfterUpdate: false,
@@ -2032,6 +2096,7 @@ private struct FloatingWidgetView: View {
             let deduplicated = Dictionary(grouping: mergedStories, by: \.storyKey)
                 .compactMap { $0.value.first }
                 .sorted { lhs, rhs in lhs.publishedMs > rhs.publishedMs }
+            fetchedAnything = fetchedCategoryCount > 0 || allCategoryIDs.isEmpty
             reachedEnd = fetchedCategoryCount > 0 && !categoryHasMore
             let limitedStories = Array(deduplicated.prefix(visibleCount))
             updateStories(limitedStories, resizeAfterUpdate: false, reachedEndOverride: reachedEnd)
@@ -2042,6 +2107,7 @@ private struct FloatingWidgetView: View {
             self.clearUnchangedNewLabels(previousStoryKeys: previousStoryKeys)
         }
         Task { await state.refreshUsage() }
+        return fetchedAnything
     }
 
     private func refreshSourceFeedsIfDue(api: APIClient) async {

@@ -1205,3 +1205,16 @@ public enum WidgetDeepLink {
         return components.url
     }
 }
+
+/// Timing for the floating widgets' auto-refresh loop.
+public enum WidgetPollSchedule {
+    public static let maximumDelay: TimeInterval = 60
+
+    /// Normal interval after a successful reload; after failures the wait doubles
+    /// each time (base x2, x4, ...) up to `maximumDelay`, and resets on success.
+    public static func delay(base: TimeInterval, consecutiveFailures: Int) -> TimeInterval {
+        guard consecutiveFailures > 0 else { return base }
+        let exponent = min(consecutiveFailures, 10)
+        return min(base * pow(2, Double(exponent)), maximumDelay)
+    }
+}
