@@ -1,5 +1,7 @@
 # AI News macOS Floating Widgets
 
+![AI News for Mac demo: browsing feeds in the main window, then a floating widget in stack and column view](docs/screenshots/app-demo.gif)
+
 A standalone macOS app that collects news from RSS feeds, adds AI summaries, research, and translations, and shows the stories in floating widgets that stay on top of your other windows. Everything runs locally: the app starts its own backend, and your account and AI provider keys stay on your Mac.
 
 | Floating widget, column view | Floating widget, stack view |
