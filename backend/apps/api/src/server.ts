@@ -12,6 +12,7 @@ import { aiFeatureSettingsSchema, aiProviderSchema, clientMsgSchema, type Client
 import { z } from 'zod';
 import { registerProductFeatureApi, type ProductFeatureRuntime } from './productFeatures';
 import { chunk, fingerprintRecord, takeChangedRecords } from './newsPersistence';
+import { titleTokens as cachedTitleTokens } from './titleTokens';
 
 function bootstrapEnv() {
   const randomSecret = (bytes = 48) => crypto.randomBytes(bytes).toString('base64url');
@@ -5051,7 +5052,7 @@ function emergingSignalForItem(item: NewsInternal): EmergingStorySignal | undefi
     if (candidate.id === item.id) return false;
     if (!candidate.isMatch || candidate.filteredOk === false) return false;
     if (Math.abs(candidate.publishedMs - item.publishedMs) > 18 * 60 * 60 * 1000) return false;
-    const candidateTokens = new Set(normalizeText(candidate.title).split(/\s+/g).filter(token => token.length > 3));
+    const candidateTokens = cachedTitleTokens(candidate, normalizeText);
     let overlap = 0;
     tokens.forEach(token => {
       if (candidateTokens.has(token)) overlap += 1;
