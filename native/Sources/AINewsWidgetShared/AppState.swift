@@ -282,6 +282,7 @@ public final class WidgetAppState: ObservableObject {
         do {
             refreshDiscoveredBackendURL()
             let api = try makeAPIClient()
+            let previousStories = stories
             if isFilteredSelected {
                 let matches = try await api.fetchKeywordMatches(limit: limit ?? 30)
                 stories = matches
@@ -292,8 +293,12 @@ public final class WidgetAppState: ObservableObject {
                 stories = response.stories
                 updateCategory(response.category)
             }
-            // Signal floating widgets to refresh (picks up newly generated AI content).
-            NotificationCenter.default.post(name: Notification.Name("AINewsWidgetShouldRefresh"), object: nil)
+            // Signal floating widgets to refresh (picks up newly generated AI content),
+            // but only when something in the list actually changed: this runs every
+            // couple of seconds from the backfill and story-action polls.
+            if stories != previousStories {
+                NotificationCenter.default.post(name: Notification.Name("AINewsWidgetShouldRefresh"), object: nil)
+            }
             saveSnapshot()
         } catch {
             handleAsyncError(error, suppressUnauthorizedAlert: suppressUnauthorizedAlert)
