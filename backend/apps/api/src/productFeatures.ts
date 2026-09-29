@@ -257,13 +257,14 @@ async function listPersistedWidgetNews(
   return rows.map(persistedNewsToProductNews);
 }
 
-async function widgetNewsOrFallback(
+export async function widgetNewsOrFallback(
   prisma: PrismaClient,
-  fallback: ProductNews[],
+  fallback: () => ProductNews[],
   options: { limit?: number; feedUrls?: string[]; filteredOnly?: boolean; hiddenIds?: Set<string> } = {}
 ) {
   const persisted = await listPersistedWidgetNews(prisma, options);
-  const source = persisted.length > 0 ? persisted : fallback;
+  // Only build the in-memory copy of recent news when the database had nothing.
+  const source = persisted.length > 0 ? persisted : fallback();
   if (!options.hiddenIds?.size) return source;
   return source.filter(item => !options.hiddenIds?.has(item.id));
 }
@@ -1181,7 +1182,7 @@ export function registerProductFeatureApi({
     if (!user) return;
     const limitRaw = Number(req.query.limit);
     const limit = Number.isFinite(limitRaw) ? Math.max(1, Math.min(200, Math.floor(limitRaw))) : 30;
-    const news = await widgetNewsOrFallback(prisma, getRecentNews(), { limit: limit + 1, filteredOnly: true, hiddenIds: hiddenNewsIds() });
+    const news = await widgetNewsOrFallback(prisma, getRecentNews, { limit: limit + 1, filteredOnly: true, hiddenIds: hiddenNewsIds() });
     const page = news
       .filter(item => item.isMatch === true && item.filteredOk !== false)
       .sort((a, b) => Number(b.publishedMs || 0) - Number(a.publishedMs || 0))
@@ -1199,7 +1200,7 @@ export function registerProductFeatureApi({
     await ensureProductFeatureTables(prisma);
     await ensureDefaultCollectionsForUser(prisma, user.id, getFeeds());
     const rows = await listFeatureRows(prisma, user.id, 'collection', 200, true);
-    const news = await widgetNewsOrFallback(prisma, getRecentNews(), { limit: 1000, hiddenIds: hiddenNewsIds() });
+    const news = await widgetNewsOrFallback(prisma, getRecentNews, { limit: 1000, hiddenIds: hiddenNewsIds() });
     const categoriesWithStories = rows
       .map(mapCollectionRow)
       .sort((left, right) => left.sortOrder - right.sortOrder || left.id - right.id)
@@ -1237,7 +1238,7 @@ export function registerProductFeatureApi({
     }
     const category = mapCollectionRow(row);
     const limit = normalizeLimit(req.query.limit, category.activeCount, 200);
-    const news = await widgetNewsOrFallback(prisma, getRecentNews(), {
+    const news = await widgetNewsOrFallback(prisma, getRecentNews, {
       limit: Math.max((limit + 1) * Math.max(category.feedUrls.length, 1), 100),
       feedUrls: category.feedUrls,
       hiddenIds: hiddenNewsIds()

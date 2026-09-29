@@ -3,7 +3,8 @@ import { describe, expect, it } from 'vitest';
 import {
   ensureDefaultCollectionsForUser,
   ensureProductFeatureTables,
-  forgetDefaultCollectionsForUser
+  forgetDefaultCollectionsForUser,
+  widgetNewsOrFallback
 } from './productFeatures.js';
 
 type FakeOptions = { failFirstExecute?: boolean; existingCollections?: number };
@@ -82,5 +83,33 @@ describe('ensureDefaultCollectionsForUser', () => {
     forgetDefaultCollectionsForUser(prisma, 1);
     await ensureDefaultCollectionsForUser(prisma, 1, feeds);
     expect(calls.inserts).toBe(2);
+  });
+});
+
+describe('widgetNewsOrFallback', () => {
+  const fallbackItem = { id: 'mem-1', feedUrl: 'f', title: 'From memory', link: '', source: 's', publishedMs: 1 };
+  const dbRow = { itemId: 'db-1', feedUrl: 'f', title: 'From db', link: '', source: 's', publishedMs: 2, isMatch: false, filteredOk: true };
+
+  function prismaReturning(rows: unknown[]) {
+    return { newsItemRecord: { findMany: async () => rows } } as unknown as PrismaClient;
+  }
+
+  it('does not build the in-memory list when the database has stories', async () => {
+    let calls = 0;
+    const news = await widgetNewsOrFallback(prismaReturning([dbRow]), () => { calls += 1; return [fallbackItem]; });
+    expect(calls).toBe(0);
+    expect(news.map(item => item.id)).toEqual(['db-1']);
+  });
+
+  it('falls back to the in-memory list when the database is empty, still hiding ids', async () => {
+    let calls = 0;
+    const second = { ...fallbackItem, id: 'mem-2' };
+    const news = await widgetNewsOrFallback(
+      prismaReturning([]),
+      () => { calls += 1; return [fallbackItem, second]; },
+      { hiddenIds: new Set(['mem-1']) }
+    );
+    expect(calls).toBe(1);
+    expect(news.map(item => item.id)).toEqual(['mem-2']);
   });
 });
