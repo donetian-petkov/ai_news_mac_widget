@@ -119,11 +119,15 @@ public final class WidgetAppState: ObservableObject {
             let session = try await (register ? api.register(username: username, password: password) : api.login(username: username, password: password))
             self.sessionStore.save(session: session)
             self.session = session
-            await self.reloadEverything(selectFirstCategory: true, suppressUnauthorizedAlert: true)
         }
+        // Load after the sign-in step has released the busy flag; reloadEverything
+        // runs its own busy step and would be skipped if called from inside it.
+        guard session != nil else { return }
+        await reloadEverything(selectFirstCategory: true, suppressUnauthorizedAlert: true)
     }
 
     public func resetPassword(username: String, password: String) async {
+        var didReset = false
         await runBusy("Resetting password...") {
             self.refreshDiscoveredBackendURL()
             await self.waitForBackendReady()
@@ -131,9 +135,11 @@ public final class WidgetAppState: ObservableObject {
             let session = try await api.resetPassword(username: username, password: password)
             self.sessionStore.save(session: session)
             self.session = session
-            await self.reloadEverything(selectFirstCategory: true, suppressUnauthorizedAlert: true)
-            self.statusMessage = "Password reset. Signed in."
+            didReset = true
         }
+        guard didReset else { return }
+        await reloadEverything(selectFirstCategory: true, suppressUnauthorizedAlert: true)
+        statusMessage = "Password reset. Signed in."
     }
 
     public func signOut() {
