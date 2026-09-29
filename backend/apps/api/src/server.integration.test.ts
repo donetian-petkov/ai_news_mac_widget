@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { spawn, type ChildProcess } from 'node:child_process';
+import { spawn, spawnSync, type ChildProcess } from 'node:child_process';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import WebSocket from 'ws';
 
@@ -97,8 +97,9 @@ function seedStateFile() {
         title: 'Energy crisis update in Europe',
         link: 'https://example.com/news/1',
         source: 'Seed Feed',
-        published: '2026-03-07T00:00:00.000Z',
-        publishedMs: 1772841600000,
+        // Keep the seed inside the retention window, or the server drops it on load.
+        published: new Date(Date.now() - 60_000).toISOString(),
+        publishedMs: Date.now() - 60_000,
         feedUrl: 'http://127.0.0.1:9/rss',
         isMatch: false,
         matchScore: 0,
@@ -136,8 +137,22 @@ async function startApi() {
     PORT: String(apiPort),
     AI_ENABLED: 'false',
     KEYWORDS: '',
+    // This suite checks keyword matching, not the sign-in gate, so let news flow without an account.
+    REQUIRE_LOGIN_AND_KEY_FOR_NEWS: 'false',
     DATABASE_URL: `file:${dbPath}`
   };
+
+  // The server expects the full schema, so build it in the throwaway test DB first, the same
+  // way scripts/ensure-local-db.mjs bootstraps a fresh install.
+  const migrate = spawnSync('npx', ['prisma', 'db', 'push', '--skip-generate', '--accept-data-loss', '--schema', 'prisma/schema.prisma'], {
+    cwd: path.resolve(__dirname, '..'),
+    env,
+    shell: true,
+    encoding: 'utf8'
+  });
+  if (migrate.status !== 0) {
+    throw new Error(`prisma db push failed: ${migrate.stderr || migrate.stdout}`);
+  }
 
   apiProc = spawn(process.execPath, [serverEntry], {
     cwd: path.resolve(__dirname, '..'),
@@ -315,5 +330,5 @@ describe('api integration: keyword rematch', () => {
     } finally {
       ws.close();
     }
-  });
+  }, 30_000);
 });
