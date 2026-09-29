@@ -1364,7 +1364,7 @@ productFeatures = registerProductFeatureApi({
       markDirty();
       return true;
     }
-    const item = recent.find(entry => entry.id === itemId && entry.feedUrl === feedUrl);
+    const item = findRecentItem(itemId, feedUrl);
     if (!item) return false;
     if (!isFeedAiEnabled(item.feedUrl)) return false;
     if (action === 'summary') {
@@ -1395,7 +1395,7 @@ productFeatures = registerProductFeatureApi({
       if (!itemId || !feedUrl || seen.has(key)) continue;
       seen.add(key);
 
-      const item = recent.find(entry => entry.id === itemId && entry.feedUrl === feedUrl);
+      const item = findRecentItem(itemId, feedUrl);
       if (!item) continue;
       if (!isFeedAiEnabled(item.feedUrl)) continue;
 
@@ -1743,6 +1743,7 @@ app.post('/api/ops/ai-jobs/control', async (req, res) => {
       const job = aiQueue[i];
       if (!matches(job)) continue;
       aiQueue.splice(i, 1);
+      trackQueuedJobRemoved(job);
       affected += 1;
       recordAiJobEvent(job, 'drop', { reason: 'cancelled_by_user' });
     }
@@ -2934,11 +2935,13 @@ async function loadRecentFromDb(limit = MAX_RECENT_ITEMS) {
     });
 
     recent.length = 0;
+    recentIndex.clear();
     seen = new Set<string>();
 
     rows.reverse().forEach(row => {
       const item = newsFromPersistedRow(row);
       recent.push(item);
+      indexRecentItem(item);
       seen.add(newsRecordKey(item.feedUrl, item.id));
       refreshDerivedDataForItem(item);
     });
@@ -3501,7 +3504,7 @@ function scheduleDiscordPostForTarget(item: NewsInternal, targetFeedUrl: string)
 
   const run = async () => {
     discordPostTimerByKey.delete(key);
-    const current = recent.find(x => x.id === item.id && x.feedUrl === item.feedUrl) || item;
+    const current = findRecentItem(item.id, item.feedUrl) || item;
     const currentFeedConfig = feedSettings.get(feed.url) || defaultSettingsForFeed(feed);
     const startedAt = discordPostAttemptStartedAtMs.get(key) || Date.now();
     const elapsed = Date.now() - startedAt;
@@ -3633,6 +3636,37 @@ function currentFeeds(): FeedInfo[] {
 // ---- memory for seen/recent ----
 let seen = new Set<string>();
 const recent: NewsInternal[] = [];
+// Index of `recent` by feed URL then item id, kept in sync at every place that
+// adds to or removes from `recent`. Each bucket lists the matching items in
+// array order, so lookups return the same item `recent.find(...)` would.
+const recentIndex = new Map<string, Map<string, NewsInternal[]>>();
+
+function indexRecentItem(item: NewsInternal) {
+  let byId = recentIndex.get(item.feedUrl);
+  if (!byId) {
+    byId = new Map();
+    recentIndex.set(item.feedUrl, byId);
+  }
+  const bucket = byId.get(item.id);
+  if (bucket) bucket.push(item);
+  else byId.set(item.id, [item]);
+}
+
+function unindexRecentItem(item: NewsInternal | undefined) {
+  if (!item) return;
+  const byId = recentIndex.get(item.feedUrl);
+  const bucket = byId?.get(item.id);
+  if (!byId || !bucket) return;
+  const index = bucket.indexOf(item);
+  if (index >= 0) bucket.splice(index, 1);
+  if (!bucket.length) byId.delete(item.id);
+  if (!byId.size) recentIndex.delete(item.feedUrl);
+}
+
+/** Same result as `recent.find(x => x.id === id && x.feedUrl === feedUrl)`. */
+function findRecentItem(id: string, feedUrl: string): NewsInternal | undefined {
+  return recentIndex.get(feedUrl)?.get(id)?.[0];
+}
 
 // ---- embeddings caches ----
 let keywordVecs: { keyword: string; vec: number[] }[] = [];
@@ -6828,6 +6862,32 @@ type SummaryDebugEvent = {
 };
 
 const aiQueue: AiJob[] = [];
+// Count of queued jobs per jobKey, kept in sync at every place that adds to or
+// removes from `aiQueue`, so "is this already queued?" is a lookup instead of
+// a scan of the whole queue.
+const aiQueuedKeyCounts = new Map<string, number>();
+
+function trackQueuedJobAdded(job: AiJob) {
+  const k = jobKey(job);
+  aiQueuedKeyCounts.set(k, (aiQueuedKeyCounts.get(k) || 0) + 1);
+}
+
+function trackQueuedJobRemoved(job: AiJob | undefined) {
+  if (!job) return;
+  const k = jobKey(job);
+  const count = (aiQueuedKeyCounts.get(k) || 0) - 1;
+  if (count > 0) aiQueuedKeyCounts.set(k, count);
+  else aiQueuedKeyCounts.delete(k);
+}
+
+function clearAiQueue() {
+  aiQueue.length = 0;
+  aiQueuedKeyCounts.clear();
+}
+
+function isJobKeyQueued(k: string): boolean {
+  return aiQueuedKeyCounts.has(k);
+}
 const aiInFlight = new Set<string>();
 const aiInFlightJobs = new Map<string, AiJob>();
 const aiDeadLetters: DeadLetterAiJob[] = [];
@@ -7039,31 +7099,31 @@ function jobKey(j: AiJob) {
 function hasSummaryJobQueuedOrRunning(id: string, feedUrl: string): boolean {
   const k = `summary:${feedUrl || ''}::${id}`;
   if (aiInFlight.has(k)) return true;
-  return aiQueue.some(job => job.kind === 'summary' && job.id === id && job.feedUrl === feedUrl);
+  return isJobKeyQueued(k);
 }
 
 function hasResearchJobQueuedOrRunning(id: string, feedUrl: string): boolean {
   const k = `research:${feedUrl || ''}::${id}`;
   if (aiInFlight.has(k)) return true;
-  return aiQueue.some(job => job.kind === 'research' && job.id === id && job.feedUrl === feedUrl);
+  return isJobKeyQueued(k);
 }
 
 function hasTitleTranslateJobQueuedOrRunning(id: string, feedUrl: string): boolean {
   const k = `title_translate:${feedUrl || ''}::${id}`;
   if (aiInFlight.has(k)) return true;
-  return aiQueue.some(job => job.kind === 'title_translate' && job.id === id && job.feedUrl === feedUrl);
+  return isJobKeyQueued(k);
 }
 
 function hasTitleNeutralizeJobQueuedOrRunning(id: string, feedUrl: string): boolean {
   const k = `title_neutralize:${feedUrl || ''}::${id}`;
   if (aiInFlight.has(k)) return true;
-  return aiQueue.some(job => job.kind === 'title_neutralize' && job.id === id && job.feedUrl === feedUrl);
+  return isJobKeyQueued(k);
 }
 
 function hasAiJobQueuedOrRunning(kind: AiJobKind, id: string, feedUrl: string): boolean {
   const k = `${kind}:${feedUrl || ''}::${id}`;
   if (aiInFlight.has(k)) return true;
-  return aiQueue.some(job => job.kind === kind && job.id === id && job.feedUrl === feedUrl);
+  return isJobKeyQueued(k);
 }
 
 function summaryItemKey(id: string, feedUrl: string): string {
@@ -7195,7 +7255,7 @@ function recordAiJobEvent(job: Pick<AiJob, 'kind' | 'id' | 'feedUrl' | 'manual' 
 }
 
 function resolveJobItem(job: AiJob): NewsInternal | undefined {
-  return recent.find(x => x.id === job.id && x.feedUrl === job.feedUrl)
+  return findRecentItem(job.id, job.feedUrl)
     || recent.find(x => x.id === job.id);
 }
 
@@ -7215,6 +7275,7 @@ function purgeExpiredQueuedJobs() {
     const job = aiQueue[i];
     if (!isJobExpired(job, nowMs)) continue;
     aiQueue.splice(i, 1);
+    trackQueuedJobRemoved(job);
     dropJob(job, 'ttl_expired_queue');
   }
 }
@@ -7266,6 +7327,7 @@ function dequeueNextJob(): AiJob | undefined {
     if (bestIndex < 0) return undefined;
     const next = aiQueue.splice(bestIndex, 1)[0];
     if (!next) return undefined;
+    trackQueuedJobRemoved(next);
     if (isJobExpired(next)) {
       dropJob(next, 'ttl_expired_dequeue');
       continue;
@@ -7312,7 +7374,7 @@ function enqueueJob(job: AiJobInput) {
     recordAiJobEvent(nextJob, 'skip', { reason: 'duplicate_inflight' });
     return;
   }
-  if (aiQueue.some(x => jobKey(x) === k)) {
+  if (isJobKeyQueued(k)) {
     recordAiJobEvent(nextJob, 'skip', { reason: 'duplicate_queue' });
     return;
   }
@@ -7350,10 +7412,12 @@ function enqueueJob(job: AiJobInput) {
     const manualIdx = pickDropIndex(true);
     const idx = nonManualIdx >= 0 ? nonManualIdx : manualIdx;
     const dropped = idx >= 0 ? aiQueue.splice(idx, 1)[0] : aiQueue.shift();
+    trackQueuedJobRemoved(dropped);
     if (dropped) dropJob(dropped, 'queue_overflow');
   }
 
   aiQueue.push(nextJob);
+  trackQueuedJobAdded(nextJob);
   recordAiJobEvent(nextJob, 'enqueue');
 }
 
@@ -8542,7 +8606,8 @@ async function processFeed(fi: FeedInfo) {
       };
 
       recent.push(pkt);
-      if (recent.length > MAX_RECENT_ITEMS) recent.shift();
+      indexRecentItem(pkt);
+      if (recent.length > MAX_RECENT_ITEMS) unindexRecentItem(recent.shift());
       refreshDerivedDataForItem(pkt);
       await enqueueAiForFetchedItem(pkt);
       await upsertPersistedNewsItem(pkt);
@@ -8860,7 +8925,7 @@ socketServer.on('connection', (ws: WebSocket) => {
         return;
       }
 
-      const it = recent.find(x => x.id === id && x.feedUrl === feedUrl) || recent.find(x => x.id === id);
+      const it = findRecentItem(id, feedUrl) || recent.find(x => x.id === id);
       if (!it) return;
       if (!isTranslationEnabledForFeed(it.feedUrl)) {
         ws.send(JSON.stringify({ type: 'error', message: 'Title translation is disabled for this column.' }));
@@ -8939,7 +9004,7 @@ socketServer.on('connection', (ws: WebSocket) => {
       dedupeWindow = [];
       filteredDedupeWindow = [];
 
-      aiQueue.length = 0;
+      clearAiQueue();
       aiInFlight.clear();
       aiInFlightJobs.clear();
 
@@ -8993,7 +9058,7 @@ socketServer.on('connection', (ws: WebSocket) => {
       titleVecCache.clear();
       dedupeWindow = [];
       filteredDedupeWindow = [];
-      aiQueue.length = 0;
+      clearAiQueue();
       aiInFlight.clear();
       aiInFlightJobs.clear();
 
@@ -9057,7 +9122,7 @@ socketServer.on('connection', (ws: WebSocket) => {
       if (updates.research) current.research = updates.research;
       if (updates.ask) current.ask = updates.ask;
 
-      aiQueue.length = 0;
+      clearAiQueue();
       aiInFlight.clear();
       aiInFlightJobs.clear();
 
@@ -9422,7 +9487,7 @@ socketServer.on('connection', (ws: WebSocket) => {
       const id = String(msg.id || '').trim();
       if (!id) return;
 
-      const it = recent.find(x => x.id === id && x.feedUrl === String(msg.feedUrl || '').trim()) || recent.find(x => x.id === id);
+      const it = findRecentItem(id, String(msg.feedUrl || '').trim()) || recent.find(x => x.id === id);
       if (!it) return;
       it.research = '';
       void upsertPersistedNewsItem(it);
@@ -9438,7 +9503,7 @@ socketServer.on('connection', (ws: WebSocket) => {
       const id = String(msg.id || '').trim();
       if (!id) return;
 
-      const it = recent.find(x => x.id === id && x.feedUrl === String(msg.feedUrl || '').trim()) || recent.find(x => x.id === id);
+      const it = findRecentItem(id, String(msg.feedUrl || '').trim()) || recent.find(x => x.id === id);
       if (!it) return;
       it.summary = '';
       void upsertPersistedNewsItem(it);
@@ -9454,7 +9519,7 @@ socketServer.on('connection', (ws: WebSocket) => {
       const requestedFeedUrl = String(msg.feedUrl || '').trim();
       if (!id) return;
 
-      const it = recent.find(x => x.id === id && x.feedUrl === requestedFeedUrl) || recent.find(x => x.id === id);
+      const it = findRecentItem(id, requestedFeedUrl) || recent.find(x => x.id === id);
       if (!it || hiddenIds.has(it.id)) return;
 
       const summaryModelReady = activeModel('summary') !== 'none';
@@ -9531,7 +9596,7 @@ socketServer.on('connection', (ws: WebSocket) => {
       const question = String(msg.question || '').trim().slice(0, ASK_AGENT_MAX_CHARS);
       if (!id || !question) return;
 
-      const it = recent.find(x => x.id === id && x.feedUrl === feedUrl) || recent.find(x => x.id === id);
+      const it = findRecentItem(id, feedUrl) || recent.find(x => x.id === id);
       if (!it) {
         const notFound: AskAgentReply = {
           type: 'ask_agent_reply',
@@ -9688,12 +9753,12 @@ socketServer.on('connection', (ws: WebSocket) => {
 
       // Drop queued AI work for removed feed.
       for (let i = aiQueue.length - 1; i >= 0; i--) {
-        if (aiQueue[i].feedUrl === feedUrl) aiQueue.splice(i, 1);
+        if (aiQueue[i].feedUrl === feedUrl) trackQueuedJobRemoved(aiQueue.splice(i, 1)[0]);
       }
 
       // Remove recent items for removed feed so it fully disappears from client snapshots.
       for (let i = recent.length - 1; i >= 0; i--) {
-        if (recent[i].feedUrl === feedUrl) recent.splice(i, 1);
+        if (recent[i].feedUrl === feedUrl) unindexRecentItem(recent.splice(i, 1)[0]);
       }
       void prisma.newsItemRecord.deleteMany({ where: { feedUrl } }).then(() => {
         persistedNewsFingerprints.clear();
