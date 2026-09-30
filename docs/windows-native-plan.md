@@ -24,7 +24,7 @@ The backend can be reused almost as-is, because it is plain Node, Express, Prism
 
 | macOS piece | Where it lives today | Windows equivalent |
 | --- | --- | --- |
-| Companion dashboard (SwiftUI) | `native/Sources/AINewsMacApp/RootView.swift` | WinUI 3 main window with a sidebar and story list |
+| Management app (SwiftUI) | `native/Sources/AINewsMacApp/RootView.swift` | WinUI 3 main window with a sidebar and story list |
 | Floating widgets (`NSPanel`, always on top) | `native/Sources/AINewsMacApp/FloatingWidgetPanel.swift` | One WinUI 3 window per widget using `AppWindow` with `OverlappedPresenter.IsAlwaysOnTop`, no taskbar button, custom title bar |
 | Transparent widget background | `Theme.swift` | Acrylic or Mica backdrop, with a solid-color fallback |
 | Drag a widget onto another to merge | `FloatingWidgetPanel.swift` (overlap ratio check) | Same overlap check on `AppWindow.Changed` when a move ends |
@@ -51,7 +51,7 @@ These are small and should land first, because the Mac app benefits from them to
 
 1. **Backend on Windows.** Make the path changes above, then run the backend by hand on a Windows machine with `npm run start:backend` and pass the existing backend tests.
 2. **Shell app and supervisor.** WinUI 3 app that starts bundled `node.exe`, waits for `/api/health`, reads the runtime file, and shows sign-in, register, and reset password. Tray icon with Open, Show widget, Power off, and Quit.
-3. **Companion dashboard.** Sidebar with feeds and health, story list, feed controls, AI settings, Saved Views. Port models and API calls from the Swift shared module one file at a time.
+3. **Management app.** Sidebar with feeds and health, story list, feed controls, AI settings, Saved Views. Port models and API calls from the Swift shared module one file at a time.
 4. **Floating widgets.** Column and stack views, always on top, size and position saved per widget, transparent mode, share and hide actions, NEW labels, stack navigation and load more, drag-to-merge and title-chip unmerge.
 5. **Windows 11 Widgets board (optional).** A widget provider that shows the latest stories from the same snapshot data the Mac WidgetKit extension uses.
 6. **Packaging.** MSIX with bundled Node and Prisma engine, start-on-login option, update path, and uninstall that leaves or removes user data by choice.

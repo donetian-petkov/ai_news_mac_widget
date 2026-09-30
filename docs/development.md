@@ -5,7 +5,7 @@ Everything needed to build, run, and troubleshoot the app beyond the README quic
 ## Repository Structure
 
 - `backend/` - local Node/Prisma API, RSS ingestion, AI jobs, filtered-feed matching, saved views, and widget endpoints.
-- `native/` - SwiftUI companion app, floating widget windows, shared API client, theme system, and WidgetKit source.
+- `native/` - SwiftUI management app, floating widget windows, shared API client, theme system, and WidgetKit source.
 - `scripts/` - app install/open helpers, backend build helpers, icon generation, and diagnostics.
 - `docs/` - implementation notes and follow-up design docs.
 

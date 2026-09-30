@@ -20,7 +20,7 @@ The full feature list for AI News macOS Floating Widgets. The README only keeps 
 ## Stories
 
 - Story cards with images, summaries, research state, translation state, share action, save/pin actions, and source links.
-- Images are supported in the companion app and floating widgets when enabled.
+- Images are supported in the management app and floating widgets when enabled.
 
 ## Floating Widgets
 
