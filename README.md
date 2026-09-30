@@ -20,6 +20,12 @@ A standalone macOS app that collects news from RSS feeds, adds AI summaries, res
 
 The full feature list and AI budget notes are in [docs/features.md](docs/features.md).
 
+## Companion App
+
+The companion app is where you manage feeds, AI settings and saved widget layouts. Most of the time you only need the widgets.
+
+![Companion app demo: browsing feeds, switching to the Filtered Feed and expanding the story list](docs/screenshots/app-demo.gif)
+
 ## Install
 
 You need macOS, Node.js, and Xcode (the full app, because the build uses `xcodebuild`). From the repo root:
