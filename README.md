@@ -20,11 +20,11 @@ A standalone macOS app that collects news from RSS feeds, adds AI summaries, res
 
 The full feature list and AI budget notes are in [docs/features.md](docs/features.md).
 
-## Companion App
+## Management App
 
-The companion app is where you manage feeds, AI settings and saved widget layouts. Most of the time you only need the widgets.
+The widgets live inside the management app. It runs the local backend, holds your account and AI keys, manages feeds and AI settings, and is where you open, merge and save widgets. If the management app isn't running, the widgets have nothing to show.
 
-![Companion app demo: browsing feeds, switching to the Filtered Feed and expanding the story list](docs/screenshots/app-demo.gif)
+![Management app demo: browsing feeds, switching to the Filtered Feed and expanding the story list](docs/screenshots/app-demo.gif)
 
 ## Install
 
