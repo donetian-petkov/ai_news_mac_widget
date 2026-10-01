@@ -1258,9 +1258,7 @@ private struct FloatingWidgetView: View {
 
     private var header: some View {
         Group {
-            if usesNativeWidgetBackground {
-                nativeHeader
-            } else if layoutMode == .stack {
+            if layoutMode == .stack {
                 headerCompactLayout
             } else {
                 ViewThatFits(in: .horizontal) {
@@ -1269,104 +1267,8 @@ private struct FloatingWidgetView: View {
                 }
             }
         }
-        .padding(.horizontal, usesNativeWidgetBackground ? 16 : (layoutMode == .stack ? 12 : 14))
-        .padding(.vertical, usesNativeWidgetBackground ? 10 : (layoutMode == .stack ? 8 : 10))
-    }
-
-    // MARK: macOS-style header
-
-    /// Header for the "macOS" mode, laid out like the system widgets: a bold
-    /// title with one quiet line of detail under it, and plain icon buttons with
-    /// no boxes or outlines around them.
-    private var nativeHeader: some View {
-        HStack(alignment: .top, spacing: 8) {
-            VStack(alignment: .leading, spacing: 3) {
-                Button {
-                    if !mergedCategoryIDs.isEmpty {
-                        onUnmerge()
-                    }
-                } label: {
-                    Text(displayCategoryName)
-                        .font(widgetFont(19, weight: .bold))
-                        .foregroundStyle(WidgetTheme.textPrimary)
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.8)
-                }
-                .buttonStyle(.plain)
-                .help(mergedCategoryIDs.isEmpty ? displayCategoryName : "Unmerge feeds")
-
-                TimelineView(.periodic(from: Date(), by: 30)) { context in
-                    HStack(spacing: 6) {
-                        Circle()
-                            .fill(nativeStatusColor)
-                            .frame(width: 7, height: 7)
-                        Text(nativeDetailLine(context.date))
-                            .font(widgetFont(12.5, weight: .semibold))
-                            .foregroundStyle(WidgetTheme.textMuted)
-                            .lineLimit(1)
-                            .minimumScaleFactor(0.8)
-                    }
-                    .help(runtimeStatusLine)
-                }
-            }
-            .layoutPriority(1)
-
-            Spacer(minLength: 6)
-
-            HStack(spacing: 2) {
-                if loading {
-                    ProgressView().controlSize(.small).frame(width: 28, height: 28)
-                }
-                nativeIconButton("power", active: state.isRuntimePoweredOn, help: state.isRuntimePoweredOn ? "Power off local server and AI" : "Power on local server and AI") {
-                    Task {
-                        if state.isRuntimePoweredOn {
-                            await state.powerOff()
-                        } else {
-                            await state.powerOn()
-                        }
-                    }
-                }
-                .disabled(state.isBusy)
-                nativeIconButton("rectangle.grid.1x2", active: layoutMode == .column, help: "Column view") {
-                    switchLayoutMode(to: .column)
-                }
-                nativeIconButton("square.stack.3d.up", active: layoutMode == .stack, help: "Stack view") {
-                    switchLayoutMode(to: .stack)
-                }
-                nativeIconButton("arrow.clockwise", active: false, help: "Reload this category") {
-                    Task { await reload(clearUnchangedNewLabels: true) }
-                }
-            }
-        }
-    }
-
-    /// Green when the server and every feed are running, orange when only some
-    /// feeds are fetching, grey when off.
-    private var nativeStatusColor: Color {
-        let status = pollingFeedStatus
-        guard state.isRuntimePoweredOn, status.enabled > 0 else { return Color.white.opacity(0.45) }
-        return status.enabled == status.total ? Color(nsColor: .systemGreen) : Color(nsColor: .systemOrange)
-    }
-
-    private func nativeDetailLine(_ date: Date) -> String {
-        let pending = pendingCount > 0 ? " · \(pendingCount) pending" : ""
-        return "\(date.formatted(date: .omitted, time: .shortened)) · \(tokenText) tokens\(pending)"
-    }
-
-    private func nativeIconButton(_ systemImage: String, active: Bool, help: String, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            Image(systemName: systemImage)
-                .font(widgetFont(14, weight: .semibold))
-                .foregroundStyle(active ? WidgetTheme.textPrimary : WidgetTheme.textMuted)
-                .frame(width: 28, height: 28)
-                .background(
-                    Circle().fill(Color.white.opacity(active ? 0.16 : 0))
-                )
-                .contentShape(Circle())
-        }
-        .buttonStyle(.plain)
-        .help(help)
-        .pointingHandCursor()
+        .padding(.horizontal, layoutMode == .stack ? 12 : 14)
+        .padding(.vertical, layoutMode == .stack ? 8 : 10)
     }
 
     @discardableResult
