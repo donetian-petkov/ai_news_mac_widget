@@ -1270,7 +1270,8 @@ private struct FloatingWidgetView: View {
             }
         }
         .padding(.horizontal, layoutMode == .stack ? 12 : 14)
-        .padding(.vertical, layoutMode == .stack ? 8 : 10)
+        .padding(.top, layoutMode == .stack ? 14 : 16)
+        .padding(.bottom, layoutMode == .stack ? 8 : 10)
     }
 
     @discardableResult
