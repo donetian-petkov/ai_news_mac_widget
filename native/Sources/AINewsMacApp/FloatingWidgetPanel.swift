@@ -369,7 +369,9 @@ private extension View {
             self
                 .padding(.top, 28)
                 .ignoresSafeArea()
-                .glassEffect(.regular.tint(Color.black.opacity(0.28)), in: Rectangle())
+                // The large, continuous corners of the system desktop widgets.
+                .glassEffect(.regular.tint(Color.black.opacity(0.28)), in: RoundedRectangle(cornerRadius: 26, style: .continuous))
+                .clipShape(RoundedRectangle(cornerRadius: 26, style: .continuous))
                 .environment(\.colorScheme, .dark)
         } else {
             self
