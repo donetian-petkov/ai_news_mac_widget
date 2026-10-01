@@ -26,7 +26,7 @@ The full feature list for AI News macOS Floating Widgets. The README only keeps 
 
 - Individual feed widgets, a filtered feed widget, and merged feed widgets.
 - Column view and stack view.
-- Solid and transparent background modes.
+- Solid, transparent and macOS background modes. The macOS mode uses the same frosted glass as the system desktop widgets (macOS 26 or later), so the widget and its text take on the colours of the wallpaper behind it.
 - Always-on-top behavior.
 - Per-widget size and position persistence.
 - Share button on each story.

@@ -10,7 +10,10 @@ A standalone macOS app that collects news from RSS feeds, adds AI summaries, res
 
 ## Features
 
+![Floating widget with the macOS glass background, blending with the wallpaper behind it](docs/screenshots/widget-macos-glass.png)
+
 - Floating widgets that stay on top of other windows, for one feed, several merged feeds, or a keyword-filtered feed.
+- A "macOS" background option that uses the same frosted glass as the system desktop widgets, so the widget and its text take on the colours of the wallpaper behind it.
 - Column view for scrolling and stack view for stepping through stories one at a time, with NEW labels on unseen stories.
 - Drag one widget onto another to merge them, and save widget layouts as views.
 - AI summaries, research, translations, and optional neutral headlines in English and Bulgarian.
