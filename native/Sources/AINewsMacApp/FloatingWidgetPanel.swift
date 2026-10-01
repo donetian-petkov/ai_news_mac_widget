@@ -733,7 +733,7 @@ final class FloatingWidgetManager: NSObject, NSWindowDelegate {
         // Keep the panel object around when closed so reopening the same category
         // just brings it back instead of leaking a new one.
         panel.isReleasedWhenClosed = false
-        panel.minSize = NSSize(width: 400, height: 260)
+        panel.minSize = NSSize(width: 360, height: 260)
         FloatingWidgetChrome.apply(to: panel)
         // Remember each widget's size/position across launches, per category.
         // We persist the frame ourselves (windowDidMove/Resize/WillClose) rather
@@ -1043,7 +1043,9 @@ private struct FloatingWidgetView: View {
         if usesMiniatureStackLayout(size: size) {
             return .stack
         }
-        if size.height >= stackToColumnHeightThreshold, size.width >= 400 {
+        // A tall window has room for several stories, so it shows the column even
+        // when it is a little narrow; otherwise one card sits above empty space.
+        if size.height >= stackToColumnHeightThreshold, size.width >= 360 {
             return .column
         }
         if size.width >= 760, size.height >= 560 {
@@ -2463,7 +2465,7 @@ private struct FloatingWidgetView: View {
         DispatchQueue.main.async {
             guard let window = currentWidgetWindow() else { return }
             suppressProgrammaticResizeSwitch()
-            window.minSize = mode == .stack ? NSSize(width: 300, height: 190) : NSSize(width: 400, height: 260)
+            window.minSize = mode == .stack ? NSSize(width: 300, height: 190) : NSSize(width: 360, height: 260)
             window.setFrame(savedFrame, display: true, animate: true)
             windowSize = savedFrame.size
         }
@@ -2473,7 +2475,7 @@ private struct FloatingWidgetView: View {
     private func updateMinimumWindowSize() {
         DispatchQueue.main.async {
             guard let window = currentWidgetWindow() else { return }
-            window.minSize = layoutMode == .stack ? NSSize(width: 300, height: 190) : NSSize(width: 400, height: 260)
+            window.minSize = layoutMode == .stack ? NSSize(width: 300, height: 190) : NSSize(width: 360, height: 260)
             windowSize = window.frame.size
         }
     }
@@ -2523,7 +2525,7 @@ private struct FloatingWidgetView: View {
             frame.origin.x -= deltaWidth / 2
             frame.size.height = targetHeight
             frame.size.width = targetWidth
-            window.minSize = layoutMode == .stack ? NSSize(width: 300, height: 190) : NSSize(width: 400, height: 260)
+            window.minSize = layoutMode == .stack ? NSSize(width: 300, height: 190) : NSSize(width: 360, height: 260)
             window.setFrame(frame, display: true, animate: true)
         }
     }
