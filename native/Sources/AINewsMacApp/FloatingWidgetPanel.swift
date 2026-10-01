@@ -1306,13 +1306,14 @@ private struct FloatingWidgetView: View {
     }
 
     private var headerCompactLayout: some View {
-        // Equal-width sides keep the status box in the middle of the widget.
-        HStack(alignment: .center, spacing: 8) {
+        // Equal spacers on both sides put the stats midway between the category
+        // name and the buttons.
+        HStack(alignment: .center, spacing: 0) {
             compactHeaderTitleChip
-                .frame(maxWidth: .infinity, alignment: .leading)
+            Spacer(minLength: 6)
             compactHeaderMetaInline
+            Spacer(minLength: 6)
             compactHeaderActions
-                .frame(maxWidth: .infinity, alignment: .trailing)
         }
     }
 
