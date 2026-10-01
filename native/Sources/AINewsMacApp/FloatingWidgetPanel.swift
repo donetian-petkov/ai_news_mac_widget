@@ -835,6 +835,8 @@ private struct FloatingWidgetView: View {
     @State private var suppressResizeDuringRefresh = false
     @State private var lastSourceRefreshAt: Date?
     @State private var windowBox = HostingWindowBox()
+    @State private var compactTitleWidth: CGFloat = 0
+    @State private var compactActionsWidth: CGFloat = 0
     /// How many stories to show. Grows by `pageStep` via "Show More", resets to
     /// `pageStep` via "Reset". Mirrors ai_news_deploy_ready's column behaviour.
     @State private var visibleCount = 10
@@ -1305,18 +1307,29 @@ private struct FloatingWidgetView: View {
     }
 
     private var headerCompactLayout: some View {
-        // The title, the buttons and the status box do not fit on one line at the
-        // usual widget width, so the status box gets its own row, centred.
-        VStack(spacing: 8) {
-            HStack(alignment: .center, spacing: 8) {
-                compactHeaderTitleChip
-                    .layoutPriority(1)
-                Spacer(minLength: 4)
-                compactHeaderActions
+        // One row: title on the left, buttons on the right, and the status box in
+        // the exact middle of the widget, vertically centred with both. The box may
+        // only use the room the wider side leaves free, so it never runs into them.
+        GeometryReader { proxy in
+            ZStack {
+                HStack(alignment: .center, spacing: 8) {
+                    compactHeaderTitleChip
+                        .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { compactTitleWidth = $0 }
+                    Spacer(minLength: 4)
+                    compactHeaderActions
+                        .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { compactActionsWidth = $0 }
+                }
+                compactHeaderMetaInline
+                    .frame(maxWidth: max(proxy.size.width - 2 * max(compactTitleWidth, compactActionsWidth) - 16, 90))
             }
-            compactHeaderMetaInline
-                .frame(maxWidth: .infinity, alignment: .center)
+            .frame(width: proxy.size.width, height: proxy.size.height)
         }
+        .frame(height: compactHeaderHeight)
+    }
+
+    /// Tall enough for the four-line status box at the current text size.
+    private var compactHeaderHeight: CGFloat {
+        ceil(74 * widgetFontScale)
     }
 
     private var headerTitleChip: some View {
@@ -1395,23 +1408,25 @@ private struct FloatingWidgetView: View {
 
     private var compactHeaderMetaInline: some View {
         TimelineView(.periodic(from: Date(), by: 30)) { context in
-            VStack(spacing: 1) {
-                Text("\(compactHeaderDate(context.date)) · \(tokenText) tokens")
-                    .font(widgetFont(13, weight: .semibold))
+            VStack(spacing: 0) {
+                Text(compactHeaderDate(context.date))
+                    .font(widgetFont(14, weight: .semibold))
                     .foregroundStyle(WidgetTheme.textSecondary)
-                HStack(spacing: 0) {
-                    Text("\(runtimeStatusLine) · ")
-                        .foregroundStyle(runtimeStatusTint)
-                    Text("\(pendingCount) pending")
-                        .foregroundStyle(pendingCount > 0 ? WidgetTheme.textPrimary : WidgetTheme.textMuted)
-                }
-                .font(widgetFont(13, weight: .semibold))
+                Text("\(tokenText) tokens")
+                    .font(widgetFont(13, weight: .bold))
+                    .foregroundStyle(WidgetTheme.textSecondary)
+                Text(runtimeStatusLine)
+                    .font(widgetFont(12.5, weight: .semibold))
+                    .foregroundStyle(runtimeStatusTint)
+                Text("\(pendingCount) pending")
+                    .font(widgetFont(13, weight: .semibold))
+                    .foregroundStyle(pendingCount > 0 ? WidgetTheme.textPrimary : WidgetTheme.textMuted)
             }
             .lineLimit(1)
-            .minimumScaleFactor(0.75)
+            .minimumScaleFactor(0.7)
             .multilineTextAlignment(.center)
             .padding(.horizontal, 12)
-            .padding(.vertical, 5)
+            .padding(.vertical, 6)
             .background(compactHeaderMetaFill)
             .overlay(compactHeaderMetaStroke)
         }
