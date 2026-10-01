@@ -8,7 +8,61 @@ private enum FloatingWidgetLayoutMode: String, CaseIterable {
     case stack
 }
 
-private let floatingWidgetHeaderPurple = Color(red: 0.56, green: 0.49, blue: 1.0)
+@MainActor private var floatingWidgetHeaderPurple: Color {
+    WidgetTheme.isNative ? Color.white.opacity(0.92) : Color(red: 0.56, green: 0.49, blue: 1.0)
+}
+
+/// The widget's colors. In the "macOS" background mode the theme palette is
+/// swapped for the white-on-glass look of the system desktop widgets; the
+/// management app keeps using the regular theme.
+@MainActor
+private enum WidgetTheme {
+    static var isNative: Bool { ThemeSettings.shared.widgetBackgroundMode == .native }
+
+    static var background: Color { isNative ? Color.black.opacity(0.12) : AINewsTheme.background }
+    static var backgroundAlt: Color { isNative ? Color.white.opacity(0.14) : AINewsTheme.backgroundAlt }
+    static var panel: Color { isNative ? Color.white.opacity(0.16) : AINewsTheme.panel }
+    static var panelBorder: Color { isNative ? Color.white.opacity(0.22) : AINewsTheme.panelBorder }
+    // Text and icons. In "macOS" mode these are the system's vibrant styles, so
+    // they take on the colour of whatever is behind the glass, like the
+    // built-in widgets, instead of staying a fixed white.
+    static var textPrimary: AnyShapeStyle { isNative ? AnyShapeStyle(.primary) : AnyShapeStyle(AINewsTheme.textPrimary) }
+    static var textSecondary: AnyShapeStyle { isNative ? AnyShapeStyle(.primary) : AnyShapeStyle(AINewsTheme.textSecondary) }
+    static var textMuted: AnyShapeStyle { isNative ? AnyShapeStyle(.secondary) : AnyShapeStyle(AINewsTheme.textMuted) }
+    static var accentBlue: AnyShapeStyle { isNative ? AnyShapeStyle(.primary) : AnyShapeStyle(AINewsTheme.accentBlue) }
+    static var accentCyan: AnyShapeStyle { isNative ? AnyShapeStyle(.secondary) : AnyShapeStyle(AINewsTheme.accentCyan) }
+    /// Plain colours for the few places that need a `Color` (underlines, chip fills).
+    static var accentCyanColor: Color { isNative ? Color.white.opacity(0.80) : AINewsTheme.accentCyan }
+    static var accentGold: Color { isNative ? Color(nsColor: .systemOrange) : AINewsTheme.accentGold }
+}
+
+private extension View {
+    /// Story card chrome: the themed card normally, a light frosted tile in "macOS" mode.
+    @ViewBuilder
+    func floatingCardStyle() -> some View {
+        if WidgetTheme.isNative {
+            self
+                .background(
+                    RoundedRectangle(cornerRadius: 20, style: .continuous)
+                        .fill(Color.white.opacity(0.08))
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 20, style: .continuous)
+                        .strokeBorder(
+                            LinearGradient(
+                                colors: [Color.white.opacity(0.24), Color.white.opacity(0.06)],
+                                startPoint: .top,
+                                endPoint: .bottom
+                            ),
+                            lineWidth: 1
+                        )
+                )
+                .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+        } else {
+            aiNewsCardStyle()
+        }
+    }
+}
 
 /// Holds a weak reference to the window a SwiftUI view is hosted in, so polling
 /// code can check whether that window is actually on screen.
@@ -18,9 +72,10 @@ private final class HostingWindowBox {
 
 private struct HostingWindowReader: NSViewRepresentable {
     let box: HostingWindowBox
+    var onWindow: (NSWindow) -> Void = { _ in }
 
     func makeNSView(context _: Context) -> NSView {
-        ReaderView(box: box)
+        ReaderView(box: box, onWindow: onWindow)
     }
 
     func updateNSView(_ nsView: NSView, context _: Context) {
@@ -29,9 +84,11 @@ private struct HostingWindowReader: NSViewRepresentable {
 
     private final class ReaderView: NSView {
         let box: HostingWindowBox
+        let onWindow: (NSWindow) -> Void
 
-        init(box: HostingWindowBox) {
+        init(box: HostingWindowBox, onWindow: @escaping (NSWindow) -> Void) {
             self.box = box
+            self.onWindow = onWindow
             super.init(frame: .zero)
         }
 
@@ -40,6 +97,7 @@ private struct HostingWindowReader: NSViewRepresentable {
         override func viewDidMoveToWindow() {
             super.viewDidMoveToWindow()
             box.window = window
+            if let window { onWindow(window) }
         }
     }
 }
@@ -87,15 +145,15 @@ private extension View {
 
     func floatingHeaderCircle(size: CGFloat) -> some View {
         self
-            .foregroundStyle(AINewsTheme.textSecondary)
+            .foregroundStyle(WidgetTheme.textSecondary)
             .frame(width: size, height: size)
             .background(
                 Circle()
-                    .fill(AINewsTheme.backgroundAlt.opacity(0.92))
+                    .fill(WidgetTheme.backgroundAlt.opacity(0.92))
             )
             .overlay(
                 Circle()
-                    .stroke(AINewsTheme.panelBorder.opacity(0.55), lineWidth: 1)
+                    .stroke(WidgetTheme.panelBorder.opacity(0.55), lineWidth: 1)
             )
     }
 
@@ -110,7 +168,7 @@ private struct FloatingPowerButtonChrome: ViewModifier {
             .frame(width: size, height: size)
             .background(
                 Circle()
-                    .fill(poweredOn ? floatingWidgetHeaderPurple : AINewsTheme.backgroundAlt.opacity(0.92))
+                    .fill(poweredOn ? floatingWidgetHeaderPurple : WidgetTheme.backgroundAlt.opacity(0.92))
             )
             .overlay(
                 Circle()
@@ -293,6 +351,56 @@ private struct FloatingGlassBackground: NSViewRepresentable {
         nsView.state = .active
         nsView.alphaValue = enabled ? 0.82 : 0
         nsView.isHidden = !enabled
+    }
+}
+
+private extension View {
+    /// Glass for the "macOS" mode. On macOS 26+ this is the same Liquid Glass the
+    /// system desktop widgets use: the background picks up the wallpaper, and
+    /// because SwiftUI knows the content sits on glass, the vibrant text styles
+    /// pick it up too. A light dark tint keeps the text readable on bright spots.
+    @ViewBuilder
+    func nativeWidgetGlass(_ enabled: Bool) -> some View {
+        if !enabled {
+            self
+        } else if #available(macOS 26.0, *) {
+            // Run the glass up under the see-through title bar, keeping the
+            // header clear of the close button.
+            self
+                .padding(.top, 28)
+                .ignoresSafeArea()
+                .glassEffect(.regular.tint(Color.black.opacity(0.28)), in: Rectangle())
+                .environment(\.colorScheme, .dark)
+        } else {
+            self
+                .padding(.top, 28)
+                .ignoresSafeArea()
+                .background(.ultraThinMaterial)
+                .environment(\.colorScheme, .dark)
+        }
+    }
+}
+
+/// In "macOS" mode the glass runs under the title bar and only the close button
+/// stays, like a desktop widget; other modes keep the normal title bar.
+@MainActor
+private enum FloatingWidgetChrome {
+    static func apply(to window: NSWindow) {
+        let native = ThemeSettings.shared.widgetBackgroundMode == .native
+        window.standardWindowButton(.zoomButton)?.isHidden = native
+        window.standardWindowButton(.miniaturizeButton)?.isHidden = native
+        guard window.styleMask.contains(.fullSizeContentView) != native else { return }
+        // Changing the style mask makes AppKit refit the window, so put the
+        // widget's size and position back afterwards.
+        let frame = window.frame
+        window.titlebarAppearsTransparent = native
+        if native {
+            window.styleMask.insert(.fullSizeContentView)
+        } else {
+            window.styleMask.remove(.fullSizeContentView)
+        }
+        window.setFrame(frame, display: true)
+        window.invalidateShadow()
     }
 }
 
@@ -626,6 +734,7 @@ final class FloatingWidgetManager: NSObject, NSWindowDelegate {
         // just brings it back instead of leaking a new one.
         panel.isReleasedWhenClosed = false
         panel.minSize = NSSize(width: 400, height: 260)
+        FloatingWidgetChrome.apply(to: panel)
         // Remember each widget's size/position across launches, per category.
         // We persist the frame ourselves (windowDidMove/Resize/WillClose) rather
         // than relying on AppKit's autosave, which is unreliable for panels.
@@ -658,7 +767,7 @@ final class FloatingWidgetManager: NSObject, NSWindowDelegate {
         isFiltered: Bool,
         mergedCategoryIDs: [Int]
     ) -> NSHostingController<AnyView> {
-        NSHostingController(
+        let controller = NSHostingController(
             rootView: AnyView(
                 FloatingWidgetView(
                     categoryID: categoryID,
@@ -673,6 +782,7 @@ final class FloatingWidgetManager: NSObject, NSWindowDelegate {
                 .environmentObject(ThemeSettings.shared)
             )
         )
+        return controller
     }
 
     private func configurePanelContent(
@@ -813,14 +923,14 @@ private struct FloatingWidgetView: View {
         return "Fetch \(status.enabled)/\(status.total)"
     }
 
-    private var runtimeStatusTint: Color {
+    private var runtimeStatusTint: AnyShapeStyle {
         if !state.isRuntimePoweredOn || pollingFeedStatus.enabled == 0 {
-            return AINewsTheme.textPrimary
+            return WidgetTheme.textPrimary
         }
         if loading {
-            return AINewsTheme.textPrimary
+            return WidgetTheme.textPrimary
         }
-        return AINewsTheme.textSecondary
+        return WidgetTheme.textSecondary
     }
 
     private var runtimeStatusLine: String {
@@ -977,33 +1087,47 @@ private struct FloatingWidgetView: View {
         theme.widgetBackgroundMode == .transparent
     }
 
+    private var usesNativeWidgetBackground: Bool {
+        theme.widgetBackgroundMode == .native
+    }
+
+    private func applyWindowChrome() {
+        // Only ever touch this widget's own panel, never the management window.
+        guard let window = windowBox.window else { return }
+        FloatingWidgetChrome.apply(to: window)
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             header
-            Divider().overlay(AINewsTheme.panelBorder.opacity(0.5))
+            if !usesNativeWidgetBackground {
+                Divider().overlay(WidgetTheme.panelBorder.opacity(0.5))
+            }
             content
         }
         .frame(minWidth: 220, minHeight: 180)
         .background(
             ZStack {
                 FloatingGlassBackground(enabled: usesTransparentWidgetBackground)
-                if usesTransparentWidgetBackground {
+                if usesNativeWidgetBackground {
+                    Color.clear
+                } else if usesTransparentWidgetBackground {
                     LinearGradient(
                         colors: [
-                            AINewsTheme.backgroundAlt.opacity(0.16),
-                            AINewsTheme.background.opacity(0.22)
+                            WidgetTheme.backgroundAlt.opacity(0.16),
+                            WidgetTheme.background.opacity(0.22)
                         ],
                         startPoint: .topLeading,
                         endPoint: .bottomTrailing
                     )
                     RadialGradient(
-                        gradient: Gradient(colors: [AINewsTheme.panelBorder.opacity(0.08), .clear]),
+                        gradient: Gradient(colors: [WidgetTheme.panelBorder.opacity(0.08), .clear]),
                         center: UnitPoint(x: 0.05, y: 0.0),
                         startRadius: 0,
                         endRadius: 520
                     )
                     RadialGradient(
-                        gradient: Gradient(colors: [AINewsTheme.accentCyan.opacity(0.05), .clear]),
+                        gradient: Gradient(colors: [WidgetTheme.accentCyanColor.opacity(0.05), .clear]),
                         center: UnitPoint(x: 1.0, y: 0.02),
                         startRadius: 0,
                         endRadius: 520
@@ -1011,28 +1135,33 @@ private struct FloatingWidgetView: View {
                 } else {
                     LinearGradient(
                         colors: [
-                            AINewsTheme.backgroundAlt.opacity(0.96),
-                            AINewsTheme.background.opacity(0.98)
+                            WidgetTheme.backgroundAlt.opacity(0.96),
+                            WidgetTheme.background.opacity(0.98)
                         ],
                         startPoint: .topLeading,
                         endPoint: .bottomTrailing
                     )
                     RadialGradient(
-                        gradient: Gradient(colors: [AINewsTheme.panelBorder.opacity(0.14), .clear]),
+                        gradient: Gradient(colors: [WidgetTheme.panelBorder.opacity(0.14), .clear]),
                         center: UnitPoint(x: 0.05, y: 0.0),
                         startRadius: 0,
                         endRadius: 520
                     )
                     RadialGradient(
-                        gradient: Gradient(colors: [AINewsTheme.accentCyan.opacity(0.08), .clear]),
+                        gradient: Gradient(colors: [WidgetTheme.accentCyanColor.opacity(0.08), .clear]),
                         center: UnitPoint(x: 1.0, y: 0.02),
                         startRadius: 0,
                         endRadius: 520
                     )
                 }
             }
+            .ignoresSafeArea()
         )
+        .nativeWidgetGlass(usesNativeWidgetBackground)
         .dynamicTypeSize(theme.widgetFontSize.dynamicTypeSize)
+        .onChange(of: theme.revision) { _, _ in
+            applyWindowChrome()
+        }
         .onReceive(NotificationCenter.default.publisher(for: NSWindow.didResizeNotification)) { notification in
             guard let window = notification.object as? NSWindow,
                   currentWidgetWindow() === window else {
@@ -1051,7 +1180,9 @@ private struct FloatingWidgetView: View {
                 windowSize = window.frame.size
             }
         }
-        .background(HostingWindowReader(box: windowBox))
+        .background(HostingWindowReader(box: windowBox) { _ in
+            DispatchQueue.main.async { applyWindowChrome() }
+        })
         .task {
             // Load now, then auto-refresh so the widget picks up new stories and
             // freshly generated summaries/translations without clicking reload.
@@ -1174,13 +1305,13 @@ private struct FloatingWidgetView: View {
     }
 
     private var headerCompactLayout: some View {
-        HStack(alignment: .center, spacing: 10) {
+        // Equal-width sides keep the status box in the middle of the widget.
+        HStack(alignment: .center, spacing: 8) {
             compactHeaderTitleChip
-                .layoutPriority(1)
-            Spacer(minLength: 4)
+                .frame(maxWidth: .infinity, alignment: .leading)
             compactHeaderMetaInline
-            Spacer(minLength: 4)
             compactHeaderActions
+                .frame(maxWidth: .infinity, alignment: .trailing)
         }
     }
 
@@ -1193,10 +1324,10 @@ private struct FloatingWidgetView: View {
             HStack(spacing: 10) {
                 Image(systemName: "newspaper.fill")
                     .font(widgetFont(17, weight: .bold))
-                    .foregroundStyle(AINewsTheme.textSecondary)
+                    .foregroundStyle(WidgetTheme.textSecondary)
                 Text(displayCategoryName)
                     .font(widgetHeaderTitle())
-                    .foregroundStyle(AINewsTheme.textPrimary)
+                    .foregroundStyle(WidgetTheme.textPrimary)
                     .lineLimit(1)
                     .minimumScaleFactor(0.9)
             }
@@ -1214,16 +1345,16 @@ private struct FloatingWidgetView: View {
             VStack(spacing: 1) {
                 Text(compactHeaderDate(context.date))
                     .font(widgetHeaderMeta())
-                    .foregroundStyle(AINewsTheme.textSecondary)
+                    .foregroundStyle(WidgetTheme.textSecondary)
                 Text("\(tokenText) tokens")
                     .font(widgetHeaderStat(weight: .bold))
-                    .foregroundStyle(AINewsTheme.textSecondary)
+                    .foregroundStyle(WidgetTheme.textSecondary)
                 Text(runtimeStatusLine)
                     .font(widgetHeaderStat())
                     .foregroundStyle(runtimeStatusTint)
                 Text("\(pendingCount) pending")
                     .font(widgetHeaderStat())
-                    .foregroundStyle(pendingCount > 0 ? AINewsTheme.textPrimary : AINewsTheme.textMuted)
+                    .foregroundStyle(pendingCount > 0 ? WidgetTheme.textPrimary : WidgetTheme.textMuted)
             }
             .lineLimit(1)
             .padding(.horizontal, 14)
@@ -1241,13 +1372,13 @@ private struct FloatingWidgetView: View {
         } label: {
             HStack(spacing: 7) {
                 Image(systemName: "newspaper.fill")
-                    .font(widgetFont(14, weight: .bold))
-                    .foregroundStyle(AINewsTheme.textSecondary)
+                    .font(widgetFont(16, weight: .bold))
+                    .foregroundStyle(WidgetTheme.textSecondary)
                 Text(displayCategoryName)
-                    .font(widgetFont(15, weight: .bold))
-                    .foregroundStyle(AINewsTheme.textPrimary)
+                    .font(widgetFont(17, weight: .bold))
+                    .foregroundStyle(WidgetTheme.textPrimary)
                     .lineLimit(1)
-                    .minimumScaleFactor(0.84)
+                    .minimumScaleFactor(0.7)
             }
         }
         .buttonStyle(.plain)
@@ -1262,18 +1393,18 @@ private struct FloatingWidgetView: View {
         TimelineView(.periodic(from: Date(), by: 30)) { context in
             VStack(spacing: -1) {
                 Text(compactHeaderDate(context.date))
-                    .font(widgetFont(11.5, weight: .semibold))
-                    .foregroundStyle(AINewsTheme.textSecondary)
+                    .font(widgetFont(14, weight: .semibold))
+                    .foregroundStyle(WidgetTheme.textSecondary)
                 Text("\(tokenText) tokens")
-                    .font(widgetFont(10.75, weight: .bold))
-                    .foregroundStyle(AINewsTheme.textSecondary)
+                    .font(widgetFont(13, weight: .bold))
+                    .foregroundStyle(WidgetTheme.textSecondary)
                 Text(runtimeStatusLine)
-                    .font(widgetFont(10.25, weight: .semibold))
+                    .font(widgetFont(12.5, weight: .semibold))
                     .foregroundStyle(runtimeStatusTint)
                     .minimumScaleFactor(0.72)
                 Text("\(pendingCount) pending")
-                    .font(widgetFont(10.75, weight: .semibold))
-                    .foregroundStyle(pendingCount > 0 ? AINewsTheme.textPrimary : AINewsTheme.textMuted)
+                    .font(widgetFont(13, weight: .semibold))
+                    .foregroundStyle(pendingCount > 0 ? WidgetTheme.textPrimary : WidgetTheme.textMuted)
             }
             .lineLimit(1)
             .multilineTextAlignment(.center)
@@ -1281,15 +1412,15 @@ private struct FloatingWidgetView: View {
             .padding(.vertical, 3)
             .background(compactHeaderMetaFill)
             .overlay(compactHeaderMetaStroke)
-            .frame(minWidth: 104)
+            .frame(minWidth: 120)
         }
     }
 
     private var compactHeaderActions: some View {
         HStack(spacing: 5) {
-            headerPowerButton(size: 32, fontSize: 14)
-            headerModeButton(.column, systemImage: "rectangle.grid.1x2", size: 26)
-            headerModeButton(.stack, systemImage: "square.stack.3d.up", size: 26)
+            headerPowerButton(size: 34, fontSize: 15)
+            headerModeButton(.column, systemImage: "rectangle.grid.1x2", size: 30)
+            headerModeButton(.stack, systemImage: "square.stack.3d.up", size: 30)
             if loading {
                 ProgressView().controlSize(.small)
             }
@@ -1297,8 +1428,8 @@ private struct FloatingWidgetView: View {
                 Task { await reload(clearUnchangedNewLabels: true) }
             } label: {
                 Image(systemName: "arrow.clockwise")
-                    .font(widgetFont(12.5, weight: .semibold))
-                    .floatingHeaderCircle(size: 28)
+                    .font(widgetFont(14, weight: .semibold))
+                    .floatingHeaderCircle(size: 30)
             }
             .buttonStyle(.borderless)
             .help("Reload this category")
@@ -1331,32 +1462,32 @@ private struct FloatingWidgetView: View {
 
     private var headerCapsuleFill: some View {
         RoundedRectangle(cornerRadius: 16, style: .continuous)
-            .fill(AINewsTheme.panel.opacity(0.58))
+            .fill(WidgetTheme.panel.opacity(0.58))
     }
 
     private var headerCapsuleStroke: some View {
         RoundedRectangle(cornerRadius: 16, style: .continuous)
-            .stroke(AINewsTheme.panelBorder.opacity(0.18), lineWidth: 1)
+            .stroke(WidgetTheme.panelBorder.opacity(0.18), lineWidth: 1)
     }
 
     private var compactHeaderCapsuleFill: some View {
         RoundedRectangle(cornerRadius: 14, style: .continuous)
-            .fill(AINewsTheme.panel.opacity(0.44))
+            .fill(WidgetTheme.panel.opacity(0.44))
     }
 
     private var compactHeaderCapsuleStroke: some View {
         RoundedRectangle(cornerRadius: 14, style: .continuous)
-            .stroke(AINewsTheme.panelBorder.opacity(0.14), lineWidth: 1)
+            .stroke(WidgetTheme.panelBorder.opacity(0.14), lineWidth: 1)
     }
 
     private var compactHeaderMetaFill: some View {
         RoundedRectangle(cornerRadius: 10, style: .continuous)
-            .fill(AINewsTheme.panel.opacity(0.56))
+            .fill(WidgetTheme.panel.opacity(0.56))
     }
 
     private var compactHeaderMetaStroke: some View {
         RoundedRectangle(cornerRadius: 10, style: .continuous)
-            .stroke(AINewsTheme.panelBorder.opacity(0.16), lineWidth: 1)
+            .stroke(WidgetTheme.panelBorder.opacity(0.16), lineWidth: 1)
     }
 
     private func headerModeButton(_ mode: FloatingWidgetLayoutMode, systemImage: String, size: CGFloat = 28) -> some View {
@@ -1364,17 +1495,17 @@ private struct FloatingWidgetView: View {
             switchLayoutMode(to: mode)
         } label: {
             Image(systemName: systemImage)
-                .font(widgetFont(size == 28 ? 12 : 11, weight: .semibold))
-                .foregroundStyle(layoutMode == mode ? AINewsTheme.textPrimary : AINewsTheme.textSecondary)
+                .font(widgetFont(size >= 28 ? 13 : 11, weight: .semibold))
+                .foregroundStyle(layoutMode == mode ? WidgetTheme.textPrimary : WidgetTheme.textSecondary)
                 .frame(width: size, height: size)
                 .background(
                     RoundedRectangle(cornerRadius: 9, style: .continuous)
-                        .fill(layoutMode == mode ? floatingWidgetHeaderPurple.opacity(0.22) : AINewsTheme.backgroundAlt.opacity(0.9))
+                        .fill(layoutMode == mode ? floatingWidgetHeaderPurple.opacity(0.22) : WidgetTheme.backgroundAlt.opacity(0.9))
                 )
                 .overlay(
                     RoundedRectangle(cornerRadius: 9, style: .continuous)
                         .stroke(
-                            layoutMode == mode ? floatingWidgetHeaderPurple.opacity(0.9) : AINewsTheme.panelBorder.opacity(0.55),
+                            layoutMode == mode ? floatingWidgetHeaderPurple.opacity(0.9) : WidgetTheme.panelBorder.opacity(0.55),
                             lineWidth: 1
                         )
                 )
@@ -1418,12 +1549,12 @@ private struct FloatingWidgetView: View {
             VStack(alignment: .leading, spacing: 6) {
                 Text(loading ? "Loading…" : "No stories yet")
                     .font(widgetFont(14, weight: .semibold))
-                    .foregroundStyle(AINewsTheme.textPrimary)
+                    .foregroundStyle(WidgetTheme.textPrimary)
                 Text(isFiltered
                      ? "Add keywords (Workspace ▸ Keywords) or tracked topics (Settings ▸ Personalization) to see matches here."
                      : "Refresh this category, or generate summaries from the main window.")
                     .font(widgetFont(12))
-                    .foregroundStyle(AINewsTheme.textSecondary)
+                    .foregroundStyle(WidgetTheme.textSecondary)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             .padding(14)
@@ -1476,15 +1607,15 @@ private struct FloatingWidgetView: View {
             } label: {
                 Image(systemName: "arrow.up.to.line")
                     .font(widgetFont(13, weight: .bold))
-                    .foregroundStyle(AINewsTheme.textPrimary)
+                    .foregroundStyle(WidgetTheme.textPrimary)
                     .frame(width: 34, height: 34)
                     .background(
                         Circle()
-                            .fill(AINewsTheme.backgroundAlt.opacity(theme.widgetBackgroundMode == .solid ? 0.96 : 0.82))
+                            .fill(WidgetTheme.backgroundAlt.opacity(theme.widgetBackgroundMode == .transparent ? 0.82 : 0.96))
                     )
                     .overlay(
                         Circle()
-                            .stroke(AINewsTheme.panelBorder.opacity(0.85), lineWidth: 1)
+                            .stroke(WidgetTheme.panelBorder.opacity(0.85), lineWidth: 1)
                     )
             }
             .buttonStyle(.plain)
@@ -1495,15 +1626,15 @@ private struct FloatingWidgetView: View {
             } label: {
                 Image(systemName: "arrow.down.to.line")
                     .font(widgetFont(13, weight: .bold))
-                    .foregroundStyle(AINewsTheme.textPrimary)
+                    .foregroundStyle(WidgetTheme.textPrimary)
                     .frame(width: 34, height: 34)
                     .background(
                         Circle()
-                            .fill(AINewsTheme.backgroundAlt.opacity(theme.widgetBackgroundMode == .solid ? 0.96 : 0.82))
+                            .fill(WidgetTheme.backgroundAlt.opacity(theme.widgetBackgroundMode == .transparent ? 0.82 : 0.96))
                     )
                     .overlay(
                         Circle()
-                            .stroke(AINewsTheme.panelBorder.opacity(0.85), lineWidth: 1)
+                            .stroke(WidgetTheme.panelBorder.opacity(0.85), lineWidth: 1)
                     )
             }
             .buttonStyle(.plain)
@@ -1602,8 +1733,8 @@ private struct FloatingWidgetView: View {
                     }
                     Text(displayTitle(for: current))
                         .font(widgetFont(15.5, weight: .bold))
-                        .foregroundStyle(AINewsTheme.accentBlue)
-                        .underline(isShowingNeutralTitle(for: current), color: AINewsTheme.accentCyan.opacity(0.85))
+                        .foregroundStyle(WidgetTheme.accentBlue)
+                        .underline(isShowingNeutralTitle(for: current), color: WidgetTheme.accentCyanColor.opacity(0.85))
                         .lineLimit(3)
                         .minimumScaleFactor(0.78)
                         .frame(maxWidth: .infinity, alignment: .leading)
@@ -1611,11 +1742,11 @@ private struct FloatingWidgetView: View {
                 .padding(10)
                 .background(
                     RoundedRectangle(cornerRadius: 14, style: .continuous)
-                        .fill(AINewsTheme.backgroundAlt.opacity(0.94))
+                        .fill(WidgetTheme.backgroundAlt.opacity(0.94))
                 )
                 .overlay(
                     RoundedRectangle(cornerRadius: 14, style: .continuous)
-                        .stroke(AINewsTheme.panelBorder.opacity(0.72), lineWidth: 1)
+                        .stroke(WidgetTheme.panelBorder.opacity(0.72), lineWidth: 1)
                 )
                 .contentShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
                 .onTapGesture {
@@ -1690,7 +1821,7 @@ private struct FloatingWidgetView: View {
 
                     VStack(alignment: .leading, spacing: 8) {
                         Capsule(style: .continuous)
-                            .fill(AINewsTheme.accentCyan.opacity(0.06))
+                            .fill(WidgetTheme.accentCyanColor.opacity(0.06))
                             .frame(width: 112, height: 12)
                         Capsule(style: .continuous)
                             .fill(Color.white.opacity(0.024))
@@ -1709,7 +1840,7 @@ private struct FloatingWidgetView: View {
             )
             .overlay(
                 RoundedRectangle(cornerRadius: 18, style: .continuous)
-                    .stroke(AINewsTheme.panelBorder.opacity(0.12), lineWidth: 1)
+                    .stroke(WidgetTheme.panelBorder.opacity(0.12), lineWidth: 1)
             )
             .scaleEffect(scale)
             .offset(x: xOffset, y: yOffset)
@@ -1727,23 +1858,23 @@ private struct FloatingWidgetView: View {
                     .font(widgetFont(12, weight: .semibold))
             }
         }
-        .foregroundStyle(AINewsTheme.textPrimary)
+        .foregroundStyle(WidgetTheme.textPrimary)
         .frame(maxWidth: .infinity, minHeight: iconOnly ? 30 : 0)
         .padding(.vertical, 8)
         .background(
             RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .fill(AINewsTheme.backgroundAlt.opacity(0.92))
+                .fill(WidgetTheme.backgroundAlt.opacity(0.92))
         )
         .overlay(
             RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .stroke(AINewsTheme.panelBorder.opacity(0.75), lineWidth: 1)
+                .stroke(WidgetTheme.panelBorder.opacity(0.75), lineWidth: 1)
         )
     }
 
     private var stackPositionLabel: some View {
         Text("\(stackIndex + 1) of \(stories.count)")
             .font(widgetFont(12, weight: .bold))
-            .foregroundStyle(AINewsTheme.textPrimary)
+            .foregroundStyle(WidgetTheme.textPrimary)
             .lineLimit(1)
             .minimumScaleFactor(0.82)
             .frame(minWidth: 58)
@@ -1751,11 +1882,11 @@ private struct FloatingWidgetView: View {
             .padding(.vertical, 7)
             .background(
                 Capsule(style: .continuous)
-                    .fill(AINewsTheme.backgroundAlt.opacity(0.9))
+                    .fill(WidgetTheme.backgroundAlt.opacity(0.9))
             )
             .overlay(
                 Capsule(style: .continuous)
-                    .stroke(AINewsTheme.panelBorder.opacity(0.65), lineWidth: 1)
+                    .stroke(WidgetTheme.panelBorder.opacity(0.65), lineWidth: 1)
             )
     }
 
@@ -1821,18 +1952,18 @@ private struct FloatingWidgetView: View {
                 .font(widgetFont(12, weight: .semibold))
                 .lineLimit(1)
         }
-        .foregroundStyle(prominent ? Color.black : AINewsTheme.textPrimary)
+        .foregroundStyle(prominent ? AnyShapeStyle(Color.black) : WidgetTheme.textPrimary)
         .frame(maxWidth: .infinity)
         .padding(.horizontal, 12)
         .padding(.vertical, 9)
         .background(
             RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .fill(prominent ? AINewsTheme.accentCyan.opacity(0.96) : AINewsTheme.backgroundAlt.opacity(0.96))
+                .fill(prominent ? WidgetTheme.accentCyanColor.opacity(0.96) : WidgetTheme.backgroundAlt.opacity(0.96))
         )
         .overlay(
             RoundedRectangle(cornerRadius: 12, style: .continuous)
                 .stroke(
-                    prominent ? AINewsTheme.accentCyan.opacity(0.98) : AINewsTheme.panelBorder.opacity(0.85),
+                    prominent ? WidgetTheme.accentCyanColor.opacity(0.98) : WidgetTheme.panelBorder.opacity(0.85),
                     lineWidth: 1
                 )
         )
@@ -1869,7 +2000,7 @@ private struct FloatingWidgetView: View {
                         HStack(spacing: 6) {
                             Text(story.source ?? story.feedUrl)
                                 .font(widgetCaption(weight: .semibold))
-                                .foregroundStyle(AINewsTheme.accentCyan)
+                                .foregroundStyle(WidgetTheme.accentCyan)
                                 .lineLimit(1)
                             if showsNewBadge(for: story) {
                                 newBadge
@@ -1881,7 +2012,7 @@ private struct FloatingWidgetView: View {
                         if let date = story.publishedDate {
                             Text(date.formatted(date: .abbreviated, time: .shortened))
                                 .font(widgetCaption2())
-                                .foregroundStyle(AINewsTheme.textMuted)
+                                .foregroundStyle(WidgetTheme.textMuted)
                         }
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -1893,27 +2024,27 @@ private struct FloatingWidgetView: View {
 
                 Text(displayTitle(for: story))
                     .font(widgetHeadline(weight: .bold))
-                    .foregroundStyle(AINewsTheme.accentBlue)
-                    .underline(isShowingNeutralTitle(for: story), color: AINewsTheme.accentCyan.opacity(0.85))
+                    .foregroundStyle(WidgetTheme.accentBlue)
+                    .underline(isShowingNeutralTitle(for: story), color: WidgetTheme.accentCyanColor.opacity(0.85))
                     .fixedSize(horizontal: false, vertical: true)
 
                 if let secondary = secondaryTitle(for: story) {
                     Text(secondary)
                         .font(widgetCaption())
-                        .foregroundStyle(AINewsTheme.accentGold)
+                        .foregroundStyle(WidgetTheme.accentGold)
                         .fixedSize(horizontal: false, vertical: true)
                 }
 
                 if !story.shouldOmitSummary(showOriginalTitle: showOriginalTitles) {
-                    block("Summary", visibleSummary(for: story), pending: story.summaryPending, enabled: state.globalAiDefaults.summaryEnabled, accent: AINewsTheme.accentBlue)
+                    block("Summary", visibleSummary(for: story), pending: story.summaryPending, enabled: state.globalAiDefaults.summaryEnabled, accent: WidgetTheme.accentBlue)
                 }
-                block("Research", story.research, pending: story.researchPending, enabled: state.globalAiDefaults.researchEnabled, accent: AINewsTheme.accentCyan)
+                block("Research", story.research, pending: story.researchPending, enabled: state.globalAiDefaults.researchEnabled, accent: WidgetTheme.accentCyan)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
         }
         .padding(12)
         .frame(minHeight: minCardHeight, alignment: .top)
-        .aiNewsCardStyle()
+        .floatingCardStyle()
         .contentShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
         .opacity(draggedStoryKey == story.storyKey ? 0.72 : 1)
         .onTapGesture {
@@ -1933,17 +2064,17 @@ private struct FloatingWidgetView: View {
                 VStack(alignment: .leading, spacing: 4) {
                     Text(story.source ?? story.feedUrl)
                         .font(widgetCaption(weight: .semibold))
-                        .foregroundStyle(AINewsTheme.accentCyan)
+                        .foregroundStyle(WidgetTheme.accentCyan)
                         .lineLimit(1)
                     Text(displayTitle(for: story))
                         .font(widgetHeadline(weight: .bold))
-                        .foregroundStyle(AINewsTheme.accentBlue)
-                        .underline(isShowingNeutralTitle(for: story), color: AINewsTheme.accentCyan.opacity(0.85))
+                        .foregroundStyle(WidgetTheme.accentBlue)
+                        .underline(isShowingNeutralTitle(for: story), color: WidgetTheme.accentCyanColor.opacity(0.85))
                         .lineLimit(3)
                     if let summary = visibleSummary(for: story), !summary.isEmpty {
                         Text(summary)
                             .font(widgetCaption())
-                            .foregroundStyle(AINewsTheme.textSecondary)
+                            .foregroundStyle(WidgetTheme.textSecondary)
                             .lineLimit(2)
                     }
                 }
@@ -1951,11 +2082,11 @@ private struct FloatingWidgetView: View {
             .padding(12)
             .background(
                 RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .fill(AINewsTheme.backgroundAlt.opacity(0.96))
+                    .fill(WidgetTheme.backgroundAlt.opacity(0.96))
             )
             .overlay(
                 RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .stroke(AINewsTheme.panelBorder.opacity(0.8), lineWidth: 1)
+                    .stroke(WidgetTheme.panelBorder.opacity(0.8), lineWidth: 1)
             )
             .opacity(0.9)
             .frame(width: 300, alignment: .leading)
@@ -1986,7 +2117,7 @@ private struct FloatingWidgetView: View {
     }
 
     @ViewBuilder
-    private func block(_ label: String, _ text: String?, pending: Bool, enabled: Bool, accent: Color) -> some View {
+    private func block(_ label: String, _ text: String?, pending: Bool, enabled: Bool, accent: AnyShapeStyle) -> some View {
         // Only show the section when the action is enabled — disabling it globally hides
         // it here even if older content still exists on the story.
         if enabled {
@@ -1997,12 +2128,12 @@ private struct FloatingWidgetView: View {
                 if let text, !text.isEmpty {
                     Text(text)
                         .font(widgetBody())
-                        .foregroundStyle(AINewsTheme.textSecondary)
+                        .foregroundStyle(WidgetTheme.textSecondary)
                         .fixedSize(horizontal: false, vertical: true)
                 } else {
                     Text(pending ? "Generating…" : "Not generated yet.")
                         .font(widgetBody())
-                        .foregroundStyle(AINewsTheme.textMuted)
+                        .foregroundStyle(WidgetTheme.textMuted)
                 }
             }
         }
@@ -2019,7 +2150,7 @@ private struct FloatingWidgetView: View {
                     .frame(width: 22, height: 22)
             }
             .buttonStyle(.borderless)
-            .foregroundStyle(AINewsTheme.textMuted)
+            .foregroundStyle(WidgetTheme.textMuted)
             .help("Hide this story from widgets")
             .pointingHandCursor()
 
@@ -2037,7 +2168,7 @@ private struct FloatingWidgetView: View {
                 .frame(minWidth: copiedStoryKey == story.storyKey ? 58 : 22, minHeight: 22)
             }
             .buttonStyle(.borderless)
-            .foregroundStyle(copiedStoryKey == story.storyKey ? AINewsTheme.accentCyan : AINewsTheme.textMuted)
+            .foregroundStyle(copiedStoryKey == story.storyKey ? WidgetTheme.accentCyan : WidgetTheme.textMuted)
             .help("Copy a share link for this story")
             .pointingHandCursor()
         }
@@ -2236,17 +2367,17 @@ private struct FloatingWidgetView: View {
             ForEach(storyLabels(for: story), id: \.self) { label in
                 Text(label)
                     .font(widgetCaption2(weight: .bold))
-                    .foregroundStyle(AINewsTheme.accentCyan)
+                    .foregroundStyle(WidgetTheme.accentCyan)
                     .lineLimit(1)
                     .padding(.horizontal, 7)
                     .padding(.vertical, 2)
                     .background(
                         Capsule(style: .continuous)
-                            .fill(AINewsTheme.accentCyan.opacity(0.12))
+                            .fill(WidgetTheme.accentCyanColor.opacity(0.12))
                     )
                     .overlay(
                         Capsule(style: .continuous)
-                            .stroke(AINewsTheme.accentCyan.opacity(0.32), lineWidth: 1)
+                            .stroke(WidgetTheme.accentCyanColor.opacity(0.32), lineWidth: 1)
                     )
             }
         }
@@ -2260,7 +2391,7 @@ private struct FloatingWidgetView: View {
             .padding(.vertical, 2)
             .background(
                 Capsule(style: .continuous)
-                    .fill(AINewsTheme.accentGold.opacity(0.98))
+                    .fill(WidgetTheme.accentGold.opacity(0.98))
             )
     }
 
@@ -2277,16 +2408,16 @@ private struct FloatingWidgetView: View {
                 }
             }
             .font(widgetCaption2(weight: .bold))
-            .foregroundStyle(AINewsTheme.accentCyan)
+            .foregroundStyle(WidgetTheme.accentCyan)
             .padding(.horizontal, compact ? 6 : 8)
             .padding(.vertical, 2)
             .background(
                 Capsule(style: .continuous)
-                    .fill(AINewsTheme.accentCyan.opacity(showOriginalTitles ? 0.08 : 0.15))
+                    .fill(WidgetTheme.accentCyanColor.opacity(showOriginalTitles ? 0.08 : 0.15))
             )
             .overlay(
                 Capsule(style: .continuous)
-                    .stroke(AINewsTheme.accentCyan.opacity(showOriginalTitles ? 0.38 : 0.55), lineWidth: 1)
+                    .stroke(WidgetTheme.accentCyanColor.opacity(showOriginalTitles ? 0.38 : 0.55), lineWidth: 1)
             )
         }
         .buttonStyle(.plain)

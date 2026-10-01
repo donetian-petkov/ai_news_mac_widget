@@ -73,11 +73,14 @@ public enum AINewsVibe: String, CaseIterable, Sendable {
 public enum AINewsWidgetBackgroundMode: String, CaseIterable, Sendable {
     case solid
     case transparent
+    /// Frosted glass with white text, styled after the built-in macOS desktop widgets.
+    case native
 
     public var displayName: String {
         switch self {
         case .solid: return "Solid"
         case .transparent: return "Transparent"
+        case .native: return "macOS"
         }
     }
 }
