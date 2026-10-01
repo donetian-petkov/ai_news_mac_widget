@@ -1305,13 +1305,17 @@ private struct FloatingWidgetView: View {
     }
 
     private var headerCompactLayout: some View {
-        // Equal-width sides keep the status box in the middle of the widget.
-        HStack(alignment: .center, spacing: 8) {
-            compactHeaderTitleChip
-                .frame(maxWidth: .infinity, alignment: .leading)
+        // The title, the buttons and the status box do not fit on one line at the
+        // usual widget width, so the status box gets its own row, centred.
+        VStack(spacing: 8) {
+            HStack(alignment: .center, spacing: 8) {
+                compactHeaderTitleChip
+                    .layoutPriority(1)
+                Spacer(minLength: 4)
+                compactHeaderActions
+            }
             compactHeaderMetaInline
-            compactHeaderActions
-                .frame(maxWidth: .infinity, alignment: .trailing)
+                .frame(maxWidth: .infinity, alignment: .center)
         }
     }
 
@@ -1391,28 +1395,25 @@ private struct FloatingWidgetView: View {
 
     private var compactHeaderMetaInline: some View {
         TimelineView(.periodic(from: Date(), by: 30)) { context in
-            VStack(spacing: -1) {
-                Text(compactHeaderDate(context.date))
-                    .font(widgetFont(14, weight: .semibold))
-                    .foregroundStyle(WidgetTheme.textSecondary)
-                Text("\(tokenText) tokens")
-                    .font(widgetFont(13, weight: .bold))
-                    .foregroundStyle(WidgetTheme.textSecondary)
-                Text(runtimeStatusLine)
-                    .font(widgetFont(12.5, weight: .semibold))
-                    .foregroundStyle(runtimeStatusTint)
-                    .minimumScaleFactor(0.72)
-                Text("\(pendingCount) pending")
+            VStack(spacing: 1) {
+                Text("\(compactHeaderDate(context.date)) · \(tokenText) tokens")
                     .font(widgetFont(13, weight: .semibold))
-                    .foregroundStyle(pendingCount > 0 ? WidgetTheme.textPrimary : WidgetTheme.textMuted)
+                    .foregroundStyle(WidgetTheme.textSecondary)
+                HStack(spacing: 0) {
+                    Text("\(runtimeStatusLine) · ")
+                        .foregroundStyle(runtimeStatusTint)
+                    Text("\(pendingCount) pending")
+                        .foregroundStyle(pendingCount > 0 ? WidgetTheme.textPrimary : WidgetTheme.textMuted)
+                }
+                .font(widgetFont(13, weight: .semibold))
             }
             .lineLimit(1)
+            .minimumScaleFactor(0.75)
             .multilineTextAlignment(.center)
-            .padding(.horizontal, 8)
-            .padding(.vertical, 3)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 5)
             .background(compactHeaderMetaFill)
             .overlay(compactHeaderMetaStroke)
-            .frame(minWidth: 120)
         }
     }
 
