@@ -931,10 +931,10 @@ export function renderBriefingHtml(title: string, stories: RatedStory[], limit: 
   .preset.on { color: var(--accent); border-color: var(--accent); }
   #eq-presets { display: flex; flex-wrap: wrap; gap: 6px; }
   #eq-bands { display: flex; justify-content: space-around; gap: 6px; margin-top: 10px; }
-  .band { display: flex; flex-direction: column; align-items: center; gap: 4px; cursor: pointer; min-width: 0; }
+  .band { display: flex; flex: 1 1 0; flex-direction: column; align-items: center; gap: 4px; cursor: pointer; min-width: 0; }
   .band input { writing-mode: vertical-lr; direction: rtl; width: 26px; height: 110px; accent-color: var(--accent); margin: 0; }
   .bval { font-size: 12px; font-weight: 600; color: var(--accent); font-variant-numeric: tabular-nums; }
-  .bname { font-size: 12px; color: var(--muted); }
+  .bname { font-size: 12px; color: var(--muted); text-align: center; overflow-wrap: anywhere; }
   h2 { font-size: 13px; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); margin: 28px 0 10px; }
   article { display: flex; gap: 14px; background: var(--card); border: 1px solid var(--border); border-left: 4px solid var(--routine); border-radius: 12px; padding: 14px 16px; margin-bottom: 10px; }
   article.level-critical { border-left-color: var(--critical); }
@@ -962,8 +962,8 @@ export function renderBriefingHtml(title: string, stories: RatedStory[], limit: 
   .rated-head { margin: 0 0 4px; font-weight: 600; }
   .rated ul { list-style: none; margin: 0; padding: 0; }
   .rated li { display: grid; grid-template-columns: 74px 34px 34px 1fr; gap: 6px; align-items: baseline; }
-  .cname { color: var(--text); }
-  .dots { letter-spacing: 1px; color: var(--accent); font-size: 11px; }
+  .cname { color: var(--text); white-space: nowrap; overflow-wrap: normal; }
+  .dots { letter-spacing: 1px; color: var(--accent); font-size: 11px; white-space: nowrap; }
   .pts { font-variant-numeric: tabular-nums; color: var(--text); }
   .rated li.zero, .rated li.zero .cname, .rated li.zero .pts { opacity: .6; }
   .rules-tag { font-style: italic; }
@@ -982,11 +982,20 @@ export function renderBriefingHtml(title: string, stories: RatedStory[], limit: 
   .empty, footer { color: var(--muted); }
   footer { margin-top: 36px; font-size: 13px; }
   footer ul { padding-left: 18px; }
+  main { overflow-wrap: anywhere; }
   @media (max-width: 560px) {
-    article { flex-direction: column; }
+    main { padding: 20px 12px 48px; }
+    header h1 { font-size: 20px; }
+    .eq { padding: 10px 8px 8px; }
+    #eq-bands { gap: 2px; }
+    .bname { font-size: 10.5px; }
+    .preset { font-size: 12px; padding: 3px 9px; }
+    .storyline { padding: 8px 6px 2px; }
+    article { flex-direction: column; padding: 12px; }
     .cover { width: 100%; height: 160px; }
-    .rated li { grid-template-columns: 70px 32px 30px; }
-    .rated li .note { grid-column: 1 / -1; }
+    .rated li { grid-template-columns: 66px 36px 28px minmax(0, 1fr); gap: 4px; }
+    .dots { letter-spacing: 0; }
+    .dupe-meta { display: block; min-width: 0; }
   }
 </style>
 </head>
