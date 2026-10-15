@@ -380,6 +380,43 @@ public struct APIClient: Sendable {
         let _: BasicSuccessResponse = try await send(path: "/api/schedules/\(id)/run", method: "POST")
     }
 
+    public enum BriefingPeriod: String, Sendable {
+        case hour
+        case day
+    }
+
+    /// Writes a briefing for the hour or day that ends now. Empty `feedUrls` means all columns;
+    /// `onlyMatches` limits it to stories matching keywords and tracked topics.
+    public func generateBriefing(period: BriefingPeriod, feedUrls: [String], onlyMatches: Bool, label: String) async throws -> Briefing {
+        struct Body: Codable {
+            var period: String
+            var feedUrls: [String]
+            var onlyMatches: Bool
+            var label: String
+        }
+        let response: BriefingResponse = try await send(
+            path: "/api/briefings/generate",
+            method: "POST",
+            body: Body(period: period.rawValue, feedUrls: feedUrls, onlyMatches: onlyMatches, label: label),
+            // The backend may ask the AI to rate the stories first.
+            timeout: 120
+        )
+        guard let item = response.item else { throw APIClientError.invalidResponse }
+        return item
+    }
+
+    /// Newest saved briefing; the backend writes one for the last hour if none exists yet.
+    public func fetchLatestBriefing() async throws -> Briefing {
+        let response: BriefingResponse = try await send(path: "/api/briefings/latest")
+        guard let item = response.item else { throw APIClientError.invalidResponse }
+        return item
+    }
+
+    /// Browser URL for a briefing's HTML page.
+    public func briefingPageURL(_ briefing: Briefing) -> URL? {
+        URL(string: briefing.url, relativeTo: baseURL)?.absoluteURL
+    }
+
     public func fetchDigests() async throws -> [FeatureRecord<DigestPayload>] {
         let response: FeatureListResponse<DigestPayload> = try await send(path: "/api/digests")
         return response.items
@@ -494,10 +531,11 @@ public struct APIClient: Sendable {
     private func send<Response: Decodable, Body: Encodable>(
         path: String,
         method: String = "GET",
-        body: Body
+        body: Body,
+        timeout: TimeInterval = 18
     ) async throws -> Response {
         let data = try JSONEncoder().encode(body)
-        return try await send(path: path, method: method, bodyData: data)
+        return try await send(path: path, method: method, bodyData: data, timeout: timeout)
     }
 
     private func send<Response: Decodable>(
@@ -510,11 +548,12 @@ public struct APIClient: Sendable {
     private func send<Response: Decodable>(
         path: String,
         method: String,
-        bodyData: Data?
+        bodyData: Data?,
+        timeout: TimeInterval = 18
     ) async throws -> Response {
         var request = URLRequest(url: makeURL(path: path))
         request.httpMethod = method
-        request.timeoutInterval = 18
+        request.timeoutInterval = timeout
         request.setValue("application/json", forHTTPHeaderField: "Accept")
         if let token, !token.isEmpty {
             request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")

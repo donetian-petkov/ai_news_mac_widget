@@ -999,6 +999,25 @@ public struct ProviderKeyStatusResponse: Codable, Sendable {
     public var hasKey: Bool
 }
 
+public struct Briefing: Codable, Sendable, Identifiable {
+    public var id: String
+    public var title: String
+    /// "hour" or "day".
+    public var period: String
+    public var scope: String
+    public var windowStartMs: Double
+    public var windowEndMs: Double
+    public var generatedAtMs: Double
+    public var itemCount: Int
+    /// Server-relative path of the HTML page, e.g. `/briefings/<id>`.
+    public var url: String
+}
+
+public struct BriefingResponse: Codable, Sendable {
+    public var ok: Bool
+    public var item: Briefing?
+}
+
 public struct BasicSuccessResponse: Codable, Sendable {
     public var ok: Bool?
     public var saved: Bool?

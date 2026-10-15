@@ -1,0 +1,1204 @@
+import crypto from 'node:crypto';
+import fs from 'node:fs';
+import path from 'node:path';
+
+const HOUR_MS = 60 * 60 * 1000;
+
+export type BriefingPeriod = 'hour' | 'day';
+
+export const IMPACT_DIMENSIONS = [
+  'security', 'politics', 'economy', 'health', 'environment', 'society', 'technology', 'culture', 'sports', 'other'
+] as const;
+export type ImpactDimension = typeof IMPACT_DIMENSIONS[number];
+
+const DIMENSION_LABELS: Record<ImpactDimension, string> = {
+  security: 'Security & conflict',
+  politics: 'Politics & governance',
+  economy: 'Economy & money',
+  health: 'Health',
+  environment: 'Environment & disasters',
+  society: 'Society & justice',
+  technology: 'Technology',
+  culture: 'Culture & entertainment',
+  sports: 'Sports',
+  other: 'Other'
+};
+
+/** The angles every story's impact is described from, so no story is seen from one side only. */
+export const IMPACT_ANGLES = ['economic', 'political', 'social', 'security'] as const;
+export type ImpactAngle = typeof IMPACT_ANGLES[number];
+export type StoryImpacts = Partial<Record<ImpactAngle, string>>;
+
+export type BriefingStory = {
+  id: string;
+  title: string;
+  link?: string;
+  source?: string;
+  feedUrl: string;
+  publishedMs: number;
+  summary?: string;
+  /** "Why it matters" text the story-impact AI feature already wrote, if any. */
+  impact?: string;
+  coverUrl?: string;
+};
+
+export const CRITERIA = ['severity', 'scale', 'urgency', 'interest', 'coverage', 'relevance'] as const;
+export type Criterion = typeof CRITERIA[number];
+/** Each criterion is scored 0 (none) to 3 (strong). */
+export type CriteriaScores = Record<Criterion, number>;
+/** The concrete fact behind each non-zero score. */
+export type CriteriaNotes = Partial<Record<Criterion, string>>;
+
+export type StoryRating = {
+  scores: CriteriaScores;
+  notes: CriteriaNotes;
+  dimension: ImpactDimension;
+  impacts: StoryImpacts;
+  whyItMatters?: string;
+  ratedBy: 'ai' | 'rules';
+};
+
+/** What the AI returns per candidate. Coverage and relevance stay computed from data. */
+export type AiStoryRating = {
+  id: string;
+  severity: number;
+  severityWhy: string;
+  scale: number;
+  scaleWhy: string;
+  urgency: number;
+  urgencyWhy: string;
+  interest: number;
+  interestWhy: string;
+  dimension: ImpactDimension;
+  impacts: StoryImpacts;
+};
+
+export type AiRatingCandidate = {
+  id: string;
+  title: string;
+  summary: string;
+  source: string;
+  alsoReportedBy: string[];
+};
+
+export type PriorityLevel = 'critical' | 'high' | 'notable' | 'routine';
+
+export type RatedStory = {
+  story: BriefingStory;
+  /** Same event reported by other sources. */
+  related: BriefingStory[];
+  rating: StoryRating;
+  score: number;
+  level: PriorityLevel;
+  /** Larger ongoing situation shared with other, different stories (e.g. "Black Sea security"). */
+  storyline?: string;
+};
+
+/** Default importance of each criterion. The briefing page lets the reader slide these. */
+export const DEFAULT_WEIGHTS: CriteriaScores = { severity: 3, scale: 2.5, urgency: 2, interest: 1.5, coverage: 1.5, relevance: 1 };
+
+/** How far a single criterion at full score and full weight lifts a story on its own (0–1). */
+const SINGLE_CRITERION_STRENGTH = 0.65;
+
+const CRITERIA_TEXT: Record<Criterion, string> = {
+  severity: 'harm to lives, safety, rights or money',
+  scale: 'how many people it reaches (local, national, international)',
+  urgency: 'whether it is unfolding now or needs action soon',
+  interest: 'how surprising, new or revealing it is',
+  coverage: 'how many sources report the same event',
+  relevance: 'whether it touches your tracked topics or region'
+};
+
+const CRITERIA_LABELS: Record<Criterion, string> = {
+  severity: 'Severity', scale: 'Scale', urgency: 'Urgency', interest: 'Interest', coverage: 'Coverage', relevance: 'Relevance'
+};
+
+const LEVEL_LABELS: Record<PriorityLevel, string> = { critical: 'Critical', high: 'High', notable: 'Notable', routine: 'Routine' };
+const LEVEL_THRESHOLDS = { critical: 70, high: 50, notable: 25 };
+/** Highest score a keyword-rated story can get when the AI rated the rest of the briefing. */
+const UNCHECKED_SCORE_CAP = LEVEL_THRESHOLDS.high - 1;
+
+// ---- rule-based rating (used when AI is off, and for coverage/relevance always) ----
+
+// Terms match the start of a word, so stems cover inflections ("атак" → "атака", "атаки").
+// A trailing "$" means the whole word must match.
+const DIMENSION_TERMS: Array<[ImpactDimension, string[]]> = [
+  ['security', ['war$', 'wars$', 'attack', 'missile', 'airstrike', 'strikes$', 'military', 'army', 'troops', 'drone', 'terror', 'shooting', 'explosion', 'nato$', 'ceasefire', 'invasion', 'refiner', 'война', 'атак', 'ракет', 'удар', 'военн', 'армия', 'войск', 'дрон', 'терор', 'стрелб', 'взрив', 'нато', 'примири', 'обстрел', 'отбран', 'сигурност']],
+  ['politics', ['election', 'government', 'parliament', 'minister', 'president', 'protest', 'sanction', 'vote', 'senate', 'congress', 'prosecutor', 'избор', 'правителств', 'парламент', 'министър', 'президент', 'протест', 'санкци', 'гласув', 'прокурор', 'депутат', 'партия', 'премиер']],
+  ['economy', ['inflation', 'prices', 'market', 'bank', 'rates$', 'budget', 'tax', 'jobs$', 'oil$', 'gas$', 'tariff', 'euro$', 'stocks', 'assets', 'инфлаци', 'цени', 'цена', 'пазар', 'банк', 'лихв', 'бюджет', 'данъ', 'петрол', 'газ', 'мита', 'евро', 'актив', 'икономи', 'заплат', 'пенси', 'имот']],
+  ['health', ['virus', 'outbreak', 'hospital', 'disease', 'vaccine', 'pandemic', 'cancer', 'вирус', 'огнищ', 'болниц', 'болест', 'ваксин', 'пандеми', 'здрав', 'нзок', 'лекар']],
+  ['environment', ['earthquake', 'flood', 'wildfire', 'storm', 'climate', 'drought', 'hurricane', 'collapse', 'земетрес', 'наводн', 'пожар', 'буря', 'климат', 'суша', 'ураган', 'срути', 'бедстви']],
+  ['society', ['court', 'arrest', 'police', 'crime', 'murder', 'accident', 'fraud', 'school', 'students', 'съд', 'арест', 'полици', 'престъп', 'убийств', 'катастроф', 'измам', 'разслед', 'стачк', 'училищ', 'студент', 'граждан']],
+  ['technology', ['ai$', 'cyber', 'hack', 'chip', 'software', 'satellite', 'robot', 'изкуствен', 'кибер', 'хакер', 'чип', 'сателит', 'технолог']],
+  ['culture', ['film', 'movie', 'music', 'festival', 'actor', 'episode', 'series', 'oscar', 'филм', 'музик', 'фестивал', 'актьор', 'турне', 'сериал', 'трейлър', 'концерт']],
+  ['sports', ['football', 'match', 'league', 'championship', 'playoff', 'goal', 'coach', 'футбол', 'мач', 'лига', 'шампионат', 'титла', 'треньор', 'отбор', 'класико', 'волейбол', 'клуб', 'club', 'mvp$', 'реал$', 'nba$', 'nfl$', 'olympic', 'олимпи']]
+];
+
+const SEVERITY_TERMS = ['killed', 'killing', 'dead$', 'death', 'deaths', 'casualt', 'injured', 'emergency', 'crisis', 'collapse', 'evacuat', 'disaster', 'catastroph', 'victims', 'убит', 'загин', 'жертв', 'ранен', 'извънредн', 'криза', 'срив', 'евакуац', 'бедстви', 'катастроф', 'смърт', 'загуб'];
+const SCALE_TERMS = ['national', 'nationwide', 'country', 'global', 'world', 'international', 'european', 'eu$', 'nato$', 'millions', 'government', 'parliament', 'национал', 'страната', 'цялата', 'светов', 'международ', 'европ', 'ес$', 'милион', 'правителств', 'парламент', 'държав'];
+const URGENCY_TERMS = ['breaking', 'urgent', 'live$', 'now$', 'today', 'imminent', 'deadline', 'warning', 'alert', 'resume', 'извънредно', 'спешно', 'сега', 'днес', 'предупре', 'тревог', 'ултиматум', 'възобнов', 'незабавно'];
+// Naming other countries or shared regions signals reach beyond one place.
+const COUNTRY_TERMS = ['ukrain', 'russia', 'usa$', 'us$', 'america', 'romania', 'turkey', 'türk', 'greece', 'serbia', 'china', 'iran', 'israel', 'gaza', 'pakistan', 'india', 'germany', 'france', 'britain', 'poland', 'moldova', 'nato$', 'eu$', 'black$', 'украйн', 'русия', 'руск', 'сащ', 'америк', 'румъни', 'турци', 'гърци', 'сърби', 'македони', 'китай', 'иран', 'израел', 'газа', 'пакистан', 'индия', 'германи', 'франци', 'британ', 'полша', 'молдов', 'нато', 'ес$', 'черно', 'истанбул', 'киев', 'москва', 'брюксел', 'вашингтон', 'оман'];
+const INTEREST_TERMS = ['first$', 'record', 'never', 'rare$', 'discover', 'unusual', 'secret', 'mystery', 'surpris', 'unexpected', 'breakthrough', 'reveal', 'първ', 'рекорд', 'никога', 'рядк', 'откри', 'необичайн', 'тайн', 'мистери', 'изненад', 'невиждан', 'уникал', 'пробив', 'разкри', 'любопит'];
+
+function words(text: string): string[] {
+  return String(text || '').toLowerCase().split(/[^\p{L}\p{N}]+/u).filter(Boolean);
+}
+
+/** The words in the text that match the terms, in term order. */
+function termHits(textWords: string[], terms: string[]): string[] {
+  const hits: string[] = [];
+  for (const term of terms) {
+    const exact = term.endsWith('$');
+    const stem = exact ? term.slice(0, -1) : term;
+    const hit = textWords.find(word => (exact ? word === stem : word.startsWith(stem)));
+    if (hit) hits.push(hit);
+  }
+  return hits;
+}
+
+/** The user's topics found in the text. Short topics ("AI", "ЕС") must match a whole word. */
+function trackedHits(textWords: string[], trackedTerms: string[]): string[] {
+  return trackedTerms.filter(term => {
+    const parts = words(term);
+    return parts.length > 0 && parts.every(part => textWords.some(word =>
+      part.length <= 4 ? word === part : word.startsWith(part.slice(0, part.length - 1))));
+  });
+}
+
+/** A few words around `hitWord`, taken from the title first and then the summary. */
+function quoteAround(story: BriefingStory, hitWord: string, radius = 4): string {
+  for (const text of [story.title, story.summary || '']) {
+    const tokens = text.split(/\s+/).filter(Boolean);
+    const index = tokens.findIndex(token => words(token).includes(hitWord));
+    if (index < 0) continue;
+    const from = Math.max(0, index - radius);
+    const to = Math.min(tokens.length, index + radius + 1);
+    return `“${from > 0 ? '…' : ''}${tokens.slice(from, to).join(' ')}${to < tokens.length ? '…' : ''}”`;
+  }
+  return `“${hitWord}”`;
+}
+
+const clamp = (value: number) => Math.max(0, Math.min(3, Math.round(Number(value) || 0)));
+
+/**
+ * How strongly each criterion pushes the story up (0–1): its score times its weight relative
+ * to the heaviest slider. Sliders are relative, like an equalizer.
+ */
+function criterionLifts(scores: CriteriaScores, weights: CriteriaScores): number[] {
+  const heaviest = Math.max(0, ...CRITERIA.map(key => weights[key]));
+  if (!heaviest) return CRITERIA.map(() => 0);
+  return CRITERIA.map(key => (Math.max(0, weights[key]) / heaviest) * (clamp(scores[key]) / 3) * SINGLE_CRITERION_STRENGTH);
+}
+
+/**
+ * 0–100. Combined like independent chances, so one strong criterion is enough to make a
+ * story matter (a deadly attack does not need to be surprising too), and each further
+ * strong criterion lifts it more. An average would let the zeros drown the one big signal.
+ * The briefing page runs the same formula in the browser.
+ */
+export function scoreOf(scores: CriteriaScores, weights: CriteriaScores = DEFAULT_WEIGHTS): number {
+  const unlifted = criterionLifts(scores, weights).reduce((rest, lift) => rest * (1 - lift), 1);
+  return Math.round((1 - unlifted) * 100);
+}
+
+export function levelOf(score: number): PriorityLevel {
+  if (score >= LEVEL_THRESHOLDS.critical) return 'critical';
+  if (score >= LEVEL_THRESHOLDS.high) return 'high';
+  if (score >= LEVEL_THRESHOLDS.notable) return 'notable';
+  return 'routine';
+}
+
+function distinctSources(stories: BriefingStory[]): string[] {
+  return Array.from(new Set(stories.map(story => String(story.source || story.feedUrl).trim()).filter(Boolean)));
+}
+
+function coverageScore(sourceCount: number): number {
+  return sourceCount >= 4 ? 3 : sourceCount === 3 ? 2 : sourceCount === 2 ? 1 : 0;
+}
+
+export function ruleRating(
+  story: BriefingStory,
+  related: BriefingStory[],
+  window: { startMs: number; endMs: number },
+  context: { localTerms?: string[]; trackedTerms?: string[]; region?: string } = {}
+): StoryRating {
+  const textWords = words(`${story.title} ${story.summary || ''}`);
+  // Sports and entertainment words are unambiguous context, while words like "war" or
+  // "attack" are often used as metaphors there, so their hits count double.
+  const dimensionHits = DIMENSION_TERMS.map(([dimension, terms]) => ({
+    dimension,
+    hits: termHits(textWords, terms).length * (dimension === 'sports' || dimension === 'culture' ? 2 : 1)
+  }));
+  const dimension = dimensionHits.reduce((top, entry) => (entry.hits > top.hits ? entry : top), { dimension: 'other' as ImpactDimension, hits: 0 }).dimension;
+  const lightweight = dimension === 'sports' || dimension === 'culture';
+  const notes: CriteriaNotes = {};
+
+  const severityHits = termHits(textWords, SEVERITY_TERMS);
+  let severity = severityHits.length >= 2 ? 3 : severityHits.length === 1 ? 2 : 0;
+  if (severity) notes.severity = quoteAround(story, severityHits[0]);
+  if (!severity && (dimension === 'security' || dimension === 'health' || dimension === 'environment')) {
+    severity = 1;
+    notes.severity = `${DIMENSION_LABELS[dimension]} story, but no harm is reported yet`;
+  }
+  // Sports and entertainment borrow dramatic words ("war", "attack") without real-world harm.
+  if (lightweight && severity > 1) {
+    severity = 1;
+    notes.severity = `${quoteAround(story, severityHits[0])} — figure of speech in a ${DIMENSION_LABELS[dimension].toLowerCase()} story`;
+  }
+
+  const scaleHits = termHits(textWords, SCALE_TERMS);
+  const countryHits = termHits(textWords, COUNTRY_TERMS);
+  const reach = Math.min(3, scaleHits.length + (countryHits.length >= 2 ? 2 : countryHits.length));
+  const scale = lightweight ? Math.min(1, reach) : reach;
+  if (scale) {
+    notes.scale = countryHits.length >= 2
+      ? `Involves several countries: ${countryHits.slice(0, 3).map(hit => `“${hit}”`).join(', ')}`
+      : quoteAround(story, scaleHits[0] || countryHits[0]);
+  }
+
+  const urgencyHits = termHits(textWords, URGENCY_TERMS);
+  const late = story.publishedMs >= window.endMs - (window.endMs - window.startMs) * 0.3;
+  const urgency = Math.min(3, Math.min(2, urgencyHits.length) + (late && urgencyHits.length ? 1 : 0));
+  if (urgency) notes.urgency = quoteAround(story, urgencyHits[0]);
+
+  const interestHits = termHits(textWords, INTEREST_TERMS);
+  const interest = Math.min(3, interestHits.length * 2);
+  if (interest) notes.interest = quoteAround(story, interestHits[0]);
+
+  const sources = distinctSources([story, ...related]);
+  const coverage = coverageScore(sources.length);
+  const names = sources.map(shortSource);
+  notes.coverage = names.length > 1 ? `Reported by ${names.join(', ')}` : `Only ${names[0] || 'one source'} reports it`;
+
+  // Zero scores get a reason too, so the reader sees what was looked for and not found.
+  if (!severity) notes.severity = 'No deaths, injuries, damage or money lost are mentioned';
+  if (!scale) notes.scale = 'No country-wide or international reach is mentioned';
+  if (!urgency) notes.urgency = 'No deadline, live event or warning is mentioned';
+  if (!interest) notes.interest = 'No first, record, surprise or new revelation in the headline';
+
+  const topics = trackedHits(textWords, context.trackedTerms || []);
+  const localHits = termHits(textWords, context.localTerms || []);
+  const relevance = Math.min(3, (topics.length ? 1 : 0) + (topics.length > 1 ? 1 : 0) + (localHits.length ? 1 : 0));
+  const relevanceParts: string[] = [];
+  if (topics.length) relevanceParts.push(`your ${topics.length > 1 ? 'topics' : 'topic'} ${topics.slice(0, 3).map(topic => `“${topic}”`).join(', ')}`);
+  if (localHits.length) relevanceParts.push(`${context.region || 'your region'} ${quoteAround(story, localHits[0], 2)}`);
+  if (relevanceParts.length) notes.relevance = `Mentions ${relevanceParts.join(' and ')}`;
+  else if (context.trackedTerms?.length || context.region) {
+    notes.relevance = `None of your ${context.trackedTerms?.length || 0} topics${context.region ? ` or ${context.region}` : ''} is mentioned`;
+  }
+
+  return {
+    scores: { severity, scale, urgency, interest, coverage, relevance },
+    notes,
+    dimension,
+    impacts: {},
+    whyItMatters: story.impact || undefined,
+    ratedBy: 'rules'
+  };
+}
+
+// ---- grouping the same event from several sources ----
+
+function stemSet(text: string): Set<string> {
+  return new Set(words(text).filter(word => word.length >= 4).map(word => word.slice(0, 5)));
+}
+
+/** Groups stories whose titles share most of their words; the most informative one leads. */
+export function clusterStories(stories: BriefingStory[]): Array<{ story: BriefingStory; related: BriefingStory[] }> {
+  const clusters: Array<{ members: BriefingStory[]; stems: Set<string> }> = [];
+  const seenLinks = new Set<string>();
+  for (const story of [...stories].sort((a, b) => a.publishedMs - b.publishedMs)) {
+    const key = (story.link || story.title).trim().toLowerCase();
+    if (!key || seenLinks.has(key)) continue;
+    seenLinks.add(key);
+    const stems = stemSet(story.title);
+    const match = clusters.find(cluster => {
+      let shared = 0;
+      stems.forEach(stem => { if (cluster.stems.has(stem)) shared += 1; });
+      const union = new Set([...stems, ...cluster.stems]).size || 1;
+      return shared >= 2 && shared / union >= 0.35;
+    });
+    if (match) {
+      match.members.push(story);
+      stems.forEach(stem => match.stems.add(stem));
+    } else {
+      clusters.push({ members: [story], stems });
+    }
+  }
+  const informative = (story: BriefingStory) => (story.summary ? 2 : 0) + (story.coverUrl ? 1 : 0);
+  return clusters.map(({ members }) => {
+    const lead = [...members].sort((a, b) => informative(b) - informative(a) || a.publishedMs - b.publishedMs)[0];
+    return { story: lead, related: members.filter(member => member !== lead) };
+  });
+}
+
+// ---- AI rating ----
+
+export function buildAiRatingPrompt(candidates: AiRatingCandidate[], language: 'en' | 'bg', region: string): string {
+  return [
+    `You are a news editor rating how much each story matters to an ordinary reader in ${region || 'their country'}.`,
+    'Use only each headline and summary. Be specific to each story: every explanation must name the concrete fact behind it',
+    '(a number, place, person, decision, amount or date). Never write generic phrases such as "significant impact",',
+    '"important development", "affects many people" or "relevant to readers".',
+    'Score four criteria from 0 (none) to 3 (strong):',
+    `- severity: ${CRITERIA_TEXT.severity}. Sports, celebrity and entertainment score 0-1 even with dramatic words like "war" or "attack".`,
+    '- scale: 1 one town or group, 2 a whole country, 3 several countries or the world.',
+    '- urgency: 3 happening now or a deadline within days, 2 this week, 1 slow-moving, 0 none.',
+    '- interest: how surprising, new or revealing it is (a first, a record, an unexpected twist, a hidden fact). Routine statements and scheduled events score 0-1.',
+    'For each criterion add "<criterion>Why": at most 15 words naming the fact, e.g. "29 pupils killed when a school roof fell in Khyber Pakhtunkhwa".',
+    'Fill it for low scores too, saying what this story lacks, e.g. severityWhy "A TV casting change; no one is harmed and no money is at stake".',
+    'Add "impacts" with one specific sentence (at most 25 words) per angle about THIS story:',
+    '- economic: prices, jobs, markets, budgets, trade, energy, investment. Always fill it; if the effect is indirect, explain the chain (e.g. strikes on refineries -> fuel supply -> pump prices).',
+    '- political: governments, laws, elections, diplomacy, institutions.',
+    '- social: daily life, health, education, rights, communities.',
+    '- security: physical safety, conflict, crime, infrastructure.',
+    'Fill at least two angles for every story, the economic one and the next most affected; use "" only where there is truly no effect.',
+    `Pick one dimension from: ${IMPACT_DIMENSIONS.join(', ')}.`,
+    `Write every text field in ${language === 'bg' ? 'Bulgarian' : 'English'}.`,
+    'Return strict JSON only: {"ratings":[{"id":"...","severity":0,"severityWhy":"...","scale":0,"scaleWhy":"...","urgency":0,"urgencyWhy":"...","interest":0,"interestWhy":"...","dimension":"economy","impacts":{"economic":"...","political":"","social":"","security":""}}]}',
+    'Include every candidate exactly once.',
+    `Candidates: ${JSON.stringify(candidates)}`
+  ].join('\n');
+}
+
+export function parseAiRatings(text: string): AiStoryRating[] {
+  const raw = String(text || '');
+  const start = raw.indexOf('{');
+  const end = raw.lastIndexOf('}');
+  if (start < 0 || end <= start) return [];
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw.slice(start, end + 1));
+  } catch {
+    return [];
+  }
+  const list = (parsed as { ratings?: unknown })?.ratings;
+  if (!Array.isArray(list)) return [];
+  const textOf = (value: unknown, max: number) => (typeof value === 'string' ? value.trim().slice(0, max) : '');
+  return list.flatMap((entry): AiStoryRating[] => {
+    const item = (entry || {}) as Record<string, unknown>;
+    const id = textOf(item.id, 200);
+    if (!id) return [];
+    const rawImpacts = (item.impacts || {}) as Record<string, unknown>;
+    const impacts: StoryImpacts = {};
+    for (const angle of IMPACT_ANGLES) {
+      const value = textOf(rawImpacts[angle], 300);
+      if (value) impacts[angle] = value;
+    }
+    return [{
+      id,
+      severity: clamp(item.severity as number),
+      severityWhy: textOf(item.severityWhy, 200),
+      scale: clamp(item.scale as number),
+      scaleWhy: textOf(item.scaleWhy, 200),
+      urgency: clamp(item.urgency as number),
+      urgencyWhy: textOf(item.urgencyWhy, 200),
+      interest: clamp(item.interest as number),
+      interestWhy: textOf(item.interestWhy, 200),
+      dimension: IMPACT_DIMENSIONS.includes(item.dimension as ImpactDimension) ? item.dimension as ImpactDimension : 'other',
+      impacts
+    }];
+  });
+}
+
+/**
+ * One short call over the headlines only: grouping needs every story in the same answer,
+ * so labels stay consistent, while the detailed ratings run in parallel batches.
+ */
+export type GroupingItem = { id: string; title: string; summary?: string };
+export type StoryGrouping = {
+  /** Sets of ids that report the very same happening. */
+  duplicates: string[][];
+  /** id → label of the larger ongoing situation it belongs to. */
+  storylines: Map<string, string>;
+};
+
+/**
+ * One short call over all the headlines at once. Duplicates come back as explicit lists
+ * of ids, not shared labels: separately written labels such as "military strike" match
+ * by accident and glue unrelated stories together.
+ */
+export function buildStorylinePrompt(items: GroupingItem[], language: 'en' | 'bg'): string {
+  return [
+    'You are given news items (id, headline, summary). Do two things.',
+    '1. "duplicates": lists of ids that report the SAME happening: the same actors doing the same thing at the same',
+    '   place and time, possibly worded differently or in another language. Two different strikes, two different',
+    '   statements, or two events in the same war are NOT duplicates. When unsure, do not list them. Most items have no duplicate.',
+    '2. "storylines": larger ongoing situations that at least two DIFFERENT happenings belong to, for example a drone',
+    '   strike on a ship, a naval command offer and a moratorium proposal that are all about Black Sea security.',
+    `   Give each a 2-5 word label in ${language === 'bg' ? 'Bulgarian' : 'English'} and the ids that belong to it. An item can be in at most one storyline.`,
+    'Return strict JSON only: {"duplicates":[["id","id"]],"storylines":[{"label":"...","ids":["id","id"]}]}',
+    `Items: ${JSON.stringify(items)}`
+  ].join('\n');
+}
+
+export function parseStorylines(text: string): StoryGrouping {
+  const raw = String(text || '');
+  const start = raw.indexOf('{');
+  const end = raw.lastIndexOf('}');
+  const result: StoryGrouping = { duplicates: [], storylines: new Map() };
+  if (start < 0 || end <= start) return result;
+  try {
+    const parsed = JSON.parse(raw.slice(start, end + 1)) as { duplicates?: unknown; storylines?: unknown };
+    const ids = (value: unknown) => (Array.isArray(value) ? value.filter((id): id is string => typeof id === 'string' && !!id.trim()).map(id => id.trim()) : []);
+    if (Array.isArray(parsed?.duplicates)) {
+      for (const set of parsed.duplicates) {
+        const members = Array.from(new Set(ids(set)));
+        // A long list is the model lumping a whole topic together, not one happening.
+        if (members.length >= 2 && members.length <= 6) result.duplicates.push(members);
+      }
+    }
+    if (Array.isArray(parsed?.storylines)) {
+      for (const line of parsed.storylines) {
+        const label = typeof line?.label === 'string' ? line.label.trim().slice(0, 60) : '';
+        if (!label) continue;
+        for (const id of ids(line?.ids)) if (!result.storylines.has(id)) result.storylines.set(id, label);
+      }
+    }
+  } catch {
+    // No grouping.
+  }
+  return result;
+}
+
+/**
+ * Folds each set of duplicate reports into its strongest story (the others become the
+ * "more reports" rows), then marks storylines that at least two remaining stories share.
+ */
+export function applyGrouping(rated: RatedStory[], grouping: StoryGrouping): RatedStory[] {
+  const byId = new Map(rated.map(entry => [entry.story.id, entry]));
+  const absorbed = new Set<RatedStory>();
+  const extraRelated = new Map<RatedStory, BriefingStory[]>();
+  for (const set of grouping.duplicates) {
+    const members = set.map(id => byId.get(id)).filter((entry): entry is RatedStory => !!entry && !absorbed.has(entry));
+    if (members.length < 2) continue;
+    const [lead, ...rest] = members.sort((a, b) => b.score - a.score || b.story.publishedMs - a.story.publishedMs);
+    for (const other of rest) {
+      absorbed.add(other);
+      extraRelated.set(lead, [...(extraRelated.get(lead) || []), other.story, ...other.related]);
+    }
+  }
+  const kept = rated
+    .filter(entry => !absorbed.has(entry))
+    .map(entry => (extraRelated.has(entry) ? { ...entry, related: [...entry.related, ...(extraRelated.get(entry) || [])] } : entry));
+  const counts = new Map<string, number>();
+  for (const entry of kept) {
+    const key = topicKey(grouping.storylines.get(entry.story.id) || '');
+    if (key) counts.set(key, (counts.get(key) || 0) + 1);
+  }
+  return kept.map(entry => {
+    const label = grouping.storylines.get(entry.story.id) || '';
+    return (counts.get(topicKey(label)) || 0) >= 2 ? { ...entry, storyline: label } : entry;
+  });
+}
+
+function applyAiRating(rule: StoryRating, ai: AiStoryRating): StoryRating {
+  const judged = { severity: ai.severityWhy, scale: ai.scaleWhy, urgency: ai.urgencyWhy, interest: ai.interestWhy };
+  const notes: CriteriaNotes = { coverage: rule.notes.coverage, relevance: rule.notes.relevance };
+  for (const key of Object.keys(judged) as Array<keyof typeof judged>) {
+    notes[key] = judged[key] || rule.notes[key];
+  }
+  return {
+    scores: { ...rule.scores, severity: ai.severity, scale: ai.scale, urgency: ai.urgency, interest: ai.interest },
+    notes,
+    dimension: ai.dimension,
+    impacts: ai.impacts,
+    whyItMatters: rule.whyItMatters,
+    ratedBy: 'ai'
+  };
+}
+
+// ---- picking a varied list ----
+
+function topicKey(topic: string): string {
+  return words(topic).join(' ');
+}
+
+/**
+ * Highest score first, but no dimension takes more than ~30% of the list.
+ * The cap is relaxed only when nothing else is left. The briefing page runs the
+ * same rule in the browser when the reader moves the sliders.
+ */
+export function pickVaried(rated: RatedStory[], limit: number): RatedStory[] {
+  const sorted = [...rated].sort((a, b) => b.score - a.score || b.story.publishedMs - a.story.publishedMs);
+  const dimensionCap = Math.max(2, Math.ceil(limit * 0.3));
+  const picked: RatedStory[] = [];
+  const perDimension = new Map<ImpactDimension, number>();
+  const overflow: RatedStory[] = [];
+  for (const entry of sorted) {
+    if (picked.length >= limit) break;
+    const count = perDimension.get(entry.rating.dimension) || 0;
+    if (count >= dimensionCap) {
+      overflow.push(entry);
+      continue;
+    }
+    perDimension.set(entry.rating.dimension, count + 1);
+    picked.push(entry);
+  }
+  for (const entry of overflow) {
+    if (picked.length >= limit) break;
+    picked.push(entry);
+  }
+  return picked.sort((a, b) => b.score - a.score || b.story.publishedMs - a.story.publishedMs);
+}
+
+// ---- windows and titles ----
+
+/** The last full clock hour before `nowMs`, e.g. 13:00–14:00 when it is 14:05. */
+export function previousHourWindow(nowMs: number): { startMs: number; endMs: number } {
+  const now = new Date(nowMs);
+  const endMs = new Date(now.getFullYear(), now.getMonth(), now.getDate(), now.getHours()).getTime();
+  return { startMs: endMs - HOUR_MS, endMs };
+}
+
+/** The hour or day that ends now. */
+export function rollingWindow(period: BriefingPeriod, nowMs: number): { startMs: number; endMs: number } {
+  return { startMs: nowMs - (period === 'day' ? 24 * HOUR_MS : HOUR_MS), endMs: nowMs };
+}
+
+/** Delay until a minute past the next clock hour, so stories fetched at :00 make it in. */
+export function msUntilNextRun(nowMs: number, graceMs = 60_000): number {
+  const { endMs } = previousHourWindow(nowMs);
+  const next = endMs + HOUR_MS + graceMs;
+  return Math.max(1_000, next - nowMs);
+}
+
+function formatTime(ms: number): string {
+  return new Date(ms).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+}
+
+function formatDay(ms: number): string {
+  return new Date(ms).toLocaleDateString([], { weekday: 'short', day: 'numeric', month: 'short' });
+}
+
+export function briefingTitle(period: BriefingPeriod, scope: string, startMs: number, endMs: number): string {
+  const when = period === 'day'
+    ? `${formatDay(startMs)} ${formatTime(startMs)} – ${formatDay(endMs)} ${formatTime(endMs)}`
+    : `${formatDay(startMs)}, ${formatTime(startMs)}–${formatTime(endMs)}`;
+  return `${period === 'day' ? 'Daily' : 'Hourly'} briefing · ${scope} · ${when}`;
+}
+
+// ---- HTML ----
+
+function escapeHtml(value: string): string {
+  return String(value || '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+function safeUrl(link: string | undefined): string {
+  const value = String(link || '').trim();
+  return /^https?:\/\//i.test(value) ? value : '';
+}
+
+/** JSON that is safe to place inside a <script> element. */
+function scriptJson(value: unknown): string {
+  return JSON.stringify(value)
+    .replace(/</g, '\\u003c')
+    .replace(/\u2028/g, '\\u2028')
+    .replace(/\u2029/g, '\\u2029');
+}
+
+const PRESETS: Array<{ name: string; weights: CriteriaScores }> = [
+  { name: 'Balanced', weights: DEFAULT_WEIGHTS },
+  { name: 'Critical first', weights: { severity: 5, scale: 3, urgency: 3, interest: 0.5, coverage: 2, relevance: 1 } },
+  { name: 'Interesting', weights: { severity: 1, scale: 1, urgency: 0.5, interest: 5, coverage: 1, relevance: 2 } },
+  { name: 'Close to home', weights: { severity: 2, scale: 1, urgency: 1.5, interest: 1.5, coverage: 1, relevance: 5 } }
+];
+
+// Runs in the browser: ranks and draws the stories with the reader's slider weights.
+// It mirrors scoreOf, levelOf and pickVaried above and builds the DOM without innerHTML.
+const PAGE_SCRIPT = String.raw`
+(() => {
+  const data = JSON.parse(document.getElementById('briefing-data').textContent);
+  const KEYS = data.criteria.map(c => c.key);
+  const STORE = 'ai-news-briefing-weights';
+  const sameWeights = (a, b) => KEYS.every(k => a[k] === b[k]);
+  let weights = load();
+
+  function load() {
+    try {
+      const saved = JSON.parse(localStorage.getItem(STORE) || 'null');
+      if (saved && KEYS.every(k => typeof saved[k] === 'number')) return saved;
+    } catch (e) {}
+    return Object.assign({}, data.defaults);
+  }
+  function save() {
+    try { localStorage.setItem(STORE, JSON.stringify(weights)); } catch (e) {}
+  }
+  function lifts(scores) {
+    const heaviest = Math.max(0, ...KEYS.map(k => weights[k]));
+    return KEYS.map(k => heaviest ? Math.max(0, weights[k]) / heaviest * scores[k] / 3 * data.strength : 0);
+  }
+  function scoreOf(scores) {
+    return Math.round((1 - lifts(scores).reduce((rest, lift) => rest * (1 - lift), 1)) * 100);
+  }
+  function levelOf(score) {
+    const t = data.thresholds;
+    return score >= t.critical ? 'critical' : score >= t.high ? 'high' : score >= t.notable ? 'notable' : 'routine';
+  }
+  // A unit is one story, or a storyline: several different stories about one ongoing
+  // situation, shown together and ranked by their strongest story.
+  function rank() {
+    const all = data.stories.map(story => {
+      const raw = scoreOf(story.scores);
+      const score = data.aiRan && story.ratedBy === 'rules' ? Math.min(raw, data.uncheckedCap) : raw;
+      return { story, score, level: levelOf(score) };
+    }).sort((a, b) => b.score - a.score || b.story.publishedMs - a.story.publishedMs);
+    const units = [], byLine = {};
+    for (const entry of all) {
+      const key = (entry.story.storyline || '').toLowerCase().trim();
+      if (key && byLine[key]) { byLine[key].entries.push(entry); continue; }
+      const unit = { label: entry.story.storyline || '', entries: [entry], score: entry.score, level: entry.level, dimension: entry.story.dimension, publishedMs: entry.story.publishedMs };
+      if (key) byLine[key] = unit;
+      units.push(unit);
+    }
+    const cap = Math.max(2, Math.ceil(data.limit * 0.3));
+    const picked = [], overflow = [], per = {};
+    for (const unit of units) {
+      if (picked.length >= data.limit) break;
+      if ((per[unit.dimension] || 0) >= cap) { overflow.push(unit); continue; }
+      per[unit.dimension] = (per[unit.dimension] || 0) + 1;
+      picked.push(unit);
+    }
+    while (picked.length < data.limit && overflow.length) picked.push(overflow.shift());
+    const byScore = (a, b) => b.score - a.score || b.publishedMs - a.publishedMs;
+    return { picked: picked.sort(byScore), rest: units.filter(unit => !picked.includes(unit)) };
+  }
+
+  function el(tag, className, text) {
+    const node = document.createElement(tag);
+    if (className) node.className = className;
+    if (text !== undefined) node.textContent = text;
+    return node;
+  }
+  function link(href, text) {
+    if (!href) return el('span', '', text);
+    const a = el('a', '', text);
+    a.href = href;
+    a.target = '_blank';
+    a.rel = 'noopener noreferrer';
+    return a;
+  }
+
+  function card(entry) {
+    const { story, score, level } = entry;
+    const article = el('article', 'level-' + level);
+    if (story.coverUrl) {
+      const img = el('img', 'cover');
+      img.src = story.coverUrl;
+      img.alt = '';
+      img.loading = 'lazy';
+      img.referrerPolicy = 'no-referrer';
+      img.onerror = () => img.remove();
+      article.append(img);
+    }
+    const body = el('div', 'body');
+    const meta = el('p', 'meta');
+    meta.append(el('span', 'badge', data.levelLabels[level] + ' · ' + score), ' ' + [story.source, story.time, story.dimensionLabel].filter(Boolean).join(' · '));
+    if (story.ratedBy === 'rules') {
+      const tag = el('span', 'rules-tag', data.aiRan ? 'not checked by AI' : 'keyword-rated');
+      tag.title = data.aiRan
+        ? 'The AI did not answer for this story, so keyword rules rated it; it is kept below High until the AI checks it'
+        : 'AI is off, so keyword rules rated this story';
+      meta.append(' · ', tag);
+    }
+    const h3 = el('h3');
+    h3.append(link(story.link, story.title));
+    body.append(meta, h3);
+    if (story.summary) body.append(el('p', 'summary', story.summary));
+
+    const angles = data.angles.filter(a => story.impacts[a.key]);
+    if (angles.length) {
+      const box = el('div', 'impacts');
+      for (const angle of angles) {
+        const row = el('p', 'impact');
+        row.append(el('span', 'angle angle-' + angle.key, angle.label), ' ' + story.impacts[angle.key]);
+        box.append(row);
+      }
+      body.append(box);
+    } else if (story.whyItMatters) {
+      const row = el('p', 'impact');
+      row.append(el('span', 'angle', 'Why it matters'), ' ' + story.whyItMatters);
+      body.append(row);
+    }
+
+    const rated = el('div', 'rated');
+    rated.append(el('p', 'rated-head', 'Rated ' + data.levelLabels[level].toLowerCase() + ' (' + score + '/100) because:'));
+    const list = el('ul');
+    // Each criterion's share of the score, in proportion to how hard it pushed.
+    const storyLifts = lifts(story.scores);
+    const liftSum = storyLifts.reduce((sum, lift) => sum + lift, 0);
+    data.criteria.forEach((c, i) => {
+      const value = story.scores[c.key];
+      const li = el('li', value ? '' : 'zero');
+      const points = liftSum ? Math.round(score * storyLifts[i] / liftSum) : 0;
+      li.append(
+        el('span', 'cname', c.label),
+        el('span', 'dots', '●'.repeat(value) + '○'.repeat(3 - value)),
+        el('span', 'pts', '+' + points),
+        el('span', 'note', story.notes[c.key] || c.text)
+      );
+      list.append(li);
+    });
+    rated.append(list);
+    body.append(rated);
+
+    if (story.related.length) {
+      // Other reports of the same event, folded away under the main story.
+      const dupes = el('details', 'dupes');
+      const sources = Array.from(new Set(story.related.map(other => other.source).filter(Boolean)));
+      dupes.append(el('summary', '', story.related.length + ' more ' + (story.related.length === 1 ? 'report' : 'reports') + ' of this' + (sources.length ? ' · ' + sources.slice(0, 3).join(', ') + (sources.length > 3 ? '…' : '') : '')));
+      const rows = el('ul');
+      story.related.forEach(other => {
+        const row = el('li');
+        row.append(el('span', 'dupe-meta', [other.source, other.time].filter(Boolean).join(' · ')), link(other.link, other.title));
+        rows.append(row);
+      });
+      dupes.append(rows);
+      body.append(dupes);
+    }
+    article.append(body);
+    return article;
+  }
+
+  function unitNode(unit) {
+    if (unit.entries.length < 2) return card(unit.entries[0]);
+    const box = el('div', 'storyline level-' + unit.level);
+    const head = el('div', 'storyline-head');
+    head.append(el('span', 'storyline-label', unit.label), el('span', 'storyline-count', unit.entries.length + ' stories'));
+    box.append(head);
+    unit.entries.forEach(entry => box.append(card(entry)));
+    return box;
+  }
+
+  function section(title, units) {
+    const s = el('section');
+    s.append(el('h2', '', title));
+    units.forEach(unit => s.append(unitNode(unit)));
+    return s;
+  }
+
+  function render() {
+    const { picked, rest } = rank();
+    const root = document.getElementById('stories');
+    root.replaceChildren();
+    if (!data.stories.length) {
+      root.append(el('p', 'empty', 'No new stories were published in this period.'));
+    } else {
+      const priority = picked.filter(e => e.level === 'critical' || e.level === 'high');
+      const others = picked.filter(e => e.level !== 'critical' && e.level !== 'high');
+      if (priority.length) root.append(section('Priority', priority));
+      if (others.length) root.append(section(priority.length ? 'Also worth knowing' : 'Stories', others));
+      if (rest.length) {
+        const more = el('details', 'more');
+        const restCount = rest.reduce((n, unit) => n + unit.entries.length, 0);
+        more.append(el('summary', '', 'More stories (' + restCount + ')'));
+        rest.forEach(unit => more.append(unitNode(unit)));
+        root.append(more);
+      }
+    }
+    const counts = {};
+    const shown = picked.flatMap(unit => unit.entries);
+    shown.forEach(e => { counts[e.story.dimensionLabel] = (counts[e.story.dimensionLabel] || 0) + 1; });
+    const mix = document.getElementById('mix');
+    mix.replaceChildren(...Object.entries(counts).sort((a, b) => b[1] - a[1]).map(([label, n]) => el('span', 'chip', label + ' ' + n)));
+    document.getElementById('count').textContent = shown.length + ' of ' + data.storyCount;
+    for (const k of KEYS) {
+      document.getElementById('w-' + k).value = String(weights[k]);
+      document.getElementById('v-' + k).textContent = String(weights[k]);
+    }
+    document.querySelectorAll('.preset').forEach(button => {
+      button.classList.toggle('on', sameWeights(weights, data.presets[Number(button.dataset.i)].weights));
+    });
+  }
+
+  const eq = document.getElementById('eq-bands');
+  for (const c of data.criteria) {
+    const band = el('label', 'band');
+    band.title = c.text;
+    const value = el('span', 'bval');
+    value.id = 'v-' + c.key;
+    const input = el('input');
+    input.type = 'range';
+    input.min = '0';
+    input.max = '5';
+    input.step = '0.5';
+    input.id = 'w-' + c.key;
+    input.setAttribute('aria-label', c.label + ' importance');
+    input.addEventListener('input', () => {
+      weights = Object.assign({}, weights, { [c.key]: Number(input.value) });
+      save();
+      render();
+    });
+    band.append(value, input, el('span', 'bname', c.label));
+    eq.append(band);
+  }
+  const presets = document.getElementById('eq-presets');
+  data.presets.forEach((preset, i) => {
+    const button = el('button', 'preset', preset.name);
+    button.type = 'button';
+    button.dataset.i = String(i);
+    button.addEventListener('click', () => {
+      weights = Object.assign({}, preset.weights);
+      save();
+      render();
+    });
+    presets.append(button);
+  });
+  render();
+})();
+`;
+
+/** "Al Jazeera – Breaking News, World News…" → "Al Jazeera". */
+function shortSource(source: string): string {
+  return String(source || '').split(/\s+[–—|-]\s+/)[0].trim();
+}
+
+function pageStory(entry: RatedStory) {
+  const { story, rating } = entry;
+  return {
+    title: story.title,
+    link: safeUrl(story.link),
+    source: shortSource(story.source || ''),
+    time: formatTime(story.publishedMs),
+    publishedMs: story.publishedMs,
+    summary: story.summary || '',
+    coverUrl: safeUrl(story.coverUrl),
+    dimension: rating.dimension,
+    dimensionLabel: DIMENSION_LABELS[rating.dimension],
+    scores: rating.scores,
+    notes: rating.notes,
+    impacts: rating.impacts,
+    whyItMatters: rating.whyItMatters || '',
+    ratedBy: rating.ratedBy,
+    storyline: entry.storyline || '',
+    related: entry.related
+      .sort((a, b) => a.publishedMs - b.publishedMs)
+      .map(other => ({ title: other.title, source: shortSource(other.source || ''), time: formatTime(other.publishedMs), link: safeUrl(other.link) }))
+  };
+}
+
+export function renderBriefingHtml(title: string, stories: RatedStory[], limit: number, storyCount: number, generatedAtMs: number, aiRan = false): string {
+  const ratedByAi = stories.some(entry => entry.rating.ratedBy === 'ai');
+  const data = {
+    stories: stories.map(pageStory),
+    storyCount,
+    limit,
+    defaults: DEFAULT_WEIGHTS,
+    strength: SINGLE_CRITERION_STRENGTH,
+    aiRan,
+    uncheckedCap: UNCHECKED_SCORE_CAP,
+    thresholds: LEVEL_THRESHOLDS,
+    presets: PRESETS,
+    levelLabels: LEVEL_LABELS,
+    criteria: CRITERIA.map(key => ({ key, label: CRITERIA_LABELS[key], text: CRITERIA_TEXT[key] })),
+    angles: IMPACT_ANGLES.map(key => ({ key, label: `${key.charAt(0).toUpperCase()}${key.slice(1)}` }))
+  };
+  const legend = CRITERIA
+    .map(key => `<li><strong>${CRITERIA_LABELS[key]}</strong>: ${escapeHtml(CRITERIA_TEXT[key])}</li>`)
+    .join('');
+  return `<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>${escapeHtml(title)}</title>
+<style>
+  :root { --bg: #f6f7f9; --card: #ffffff; --text: #16181d; --muted: #616875; --border: #e2e5ea; --accent: #2f6fde;
+    --critical: #c62828; --high: #e07a00; --notable: #2f6fde; --routine: #8a919c; --chip: #eef1f5;
+    --economic: #1f8a4c; --political: #6a4cc7; --social: #c2410c; --security: #b42318; }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #111317; --card: #1a1d23; --text: #e8eaee; --muted: #9aa1ad; --border: #2a2e36; --accent: #7aa7ff;
+      --critical: #ff6b6b; --high: #ffa94d; --notable: #7aa7ff; --routine: #8a919c; --chip: #242830;
+      --economic: #4ade80; --political: #a78bfa; --social: #fb923c; --security: #f87171; }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 15px/1.55 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+  main { max-width: 860px; margin: 0 auto; padding: 32px 16px 64px; }
+  header h1 { font-size: 23px; margin: 0 0 4px; }
+  header p { color: var(--muted); margin: 0 0 12px; }
+  .mix { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }
+  .chip { background: var(--chip); border-radius: 999px; padding: 2px 10px; font-size: 12px; color: var(--muted); }
+  .eq { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 12px 16px 10px; margin: 12px 0 4px; }
+  .eq-top { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; }
+  .eq-title { font-size: 13px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: .06em; }
+  .preset { font: inherit; font-size: 12.5px; color: var(--muted); background: var(--chip); border: 1px solid transparent; border-radius: 999px; padding: 3px 11px; cursor: pointer; }
+  .preset.on { color: var(--accent); border-color: var(--accent); }
+  #eq-presets { display: flex; flex-wrap: wrap; gap: 6px; }
+  #eq-bands { display: flex; justify-content: space-around; gap: 6px; margin-top: 10px; }
+  .band { display: flex; flex-direction: column; align-items: center; gap: 4px; cursor: pointer; min-width: 0; }
+  .band input { writing-mode: vertical-lr; direction: rtl; width: 26px; height: 110px; accent-color: var(--accent); margin: 0; }
+  .bval { font-size: 12px; font-weight: 600; color: var(--accent); font-variant-numeric: tabular-nums; }
+  .bname { font-size: 12px; color: var(--muted); }
+  h2 { font-size: 13px; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); margin: 28px 0 10px; }
+  article { display: flex; gap: 14px; background: var(--card); border: 1px solid var(--border); border-left: 4px solid var(--routine); border-radius: 12px; padding: 14px 16px; margin-bottom: 10px; }
+  article.level-critical { border-left-color: var(--critical); }
+  article.level-high { border-left-color: var(--high); }
+  article.level-notable { border-left-color: var(--notable); }
+  .cover { width: 150px; height: 100px; object-fit: cover; border-radius: 8px; flex: none; background: var(--chip); }
+  .body { min-width: 0; flex: 1; }
+  h3 { font-size: 16px; margin: 2px 0 4px; }
+  a { color: var(--accent); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  p { margin: 6px 0 0; }
+  .meta { color: var(--muted); font-size: 12.5px; margin-top: 0; }
+  .badge { font-weight: 600; color: var(--routine); }
+  .level-critical .badge { color: var(--critical); }
+  .level-high .badge { color: var(--high); }
+  .level-notable .badge { color: var(--notable); }
+  .impacts { margin-top: 8px; }
+  .impact { margin-top: 4px; }
+  .angle { display: inline-block; min-width: 72px; font-size: 11.5px; font-weight: 600; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); }
+  .angle-economic { color: var(--economic); }
+  .angle-political { color: var(--political); }
+  .angle-social { color: var(--social); }
+  .angle-security { color: var(--security); }
+  .rated { margin-top: 10px; padding-top: 8px; border-top: 1px dashed var(--border); font-size: 13px; color: var(--muted); }
+  .rated-head { margin: 0 0 4px; font-weight: 600; }
+  .rated ul { list-style: none; margin: 0; padding: 0; }
+  .rated li { display: grid; grid-template-columns: 74px 34px 34px 1fr; gap: 6px; align-items: baseline; }
+  .cname { color: var(--text); }
+  .dots { letter-spacing: 1px; color: var(--accent); font-size: 11px; }
+  .pts { font-variant-numeric: tabular-nums; color: var(--text); }
+  .rated li.zero, .rated li.zero .cname, .rated li.zero .pts { opacity: .6; }
+  .rules-tag { font-style: italic; }
+  .storyline { border: 1px solid var(--border); border-radius: 14px; padding: 10px 10px 2px; margin-bottom: 12px; background: var(--chip); }
+  .storyline-head { display: flex; align-items: baseline; gap: 10px; padding: 0 6px 8px; }
+  .storyline-label { font-weight: 700; font-size: 15px; }
+  .storyline-count { font-size: 12.5px; color: var(--muted); }
+  .storyline article { margin-bottom: 8px; }
+  .dupes { margin-top: 8px; font-size: 13px; color: var(--muted); }
+  .dupes summary { cursor: pointer; }
+  .dupes ul { list-style: none; margin: 6px 0 0; padding: 0 0 0 14px; border-left: 2px solid var(--border); }
+  .dupes li { margin: 4px 0; }
+  .dupe-meta { display: inline-block; min-width: 140px; margin-right: 8px; }
+  .more { margin-top: 20px; }
+  .more summary { cursor: pointer; color: var(--muted); margin-bottom: 10px; }
+  .empty, footer { color: var(--muted); }
+  footer { margin-top: 36px; font-size: 13px; }
+  footer ul { padding-left: 18px; }
+  @media (max-width: 560px) {
+    article { flex-direction: column; }
+    .cover { width: 100%; height: 160px; }
+    .rated li { grid-template-columns: 70px 32px 30px; }
+    .rated li .note { grid-column: 1 / -1; }
+  }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>${escapeHtml(title)}</h1>
+    <p><span id="count">${Math.min(limit, stories.length)} of ${storyCount}</span> stories · generated ${escapeHtml(new Date(generatedAtMs).toLocaleString())}</p>
+    <div class="mix" id="mix"></div>
+    <div class="eq">
+      <div class="eq-top"><span class="eq-title">Importance</span><div id="eq-presets"></div></div>
+      <div id="eq-bands"></div>
+    </div>
+  </header>
+  <div id="stories"></div>
+  <footer>
+    <p><strong>How stories are rated.</strong> Each story gets 0–3 on six criteria, each with the fact behind it.
+    The sliders set how much each criterion counts compared with the others (they are remembered for every briefing).
+    The score is 0–100: one strong criterion is enough to lift a story, and each further one lifts it more, so a deadly attack
+    does not also need to be surprising to rank high. The +numbers show each criterion's share of the score.
+    Critical is ${LEVEL_THRESHOLDS.critical}+, High ${LEVEL_THRESHOLDS.high}+, Notable ${LEVEL_THRESHOLDS.notable}+, Routine below.
+    Reports of the same event are merged under one story (open "more reports" to see them), different stories about one ongoing situation are grouped
+    into a storyline, and no single area takes more than about a third of the list.
+    ${ratedByAi
+      ? 'Severity, scale, urgency, interest and the economic, political, social and security impact are judged by AI; coverage and relevance come from your sources and topics.'
+      : 'AI was off, so keyword rules did the rating and there is no impact write-up; turn AI on for both.'}</p>
+    <ul>${legend}</ul>
+  </footer>
+</main>
+<script id="briefing-data" type="application/json">${scriptJson(data)}</script>
+<script>${PAGE_SCRIPT}</script>
+</body>
+</html>
+`;
+}
+
+// ---- building ----
+
+export type BriefingOptions = {
+  period: BriefingPeriod;
+  scope: string;
+  window: { startMs: number; endMs: number };
+  localTerms?: string[];
+  trackedTerms?: string[];
+  region?: string;
+  /** Rates candidates with AI; omitted or failing falls back to rules. */
+  rateWithAi?: (candidates: AiRatingCandidate[]) => Promise<AiStoryRating[]>;
+  /** Labels storylines (id → label) from the headlines; omitted or failing means no grouping. */
+  groupWithAi?: (items: GroupingItem[]) => Promise<StoryGrouping>;
+  generatedAtMs?: number;
+};
+
+export type BriefingRecord = {
+  id: string;
+  title: string;
+  period: BriefingPeriod;
+  scope: string;
+  scheduled: boolean;
+  windowStartMs: number;
+  windowEndMs: number;
+  generatedAtMs: number;
+  itemCount: number;
+};
+
+export type Briefing = BriefingRecord & { html: string };
+
+export async function buildBriefing(stories: BriefingStory[], options: BriefingOptions, scheduled = false): Promise<Briefing> {
+  const { period, scope, window } = options;
+  const generatedAtMs = options.generatedAtMs ?? Date.now();
+  const limit = period === 'day' ? 20 : 12;
+  const inWindow = stories.filter(story => story.publishedMs >= window.startMs && story.publishedMs < window.endMs);
+  const context = { localTerms: options.localTerms, trackedTerms: options.trackedTerms, region: options.region };
+  let rated: RatedStory[] = clusterStories(inWindow).map(({ story, related }) => {
+    const rating = ruleRating(story, related, window, context);
+    const score = scoreOf(rating.scores);
+    return { story, related, rating, score, level: levelOf(score) };
+  });
+
+  // The page holds more than it shows, so moving the sliders can bring other stories up.
+  const pageSize = period === 'day' ? 60 : 36;
+  let aiRan = false;
+  if (options.rateWithAi && rated.length) {
+    // Every story that can reach the page goes to the AI (a few spare, since merging the
+    // same event shrinks the list), so keyword guesses never decide what leads.
+    const candidates = [...rated].sort((a, b) => b.score - a.score).slice(0, pageSize + 10);
+    const rateWithAi = options.rateWithAi;
+    const toCandidate = (entry: RatedStory): AiRatingCandidate => ({
+      id: entry.story.id,
+      title: entry.story.title,
+      summary: String(entry.story.summary || '').slice(0, 400),
+      source: String(entry.story.source || ''),
+      alsoReportedBy: distinctSources(entry.related)
+    });
+    // Small batches in parallel: each answer stays short enough to finish, and one failed
+    // batch only leaves its own stories on rule ratings.
+    const rateInBatches = async (entries: RatedStory[]) => {
+      const batches: RatedStory[][] = [];
+      for (let i = 0; i < entries.length; i += 10) batches.push(entries.slice(i, i + 10));
+      const results = await Promise.allSettled(batches.map(batch => rateWithAi(batch.map(toCandidate))));
+      return results.flatMap(result => (result.status === 'fulfilled' ? result.value : []));
+    };
+    const byId = new Map((await rateInBatches(candidates)).map(rating => [rating.id, rating]));
+    // Answers sometimes skip a story or get cut off; ask once more for the ones missing.
+    const missing = candidates.filter(entry => !byId.has(entry.story.id));
+    if (missing.length && byId.size) {
+      for (const rating of await rateInBatches(missing)) byId.set(rating.id, rating);
+    }
+    aiRan = byId.size > 0;
+    const candidateSet = new Set(candidates);
+    rated = rated.map(entry => {
+      const ai = candidateSet.has(entry) ? byId.get(entry.story.id) : undefined;
+      if (!ai) return entry;
+      const rating = applyAiRating(entry.rating, ai);
+      const score = scoreOf(rating.scores);
+      return { ...entry, rating, score, level: levelOf(score) };
+    });
+    if (aiRan) {
+      // A story the AI never checked cannot claim Critical or High from keywords alone.
+      rated = rated.map(entry => {
+        if (entry.rating.ratedBy === 'ai') return entry;
+        const score = Math.min(entry.score, UNCHECKED_SCORE_CAP);
+        return { ...entry, score, level: levelOf(score) };
+      });
+    }
+  }
+
+  let merged = [...rated].sort((a, b) => b.score - a.score || b.story.publishedMs - a.story.publishedMs).slice(0, pageSize);
+  if (options.groupWithAi && merged.length >= 2) {
+    try {
+      const groups = await options.groupWithAi(merged.map(entry => ({
+        id: entry.story.id,
+        title: entry.story.title,
+        summary: String(entry.story.summary || '').slice(0, 160)
+      })));
+      merged = applyGrouping(merged, groups);
+    } catch {
+      // Show the stories ungrouped.
+    }
+  }
+  const picked = pickVaried(merged, limit);
+  const title = briefingTitle(period, scope, window.startMs, window.endMs);
+  return {
+    // Random part keeps the URL unguessable: the HTML page is served without a login.
+    id: `${window.startMs}-${crypto.randomBytes(9).toString('hex')}`,
+    title,
+    period,
+    scope,
+    scheduled,
+    windowStartMs: window.startMs,
+    windowEndMs: window.endMs,
+    generatedAtMs,
+    itemCount: picked.length,
+    html: renderBriefingHtml(title, merged, limit, inWindow.length, generatedAtMs, aiRan)
+  };
+}
+
+// ---- storage ----
+
+const ID_PATTERN = /^\d+-[0-9a-f]{18}$/;
+
+/** Keeps the newest `keep` briefings as HTML files plus an index.json in `dir`. */
+export function createBriefingStore(dir: string, keep = 96) {
+  const indexPath = path.join(dir, 'index.json');
+  let records: BriefingRecord[] = [];
+  try {
+    const parsed = JSON.parse(fs.readFileSync(indexPath, 'utf8'));
+    if (Array.isArray(parsed)) {
+      records = parsed
+        .filter(record => ID_PATTERN.test(String(record?.id)))
+        .map(record => ({ period: 'hour', scope: 'All columns', scheduled: false, ...record }));
+    }
+  } catch {
+    records = [];
+  }
+
+  function write() {
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(indexPath, JSON.stringify(records, null, 2), 'utf8');
+  }
+
+  return {
+    list(): BriefingRecord[] {
+      return records.slice();
+    },
+    latest(): BriefingRecord | null {
+      return records[0] || null;
+    },
+    hasScheduledWindow(startMs: number): boolean {
+      return records.some(record => record.scheduled && record.windowStartMs === startMs);
+    },
+    readHtml(id: string): string | null {
+      if (!ID_PATTERN.test(id) || !records.some(record => record.id === id)) return null;
+      try {
+        return fs.readFileSync(path.join(dir, `${id}.html`), 'utf8');
+      } catch {
+        return null;
+      }
+    },
+    save(briefing: Briefing) {
+      fs.mkdirSync(dir, { recursive: true });
+      fs.writeFileSync(path.join(dir, `${briefing.id}.html`), briefing.html, 'utf8');
+      const { html: _html, ...record } = briefing;
+      // A scheduled run replaces an earlier scheduled run for the same hour.
+      const replaced = record.scheduled
+        ? records.filter(existing => existing.scheduled && existing.windowStartMs === record.windowStartMs)
+        : [];
+      records = [record, ...records.filter(existing => !replaced.includes(existing))]
+        .sort((a, b) => b.generatedAtMs - a.generatedAtMs);
+      const dropped = [...replaced, ...records.slice(keep)];
+      records = records.slice(0, keep);
+      for (const old of dropped) fs.rmSync(path.join(dir, `${old.id}.html`), { force: true });
+      write();
+    }
+  };
+}

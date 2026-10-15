@@ -823,6 +823,8 @@ private struct FloatingWidgetView: View {
 
     @State private var stories: [WidgetStory] = []
     @State private var loading = false
+    @State private var openingBriefing = false
+    @State private var showBriefingChoices = false
     @State private var copiedStoryKey: String?
     @State private var draggedStoryKey: String?
     @State private var layoutMode: FloatingWidgetLayoutMode
@@ -1430,6 +1432,7 @@ private struct FloatingWidgetView: View {
             if loading {
                 ProgressView().controlSize(.small)
             }
+            briefingMenu
             Button {
                 Task { await reload(clearUnchangedNewLabels: true) }
             } label: {
@@ -1452,6 +1455,7 @@ private struct FloatingWidgetView: View {
             if loading {
                 ProgressView().controlSize(.small)
             }
+            briefingMenu
             Button {
                 Task { await reload(clearUnchangedNewLabels: true) }
             } label: {
@@ -1494,6 +1498,91 @@ private struct FloatingWidgetView: View {
     private var compactHeaderMetaStroke: some View {
         RoundedRectangle(cornerRadius: 10, style: .continuous)
             .stroke(WidgetTheme.panelBorder.opacity(0.16), lineWidth: 1)
+    }
+
+    // A plain button with a popover rather than a SwiftUI Menu: on macOS a Menu label
+    // ignores the round header styling, so the icon would not match the other buttons.
+    private var briefingMenu: some View {
+        Button {
+            showBriefingChoices.toggle()
+        } label: {
+            Group {
+                if openingBriefing {
+                    ProgressView().controlSize(.small)
+                } else {
+                    Image(systemName: "doc.richtext")
+                        .font(widgetFont(14, weight: .semibold))
+                }
+            }
+            .floatingHeaderCircle(size: 30)
+        }
+        .buttonStyle(.borderless)
+        .disabled(openingBriefing)
+        .help("Open an hourly or daily briefing")
+        .pointingHandCursor()
+        .popover(isPresented: $showBriefingChoices, arrowEdge: .bottom) {
+            VStack(alignment: .leading, spacing: 2) {
+                briefingChoice("Hourly briefing", detail: displayCategoryName, systemImage: "clock", period: .hour)
+                briefingChoice("Daily briefing", detail: displayCategoryName, systemImage: "calendar", period: .day)
+                Divider().padding(.vertical, 4)
+                briefingChoice("Latest briefing", detail: "All columns", systemImage: "doc.richtext", period: nil)
+            }
+            .padding(8)
+            .frame(width: 240)
+        }
+    }
+
+    private func briefingChoice(_ title: String, detail: String, systemImage: String, period: APIClient.BriefingPeriod?) -> some View {
+        Button {
+            showBriefingChoices = false
+            Task { await openBriefing(period) }
+        } label: {
+            HStack(spacing: 10) {
+                Image(systemName: systemImage)
+                    .frame(width: 18)
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(title)
+                    Text(detail)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, 8)
+            .padding(.vertical, 6)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .pointingHandCursor()
+    }
+
+    /// Writes a briefing for this widget's feeds (or opens the newest all-columns one when
+    /// `period` is nil) and opens it in the browser.
+    private func openBriefing(_ period: APIClient.BriefingPeriod?) async {
+        guard let api = try? state.authorizedAPIClient() else { return }
+        openingBriefing = true
+        defer { openingBriefing = false }
+        do {
+            let briefing: Briefing
+            if let period {
+                let feedUrls = isFiltered ? [] : allCategoryIDs.flatMap { id in
+                    state.categories.first(where: { $0.id == id })?.feedUrls ?? []
+                }
+                briefing = try await api.generateBriefing(
+                    period: period,
+                    feedUrls: feedUrls,
+                    onlyMatches: isFiltered,
+                    label: displayCategoryName
+                )
+            } else {
+                briefing = try await api.fetchLatestBriefing()
+            }
+            guard let url = api.briefingPageURL(briefing) else { return }
+            NSWorkspace.shared.open(url)
+        } catch {
+            state.statusMessage = "Couldn't open the briefing: \(error.localizedDescription)"
+        }
     }
 
     private func headerModeButton(_ mode: FloatingWidgetLayoutMode, systemImage: String, size: CGFloat = 28) -> some View {

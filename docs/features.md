@@ -30,6 +30,7 @@ The full feature list for AI News macOS Floating Widgets. The README only keeps 
 - Always-on-top behavior.
 - Per-widget size and position persistence.
 - Share button on each story.
+- Briefing menu in the header: write an hourly or daily briefing for that widget's feeds, or open the newest all-columns one (written a minute past every hour, last 96 kept). Each story is scored 0–3 on severity, scale, urgency, interest, coverage (how many sources) and relevance (your topics and region), each with the specific fact behind it, plus its economic, political, social and security impact when AI is on. Slider "equalizer" on the page sets how much each criterion counts, with presets, re-ranks live and is remembered. One strong criterion is enough to lift a story (scores combine rather than average). Priority stories come first, each event appears once with "also reported by", different stories about one ongoing situation are grouped into a storyline (AI), and no area takes more than about a third of the list.
 - NEW label for unseen stack stories.
 - Stack navigation and stack load-more controls.
 - Drag-over merging for feed widgets, with title-chip unmerge.

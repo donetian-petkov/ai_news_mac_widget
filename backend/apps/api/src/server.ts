@@ -13,6 +13,23 @@ import { z } from 'zod';
 import { registerProductFeatureApi, type ProductFeatureRuntime } from './productFeatures';
 import { chunk, fingerprintRecord, takeChangedRecords } from './newsPersistence';
 import { titleTokens as cachedTitleTokens } from './titleTokens';
+import {
+  buildAiRatingPrompt,
+  buildBriefing,
+  buildStorylinePrompt,
+  createBriefingStore,
+  msUntilNextRun,
+  parseAiRatings,
+  parseStorylines,
+  previousHourWindow,
+  rollingWindow,
+  type AiRatingCandidate,
+  type AiStoryRating,
+  type BriefingPeriod,
+  type BriefingRecord,
+  type GroupingItem,
+  type StoryGrouping
+} from './briefing';
 
 function bootstrapEnv() {
   const randomSecret = (bytes = 48) => crypto.randomBytes(bytes).toString('base64url');
@@ -9797,6 +9814,186 @@ async function loadSavedProviderKeysFromDb() {
   }
 }
 
+// ---------------- Briefings ----------------
+// Hourly and daily write-ups of the news as standalone HTML pages. A minute past
+// every hour one is written for all columns; the widget can also ask for one for
+// its own feeds. Stories are rated for how much they matter (see briefing.ts).
+const briefings = createBriefingStore(path.join(DATA_DIR, 'briefings'));
+// AI ratings per story, so the daily briefing and repeat runs do not pay for them again.
+const briefingAiRatings = new Map<string, AiStoryRating>();
+
+function briefingLocalTerms(): string[] {
+  const region = String(localRegion || '').trim();
+  if (!region) return [];
+  const terms = region.toLowerCase().split(/[^\p{L}\p{N}]+/u).filter(word => word.length >= 3);
+  // The feeds are mostly Bulgarian-language, so also catch the local spelling.
+  if (/bulgari/i.test(region)) terms.push('българ');
+  return terms;
+}
+
+async function rateBriefingStoriesWithAi(candidates: AiRatingCandidate[], feedUrlById: Map<string, string>): Promise<AiStoryRating[]> {
+  if (!aiEnabled || !aiAvailable) throw new Error('AI is off');
+  const cacheKey = (id: string) => `${feedUrlById.get(id) || ''}::${id}`;
+  const cached = candidates.map(candidate => briefingAiRatings.get(cacheKey(candidate.id))).filter((r): r is AiStoryRating => !!r);
+  const missing = candidates.filter(candidate => !briefingAiRatings.has(cacheKey(candidate.id)));
+  if (!missing.length) return cached;
+  const text = await withTimeout(
+    generateAiText(
+      'ask',
+      buildAiRatingPrompt(missing, summaryLang === 'bg' ? 'bg' : 'en', localRegion),
+      Math.max(800, Math.min(9000, 300 + missing.length * 320)),
+      0,
+      'Briefing rating'
+    ),
+    90_000,
+    'Briefing rating'
+  );
+  const fresh = parseAiRatings(text || '');
+  if (!fresh.length) throw new Error('AI returned no ratings');
+  for (const rating of fresh) briefingAiRatings.set(cacheKey(rating.id), rating);
+  while (briefingAiRatings.size > 3000) {
+    const oldest = briefingAiRatings.keys().next().value;
+    if (oldest === undefined) break;
+    briefingAiRatings.delete(oldest);
+  }
+  return [...cached, ...fresh];
+}
+
+async function groupBriefingStorylinesWithAi(items: GroupingItem[]): Promise<StoryGrouping> {
+  const text = await withTimeout(
+    generateAiText(
+      'ask',
+      buildStorylinePrompt(items, summaryLang === 'bg' ? 'bg' : 'en'),
+      Math.max(600, Math.min(4000, 200 + items.length * 30)),
+      0,
+      'Briefing storylines'
+    ),
+    60_000,
+    'Briefing storylines'
+  );
+  return parseStorylines(text || '');
+}
+
+type BriefingScope = { feedUrls?: string[]; onlyMatches?: boolean; label?: string };
+
+async function generateBriefing(period: BriefingPeriod, window: { startMs: number; endMs: number }, scope: BriefingScope, scheduled = false) {
+  const feeds = currentFeeds();
+  const requested = new Set((scope.feedUrls || []).filter(url => url !== FILTERED_FEED_URL));
+  const feedUrls = new Set(feeds.map(feed => feed.url).filter(url => !requested.size || requested.has(url)));
+  const stories = recent
+    .filter(item => feedUrls.has(item.feedUrl) && !hiddenIds.has(item.id) && (!scope.onlyMatches || item.isMatch))
+    .map(item => ({
+      id: item.id,
+      title: item.neutralTitle || item.title,
+      link: item.link,
+      source: item.source,
+      feedUrl: item.feedUrl,
+      publishedMs: item.publishedMs,
+      summary: item.summary,
+      impact: item.insights?.impact?.summary,
+      coverUrl: item.coverUrl
+    }));
+  const feedUrlById = new Map(stories.map(story => [story.id, story.feedUrl]));
+  const label = String(scope.label || '').trim().slice(0, 80)
+    || (scope.onlyMatches ? 'Filtered' : requested.size === 1 ? feeds.find(feed => requested.has(feed.url))?.label || 'Feed' : 'All columns');
+  return buildBriefing(stories, {
+    period,
+    scope: label,
+    window,
+    localTerms: briefingLocalTerms(),
+    trackedTerms: matchTerms(),
+    region: localRegion,
+    rateWithAi: aiEnabled && aiAvailable ? candidates => rateBriefingStoriesWithAi(candidates, feedUrlById) : undefined,
+    groupWithAi: aiEnabled && aiAvailable ? groupBriefingStorylinesWithAi : undefined
+  }, scheduled);
+}
+
+function briefingResponse(record: BriefingRecord) {
+  return { ...record, url: `/briefings/${record.id}` };
+}
+
+async function runScheduledHourlyBriefing() {
+  const window = previousHourWindow(Date.now());
+  if (briefings.hasScheduledWindow(window.startMs)) return;
+  try {
+    const briefing = await generateBriefing('hour', window, {}, true);
+    // Quiet hours (or a powered-off app) produce nothing worth opening.
+    if (briefing.itemCount) briefings.save(briefing);
+  } catch (e) {
+    console.error('Failed to write hourly briefing:', (e as Error).message);
+  }
+}
+
+function startHourlyBriefings() {
+  const tick = () => {
+    void runScheduledHourlyBriefing();
+    setTimeout(tick, msUntilNextRun(Date.now()));
+  };
+  // Give feeds a couple of minutes to catch up after a restart before filling in the last hour.
+  setTimeout(() => void runScheduledHourlyBriefing(), 2 * 60_000);
+  setTimeout(tick, msUntilNextRun(Date.now()));
+}
+
+app.get('/api/briefings', async (req, res) => {
+  const user = await requireAuthUser(req, res);
+  if (!user) return;
+  res.json({ ok: true, items: briefings.list().map(briefingResponse) });
+});
+
+// Newest briefing; with nothing saved yet, one is written for the last 60 minutes.
+app.get('/api/briefings/latest', async (req, res) => {
+  const user = await requireAuthUser(req, res);
+  if (!user) return;
+  let latest = briefings.latest();
+  if (!latest) {
+    const briefing = await generateBriefing('hour', rollingWindow('hour', Date.now()), {});
+    briefings.save(briefing);
+    latest = briefings.latest();
+  }
+  res.json({ ok: true, item: latest ? briefingResponse(latest) : null });
+});
+
+const generateBriefingSchema = z.object({
+  period: z.union([z.literal('hour'), z.literal('day')]).default('hour'),
+  feedUrls: z.array(z.string().trim().min(1).max(400)).max(80).optional(),
+  onlyMatches: z.boolean().optional(),
+  label: z.string().trim().max(80).optional()
+});
+
+// Briefing for the hour or day that ends now, optionally limited to some feeds.
+app.post('/api/briefings/generate', async (req, res) => {
+  const user = await requireAuthUser(req, res);
+  if (!user) return;
+  const parsed = generateBriefingSchema.safeParse(req.body || {});
+  if (!parsed.success) {
+    res.status(400).json({ error: 'Invalid briefing request.' });
+    return;
+  }
+  const { period, ...scope } = parsed.data;
+  try {
+    const briefing = await generateBriefing(period, rollingWindow(period, Date.now()), scope);
+    briefings.save(briefing);
+    const { html: _html, ...record } = briefing;
+    res.status(201).json({ ok: true, item: briefingResponse(record) });
+  } catch (e) {
+    res.status(500).json({ error: (e as Error).message || 'Failed to write the briefing.' });
+  }
+});
+
+// Opened in the browser, so there is no bearer token: the random id is the access check.
+app.get('/briefings/:id', (req, res) => {
+  if (!isLoopbackRequest(req)) {
+    res.status(404).end();
+    return;
+  }
+  const html = briefings.readHtml(String(req.params.id || ''));
+  if (!html) {
+    res.status(404).type('text/plain').send('Briefing not found.');
+    return;
+  }
+  res.type('html').set('Cache-Control', 'no-store').send(html);
+});
+
 // ---------------- Startup ----------------
 (async () => {
   await loadState();
@@ -9814,6 +10011,7 @@ async function loadSavedProviderKeysFromDb() {
 
   // start scheduler
   startScheduler();
+  startHourlyBriefings();
 
   // Recompute Filtered matches for cached items in the background — it embeds every
   // cached item, so it must NOT block startup / the scheduler + AI job pump.
