@@ -815,7 +815,26 @@ const PAGE_SCRIPT = String.raw`
     document.querySelectorAll('.preset').forEach(button => {
       button.classList.toggle('on', sameWeights(weights, data.presets[Number(button.dataset.i)].weights));
     });
+    const preset = data.presets.find(p => sameWeights(weights, p.weights));
+    document.getElementById('eq-current').textContent = preset ? preset.name : 'Custom';
   }
+
+  // The criteria side panel and the floating buttons work from anywhere on the page.
+  const eqBox = document.getElementById('eq');
+  const eqBackdrop = document.getElementById('eq-backdrop');
+  const eqToggle = document.getElementById('eq-toggle');
+  function setEqOpen(open) {
+    eqBox.classList.toggle('open', open);
+    eqBackdrop.classList.toggle('open', open);
+    eqBox.setAttribute('aria-hidden', String(!open));
+    eqToggle.setAttribute('aria-expanded', String(open));
+  }
+  eqToggle.addEventListener('click', () => setEqOpen(!eqBox.classList.contains('open')));
+  document.getElementById('eq-close').addEventListener('click', () => setEqOpen(false));
+  eqBackdrop.addEventListener('click', () => setEqOpen(false));
+  document.addEventListener('keydown', event => { if (event.key === 'Escape') setEqOpen(false); });
+  document.getElementById('go-top').addEventListener('click', () => window.scrollTo({ top: 0, behavior: 'smooth' }));
+  document.getElementById('go-bottom').addEventListener('click', () => window.scrollTo({ top: document.documentElement.scrollHeight, behavior: 'smooth' }));
 
   const eq = document.getElementById('eq-bands');
   for (const c of data.criteria) {
@@ -835,7 +854,7 @@ const PAGE_SCRIPT = String.raw`
       save();
       render();
     });
-    band.append(value, input, el('span', 'bname', c.label));
+    band.append(el('span', 'bname', c.label), value, input, el('span', 'bdesc', c.text));
     eq.append(band);
   }
   const presets = document.getElementById('eq-presets');
@@ -924,17 +943,28 @@ export function renderBriefingHtml(title: string, stories: RatedStory[], limit: 
   header p { color: var(--muted); margin: 0 0 12px; }
   .mix { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }
   .chip { background: var(--chip); border-radius: 999px; padding: 2px 10px; font-size: 12px; color: var(--muted); }
-  .eq { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 12px 16px 10px; margin: 12px 0 4px; }
-  .eq-top { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; }
+  /* The criteria live in a side panel that slides in from anywhere on the page. */
+  .eq { position: fixed; top: 0; right: 0; z-index: 40; width: min(340px, 88vw); height: 100%; overflow-y: auto; background: var(--card); border-left: 1px solid var(--border); box-shadow: -8px 0 28px rgba(0, 0, 0, .18); padding: 16px 18px 24px; transform: translateX(105%); transition: transform .22s ease; }
+  .eq.open { transform: none; }
+  .eq-backdrop { position: fixed; inset: 0; z-index: 35; background: rgba(0, 0, 0, .32); opacity: 0; pointer-events: none; transition: opacity .22s ease; }
+  .eq-backdrop.open { opacity: 1; pointer-events: auto; }
+  .eq-head { display: flex; align-items: center; justify-content: space-between; }
+  .eq-close { font: inherit; font-size: 16px; color: var(--muted); background: none; border: 0; cursor: pointer; padding: 4px 6px; }
+  .eq-hint { font-size: 12.5px; color: var(--muted); margin: 6px 0 12px; }
+  .fabs { position: fixed; right: 16px; bottom: 16px; z-index: 30; display: flex; gap: 8px; align-items: center; }
+  .fab { font: inherit; font-size: 13px; font-weight: 600; color: var(--text); background: var(--card); border: 1px solid var(--border); border-radius: 999px; min-width: 40px; height: 40px; padding: 0 12px; cursor: pointer; box-shadow: 0 4px 14px rgba(0, 0, 0, .16); }
+  .fab-eq #eq-current { color: var(--accent); }
   .eq-title { font-size: 13px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: .06em; }
   .preset { font: inherit; font-size: 12.5px; color: var(--muted); background: var(--chip); border: 1px solid transparent; border-radius: 999px; padding: 3px 11px; cursor: pointer; }
   .preset.on { color: var(--accent); border-color: var(--accent); }
-  #eq-presets { display: flex; flex-wrap: wrap; gap: 6px; }
-  #eq-bands { display: flex; justify-content: space-around; gap: 6px; margin-top: 10px; }
-  .band { display: flex; flex: 1 1 0; flex-direction: column; align-items: center; gap: 4px; cursor: pointer; min-width: 0; }
-  .band input { writing-mode: vertical-lr; direction: rtl; width: 26px; height: 110px; accent-color: var(--accent); margin: 0; }
-  .bval { font-size: 12px; font-weight: 600; color: var(--accent); font-variant-numeric: tabular-nums; }
-  .bname { font-size: 12px; color: var(--muted); text-align: center; overflow-wrap: anywhere; }
+  #eq-presets { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 2px; }
+  #eq-bands { display: flex; flex-direction: column; gap: 14px; margin-top: 16px; }
+  .band { display: grid; grid-template-columns: 1fr auto; gap: 2px 8px; cursor: pointer; }
+  .band input { grid-column: 1 / -1; width: 100%; accent-color: var(--accent); margin: 2px 0; }
+  .bval { font-size: 13px; font-weight: 600; color: var(--accent); font-variant-numeric: tabular-nums; }
+  .bname { font-size: 13.5px; font-weight: 600; color: var(--text); }
+  .bdesc { grid-column: 1 / -1; font-size: 12px; color: var(--muted); }
+  main { padding-bottom: 88px; }
   h2 { font-size: 13px; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); margin: 28px 0 10px; }
   article { display: flex; gap: 14px; background: var(--card); border: 1px solid var(--border); border-left: 4px solid var(--routine); border-radius: 12px; padding: 14px 16px; margin-bottom: 10px; }
   article.level-critical { border-left-color: var(--critical); }
@@ -986,10 +1016,7 @@ export function renderBriefingHtml(title: string, stories: RatedStory[], limit: 
   @media (max-width: 560px) {
     main { padding: 20px 12px 48px; }
     header h1 { font-size: 20px; }
-    .eq { padding: 10px 8px 8px; }
-    #eq-bands { gap: 2px; }
-    .bname { font-size: 10.5px; }
-    .preset { font-size: 12px; padding: 3px 9px; }
+    .fabs { right: 12px; bottom: 12px; }
     .storyline { padding: 8px 6px 2px; }
     article { flex-direction: column; padding: 12px; }
     .cover { width: 100%; height: 160px; }
@@ -1005,10 +1032,6 @@ export function renderBriefingHtml(title: string, stories: RatedStory[], limit: 
     <h1>${escapeHtml(title)}</h1>
     <p><span id="count">${Math.min(limit, stories.length)} of ${storyCount}</span> stories · generated ${escapeHtml(new Date(generatedAtMs).toLocaleString())}</p>
     <div class="mix" id="mix"></div>
-    <div class="eq">
-      <div class="eq-top"><span class="eq-title">Importance</span><div id="eq-presets"></div></div>
-      <div id="eq-bands"></div>
-    </div>
   </header>
   <div id="stories"></div>
   <footer>
@@ -1025,6 +1048,21 @@ export function renderBriefingHtml(title: string, stories: RatedStory[], limit: 
     <ul>${legend}</ul>
   </footer>
 </main>
+<div class="eq-backdrop" id="eq-backdrop"></div>
+<aside class="eq" id="eq" aria-label="Importance of each criterion" aria-hidden="true">
+  <div class="eq-head">
+    <span class="eq-title">Importance</span>
+    <button type="button" class="eq-close" id="eq-close" aria-label="Close">✕</button>
+  </div>
+  <p class="eq-hint">How much each criterion counts. The stories re-rank as you slide.</p>
+  <div id="eq-presets"></div>
+  <div id="eq-bands"></div>
+</aside>
+<div class="fabs">
+  <button type="button" class="fab fab-eq" id="eq-toggle" aria-controls="eq" aria-expanded="false">Importance · <span id="eq-current"></span></button>
+  <button type="button" class="fab" id="go-top" aria-label="Go to top">↑</button>
+  <button type="button" class="fab" id="go-bottom" aria-label="Go to bottom">↓</button>
+</div>
 <script id="briefing-data" type="application/json">${scriptJson(data)}</script>
 <script>${PAGE_SCRIPT}</script>
 </body>
