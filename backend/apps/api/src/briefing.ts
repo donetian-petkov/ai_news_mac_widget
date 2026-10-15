@@ -823,16 +823,20 @@ const PAGE_SCRIPT = String.raw`
   const eqBox = document.getElementById('eq');
   const eqBackdrop = document.getElementById('eq-backdrop');
   const eqToggle = document.getElementById('eq-toggle');
+  const wide = window.matchMedia('(min-width: 1240px)');
   function setEqOpen(open) {
+    if (wide.matches) open = false;
+    eqBox.setAttribute('aria-hidden', String(!open && !wide.matches));
     eqBox.classList.toggle('open', open);
     eqBackdrop.classList.toggle('open', open);
-    eqBox.setAttribute('aria-hidden', String(!open));
     eqToggle.setAttribute('aria-expanded', String(open));
   }
   eqToggle.addEventListener('click', () => setEqOpen(!eqBox.classList.contains('open')));
   document.getElementById('eq-close').addEventListener('click', () => setEqOpen(false));
   eqBackdrop.addEventListener('click', () => setEqOpen(false));
   document.addEventListener('keydown', event => { if (event.key === 'Escape') setEqOpen(false); });
+  wide.addEventListener('change', () => setEqOpen(false));
+  setEqOpen(false);
   document.getElementById('go-top').addEventListener('click', () => window.scrollTo({ top: 0, behavior: 'smooth' }));
   document.getElementById('go-bottom').addEventListener('click', () => window.scrollTo({ top: document.documentElement.scrollHeight, behavior: 'smooth' }));
 
@@ -954,6 +958,15 @@ export function renderBriefingHtml(title: string, stories: RatedStory[], limit: 
   .fabs { position: fixed; right: 16px; bottom: 16px; z-index: 30; display: flex; gap: 8px; align-items: center; }
   .fab { font: inherit; font-size: 13px; font-weight: 600; color: var(--text); background: var(--card); border: 1px solid var(--border); border-radius: 999px; min-width: 40px; height: 40px; padding: 0 12px; cursor: pointer; box-shadow: 0 4px 14px rgba(0, 0, 0, .16); }
   .fab-eq #eq-current { color: var(--accent); }
+  /* Wide windows have room for the criteria as a side menu that is always open, and the
+     jump buttons sit half-way down the right edge where they are easy to see. */
+  @media (min-width: 1240px) {
+    body { padding-left: 330px; }
+    .eq { transform: none; width: 330px; left: 0; right: auto; border-left: 0; border-right: 1px solid var(--border); box-shadow: none; transition: none; }
+    .eq-close, .eq-backdrop, .fab-eq { display: none; }
+    .fabs { flex-direction: column; top: 50%; bottom: auto; right: 24px; transform: translateY(-50%); }
+    .fab { width: 46px; height: 46px; font-size: 18px; padding: 0; }
+  }
   .eq-title { font-size: 13px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: .06em; }
   .preset { font: inherit; font-size: 12.5px; color: var(--muted); background: var(--chip); border: 1px solid transparent; border-radius: 999px; padding: 3px 11px; cursor: pointer; }
   .preset.on { color: var(--accent); border-color: var(--accent); }
