@@ -490,3 +490,12 @@ describe('periods', () => {
     expect(time.length).toBeGreaterThan(5);
   });
 });
+
+describe('rating prompt', () => {
+  it('asks for the main surprise of a story, not a side number', async () => {
+    const { buildAiRatingPrompt } = await import('./briefing.js');
+    const prompt = buildAiRatingPrompt([], 'bg', 'България');
+    expect(prompt).toContain('main claim in the headline');
+    expect(prompt).toContain('a car that flies, not its acceleration');
+  });
+});
