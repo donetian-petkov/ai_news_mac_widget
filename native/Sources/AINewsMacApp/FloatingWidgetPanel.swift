@@ -812,6 +812,13 @@ final class FloatingWidgetManager: NSObject, NSWindowDelegate {
 
 /// Compact, scrollable view shown inside a floating panel. Fetches its own
 /// category's stories so multiple widgets can show different categories at once.
+private struct ColumnCardFramesKey: PreferenceKey {
+    static let defaultValue: [String: CGRect] = [:]
+    static func reduce(value: inout [String: CGRect], nextValue: () -> [String: CGRect]) {
+        value.merge(nextValue(), uniquingKeysWith: { $1 })
+    }
+}
+
 private struct FloatingWidgetView: View {
     @EnvironmentObject private var state: WidgetAppState
     @EnvironmentObject private var theme: ThemeSettings
@@ -827,8 +834,6 @@ private struct FloatingWidgetView: View {
     @State private var showBriefingChoices = false
     /// Position on the custom-period slider (see `customBriefingHours`).
     @State private var customBriefingStop = 7.0
-    @State private var briefingPeriodChoice: APIClient.BriefingPeriod = .day
-    @State private var briefingAllColumns = false
     @State private var copiedStoryKey: String?
     @State private var draggedStoryKey: String?
     @State private var layoutMode: FloatingWidgetLayoutMode
@@ -843,6 +848,15 @@ private struct FloatingWidgetView: View {
     @State private var suppressResizeDuringRefresh = false
     @State private var lastSourceRefreshAt: Date?
     @State private var windowBox = HostingWindowBox()
+    /// One countdown per NEW label, started the first time the user interacts
+    /// with the widget while that card is actually on screen.
+    @State private var newLabelClearTasks: [String: Task<Void, Never>] = [:]
+    /// Cards whose top (where the NEW label sits) is inside the column's
+    /// visible area right now.
+    @State private var onScreenStoryKeys: Set<String> = []
+    @State private var columnViewportHeight: CGFloat = 0
+    @State private var interactionMonitor: Any?
+    private let newLabelClearDelay: UInt64 = 30_000_000_000
     /// How many stories to show. Grows by `pageStep` via "Show More", resets to
     /// `pageStep` via "Reset". Mirrors ai_news_deploy_ready's column behaviour.
     @State private var visibleCount = 10
@@ -1193,6 +1207,18 @@ private struct FloatingWidgetView: View {
         .background(HostingWindowReader(box: windowBox) { _ in
             DispatchQueue.main.async { applyWindowChrome() }
         })
+        .onContinuousHover { phase in
+            if case .active = phase { scheduleNewLabelClear() }
+        }
+        .onAppear(perform: installInteractionMonitor)
+        .onDisappear {
+            if let interactionMonitor {
+                NSEvent.removeMonitor(interactionMonitor)
+                self.interactionMonitor = nil
+            }
+            newLabelClearTasks.values.forEach { $0.cancel() }
+            newLabelClearTasks = [:]
+        }
         .task {
             // Load now, then auto-refresh so the widget picks up new stories and
             // freshly generated summaries/translations without clicking reload.
@@ -1522,10 +1548,27 @@ private struct FloatingWidgetView: View {
         }
         .buttonStyle(.borderless)
         .disabled(openingBriefing)
-        .help("Write a briefing")
+        .help("Open an hourly or daily briefing")
         .pointingHandCursor()
         .popover(isPresented: $showBriefingChoices, arrowEdge: .bottom) {
-            briefingForm
+            VStack(alignment: .leading, spacing: 2) {
+                briefingChoice("Hourly briefing", detail: displayCategoryName, systemImage: "clock", period: .hour)
+                briefingChoice("Daily briefing", detail: displayCategoryName, systemImage: "calendar", period: .day)
+                briefingChoice("Weekly briefing", detail: displayCategoryName, systemImage: "calendar.badge.clock", period: .week)
+                briefingChoice("Monthly briefing", detail: displayCategoryName, systemImage: "calendar.circle", period: .month)
+                customBriefingRow
+                Divider().padding(.vertical, 4)
+                briefingChoice("Hourly briefing", detail: "All columns", systemImage: "square.stack", period: nil)
+            }
+            .padding(8)
+            .frame(width: 280)
+            // A solid background and fixed text colours from the app's theme. The widget's
+            // own colours are see-through in its macOS look and its text takes on whatever is
+            // behind the glass, so the menu's text vanished over bright pictures. Titles are
+            // at least 13:1 against this background and details 6.5:1 in every theme.
+            .background(AINewsTheme.backgroundAlt)
+            .presentationBackground(AINewsTheme.backgroundAlt)
+            .environment(\.colorScheme, ThemeSettings.shared.vibe == .light ? .light : .dark)
         }
     }
 
@@ -1545,107 +1588,88 @@ private struct FloatingWidgetView: View {
         return days == 1 ? "Last day" : "Last \(days) days"
     }
 
-    private var chosenPeriodLabel: String {
-        switch briefingPeriodChoice {
-        case .hour: return "Last hour"
-        case .day: return "Last day"
-        case .week: return "Last week"
-        case .month: return "Last month"
-        case .custom: return Self.periodLabel(hours: customHours)
+    /// Any period from an hour to 90 days: slide to the length, then write it.
+    private var customBriefingRow: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(spacing: 10) {
+                Image(systemName: "slider.horizontal.3")
+                    .foregroundStyle(AINewsTheme.textSecondary)
+                    .frame(width: 18)
+                VStack(alignment: .leading, spacing: 1) {
+                    Text("Custom period")
+                        .foregroundStyle(AINewsTheme.textPrimary)
+                    Text("\(Self.periodLabel(hours: customHours)) · \(displayCategoryName)")
+                        .font(.caption)
+                        .foregroundStyle(AINewsTheme.textSecondary)
+                        .lineLimit(1)
+                }
+                Spacer(minLength: 0)
+                Button("Write") {
+                    showBriefingChoices = false
+                    let hours = customHours
+                    Task { await openBriefing(.custom, hours: hours) }
+                }
+                .controlSize(.small)
+            }
+            Slider(value: $customBriefingStop, in: 0...Double(Self.customBriefingHours.count - 1), step: 1)
+                .controlSize(.small)
+                .tint(AINewsTheme.accentCyan)
+                .padding(.leading, 28)
+                .help("Length of the period, from 1 hour to 90 days")
         }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 6)
     }
 
-    /// One small form on a solid background: where the stories come from (chosen once), the
-    /// period, a slider only for a custom length, and one button that says what it will write.
-    private var briefingForm: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            Text("Write a briefing")
-                .font(.headline)
-
-            VStack(alignment: .leading, spacing: 6) {
-                Text("Stories from")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                Picker("Stories from", selection: $briefingAllColumns) {
-                    Text(displayCategoryName).tag(false)
-                    Text("All columns").tag(true)
+    private func briefingChoice(_ title: String, detail: String, systemImage: String, period: APIClient.BriefingPeriod?) -> some View {
+        Button {
+            showBriefingChoices = false
+            Task { await openBriefing(period) }
+        } label: {
+            HStack(spacing: 10) {
+                Image(systemName: systemImage)
+                    .foregroundStyle(AINewsTheme.textSecondary)
+                    .frame(width: 18)
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(title)
+                        .foregroundStyle(AINewsTheme.textPrimary)
+                    Text(detail)
+                        .font(.caption)
+                        .foregroundStyle(AINewsTheme.textSecondary)
+                        .lineLimit(1)
                 }
-                .pickerStyle(.segmented)
-                .labelsHidden()
+                Spacer(minLength: 0)
             }
-
-            VStack(alignment: .leading, spacing: 6) {
-                Text("Period")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                Picker("Period", selection: $briefingPeriodChoice) {
-                    Text("Hour").tag(APIClient.BriefingPeriod.hour)
-                    Text("Day").tag(APIClient.BriefingPeriod.day)
-                    Text("Week").tag(APIClient.BriefingPeriod.week)
-                    Text("Month").tag(APIClient.BriefingPeriod.month)
-                    Text("Custom").tag(APIClient.BriefingPeriod.custom)
-                }
-                .pickerStyle(.segmented)
-                .labelsHidden()
-
-                if briefingPeriodChoice == .custom {
-                    Slider(value: $customBriefingStop, in: 0...Double(Self.customBriefingHours.count - 1), step: 1) {
-                        Text("Length")
-                    } minimumValueLabel: {
-                        Text("1 h").font(.caption).foregroundStyle(.secondary)
-                    } maximumValueLabel: {
-                        Text("3 mo").font(.caption).foregroundStyle(.secondary)
-                    }
-                    .labelsHidden()
-                    .help("Length of the period, from 1 hour to 3 months")
-                    Text(chosenPeriodLabel)
-                        .font(.callout.weight(.semibold))
-                        .frame(maxWidth: .infinity, alignment: .center)
-                }
-            }
-
-            Button {
-                showBriefingChoices = false
-                let period = briefingPeriodChoice
-                let hours = period == .custom ? customHours : nil
-                let allColumns = briefingAllColumns
-                Task { await openBriefing(period, hours: hours, allColumns: allColumns) }
-            } label: {
-                Text("Write briefing · \(chosenPeriodLabel) · \(briefingAllColumns ? "All columns" : displayCategoryName)")
-                    .lineLimit(1)
-                    .frame(maxWidth: .infinity)
-            }
-            .buttonStyle(.borderedProminent)
-            .controlSize(.large)
-            .keyboardShortcut(.defaultAction)
-
-            Text("AI writes it now from that period's stories and opens it in your browser. Longer periods take a little longer.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 6)
+            .contentShape(Rectangle())
         }
-        .padding(16)
-        .frame(width: 340)
-        .background(Color(nsColor: .windowBackgroundColor))
+        .buttonStyle(.plain)
+        .pointingHandCursor()
     }
 
-    /// Writes a briefing now for this widget's feeds, or for every column, and opens it in the browser.
-    private func openBriefing(_ period: APIClient.BriefingPeriod, hours: Int? = nil, allColumns: Bool = false) async {
+    /// Writes a briefing now for this widget's feeds (or an hourly one for every column when
+    /// `period` is nil) and opens it in the browser.
+    private func openBriefing(_ period: APIClient.BriefingPeriod?, hours: Int? = nil) async {
         guard let api = try? state.authorizedAPIClient() else { return }
         openingBriefing = true
         defer { openingBriefing = false }
         do {
-            let feedUrls = allColumns || isFiltered ? [] : allCategoryIDs.flatMap { id in
-                state.categories.first(where: { $0.id == id })?.feedUrls ?? []
+            let briefing: Briefing
+            if let period {
+                let feedUrls = isFiltered ? [] : allCategoryIDs.flatMap { id in
+                    state.categories.first(where: { $0.id == id })?.feedUrls ?? []
+                }
+                briefing = try await api.generateBriefing(
+                    period: period,
+                    hours: hours,
+                    feedUrls: feedUrls,
+                    onlyMatches: isFiltered,
+                    label: displayCategoryName
+                )
+            } else {
+                briefing = try await api.fetchLatestBriefing()
             }
-            let briefing = try await api.generateBriefing(
-                period: period,
-                hours: hours,
-                feedUrls: feedUrls,
-                onlyMatches: !allColumns && isFiltered,
-                // Empty lets the backend name "All columns" in the briefing's language.
-                label: allColumns ? "" : displayCategoryName
-            )
             guard let url = api.briefingPageURL(briefing) else { return }
             NSWorkspace.shared.open(url)
         } catch {
@@ -1733,6 +1757,14 @@ private struct FloatingWidgetView: View {
                                 .id("floating-column-top")
                             ForEach(stories) { story in
                                 storyRow(story)
+                                    .background(
+                                        GeometryReader { proxy in
+                                            Color.clear.preference(
+                                                key: ColumnCardFramesKey.self,
+                                                value: [story.storyKey: proxy.frame(in: .named("floating-column"))]
+                                            )
+                                        }
+                                    )
                             }
                             paginationControls(scrollProxy: scrollProxy)
                             Color.clear
@@ -1740,6 +1772,17 @@ private struct FloatingWidgetView: View {
                                 .id("floating-column-bottom")
                         }
                         .padding(14)
+                    }
+                    .coordinateSpace(name: "floating-column")
+                    .background(
+                        GeometryReader { viewport in
+                            Color.clear
+                                .onAppear { columnViewportHeight = viewport.size.height }
+                                .onChange(of: viewport.size.height) { _, height in columnViewportHeight = height }
+                        }
+                    )
+                    .onPreferenceChange(ColumnCardFramesKey.self) { frames in
+                        updateOnScreenStories(frames: frames)
                     }
                     columnJumpOverlay(scrollProxy: scrollProxy)
                         .padding(.trailing, 14)
@@ -1772,10 +1815,7 @@ private struct FloatingWidgetView: View {
                     .font(widgetFont(13, weight: .bold))
                     .foregroundStyle(WidgetTheme.textPrimary)
                     .frame(width: 34, height: 34)
-                    .background(
-                        Circle()
-                            .fill(WidgetTheme.backgroundAlt.opacity(theme.widgetBackgroundMode == .transparent ? 0.82 : 0.96))
-                    )
+                    .background(columnJumpButtonBackground)
                     .overlay(
                         Circle()
                             .stroke(WidgetTheme.panelBorder.opacity(0.85), lineWidth: 1)
@@ -1791,10 +1831,7 @@ private struct FloatingWidgetView: View {
                     .font(widgetFont(13, weight: .bold))
                     .foregroundStyle(WidgetTheme.textPrimary)
                     .frame(width: 34, height: 34)
-                    .background(
-                        Circle()
-                            .fill(WidgetTheme.backgroundAlt.opacity(theme.widgetBackgroundMode == .transparent ? 0.82 : 0.96))
-                    )
+                    .background(columnJumpButtonBackground)
                     .overlay(
                         Circle()
                             .stroke(WidgetTheme.panelBorder.opacity(0.85), lineWidth: 1)
@@ -1802,6 +1839,15 @@ private struct FloatingWidgetView: View {
             }
             .buttonStyle(.plain)
             .help("Go to bottom")
+        }
+    }
+
+    /// A frosted base under the tint keeps the jump buttons as solid as the
+    /// story cards, even in the macOS-style mode where the tint is faint.
+    private var columnJumpButtonBackground: some View {
+        ZStack {
+            Circle().fill(.regularMaterial)
+            Circle().fill(WidgetTheme.backgroundAlt.opacity(theme.widgetBackgroundMode == .transparent ? 0.82 : 0.96))
         }
     }
 
@@ -2485,6 +2531,58 @@ private struct FloatingWidgetView: View {
         guard !storyKey.isEmpty, !seenStoryKeys.contains(storyKey) else { return }
         seenStoryKeys.insert(storyKey)
         persistSeenStories()
+    }
+
+    /// Clicks, scrolls and key presses inside this widget's window count as
+    /// interaction too, alongside hovering.
+    private func installInteractionMonitor() {
+        guard interactionMonitor == nil else { return }
+        interactionMonitor = NSEvent.addLocalMonitorForEvents(
+            matching: [.leftMouseDown, .rightMouseDown, .otherMouseDown, .scrollWheel, .keyDown]
+        ) { event in
+            if let window = currentWidgetWindow(), event.window === window {
+                scheduleNewLabelClear()
+            }
+            return event
+        }
+    }
+
+    private func updateOnScreenStories(frames: [String: CGRect]) {
+        let viewportHeight = columnViewportHeight
+        let labelRowOffset: CGFloat = 24
+        let visible = Set(frames.compactMap { key, frame -> String? in
+            let labelY = frame.minY + labelRowOffset
+            return labelY >= 0 && labelY <= viewportHeight ? key : nil
+        })
+        if visible != onScreenStoryKeys {
+            onScreenStoryKeys = visible
+        }
+    }
+
+    /// Only labels the user can actually see right now start their
+    /// countdown; cards further down keep NEW until they are scrolled into
+    /// view and the user interacts again (scrolling itself counts).
+    private func scheduleNewLabelClear() {
+        let candidates = stories.filter { story in
+            showsNewBadge(for: story)
+                && newLabelClearTasks[story.storyKey] == nil
+                && (layoutMode == .stack || onScreenStoryKeys.contains(story.storyKey))
+        }
+        if !candidates.isEmpty {
+            AINewsDebugLog.log("floating new-label countdown started count=\(candidates.count) scope=\(displayCategoryName)")
+        }
+        for story in candidates {
+            let key = story.storyKey
+            newLabelClearTasks[key] = Task { @MainActor in
+                try? await Task.sleep(nanoseconds: newLabelClearDelay)
+                newLabelClearTasks[key] = nil
+                guard !Task.isCancelled else { return }
+                _ = withAnimation(.easeOut(duration: 0.3)) {
+                    seenStoryKeys.insert(key)
+                }
+                persistSeenStories()
+            }
+        }
     }
 
     private func showsNewBadge(for story: WidgetStory) -> Bool {
