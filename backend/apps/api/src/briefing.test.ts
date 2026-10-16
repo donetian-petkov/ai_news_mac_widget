@@ -424,3 +424,44 @@ describe('critical', () => {
     expect(criticalCap(scores(2, 1, 3))).toBe('minor');
   });
 });
+
+describe('resolutions', () => {
+  it('groups an event that began and ended in the period, resolution first', () => {
+    const groups = parseStorylines(JSON.stringify({
+      duplicates: [['found', 'found-2']],
+      storylines: [{ label: 'Search', ids: ['missing', 'found', 'other'] }],
+      resolutions: [{ ids: ['missing', 'search', 'found-2'], resolvedBy: 'found-2', label: 'Missing boy found', summary: 'Reported missing at 9:10, found unharmed at 11:40.' }]
+    }));
+    expect(groups.resolutions).toHaveLength(1);
+    const grouped = applyGrouping([
+      entry('found', 70, 'society'), entry('found-2', 50, 'society'), entry('missing', 60, 'society'),
+      entry('search', 40, 'society'), entry('other', 30, 'society')
+    ], groups);
+    const roles = Object.fromEntries(grouped.map(g => [g.story.id, g.resolution?.role]));
+    // "found-2" was folded into "found", so "found" resolves it.
+    expect(roles).toEqual({ found: 'resolution', missing: 'start', search: 'update', other: undefined });
+    expect(grouped.find(g => g.story.id === 'found')?.resolution?.summary).toBe('Reported missing at 9:10, found unharmed at 11:40.');
+    // Items in a resolution leave their storyline, which then has too few stories.
+    expect(grouped.map(g => g.storyline)).toEqual([undefined, undefined, undefined, undefined]);
+  });
+
+  it('ignores a resolution with a single story or no label', () => {
+    const groups = parseStorylines(JSON.stringify({ resolutions: [{ ids: ['a'], label: 'x' }, { ids: ['a', 'b'], label: '' }] }));
+    expect(groups.resolutions).toEqual([]);
+  });
+
+  it('ships the resolution with each story and the labels for the page', async () => {
+    const briefing = await buildBriefing([
+      story({ id: 'm', title: 'Boy missing near Varna', publishedMs: at(13, 5) }),
+      story({ id: 'f', title: 'Missing boy found unharmed', publishedMs: at(13, 50) })
+    ], {
+      period: 'hour', scope: 'All', window: hour, language: 'bg',
+      groupWithAi: async () => parseStorylines(JSON.stringify({ resolutions: [{ ids: ['m', 'f'], resolvedBy: 'f', label: 'Изчезнало момче', summary: 'Намерено.' }] }))
+    });
+    const data = pageData(briefing.html);
+    const roles = data.stories.map((s: { resolution: { role: string } | null }) => s.resolution?.role).sort();
+    expect(roles).toEqual(['resolution', 'start']);
+    expect(data.text.resolved).toBe('Разрешено');
+    expect(data.text.roleStart).toBe('Начало');
+  });
+});

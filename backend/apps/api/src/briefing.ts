@@ -97,6 +97,19 @@ export type RatedStory = {
   storylineWhy?: string;
   /** The AI's one sentence on why the folded reports are the same event. */
   duplicateWhy?: string;
+  /** Part of an event that began and was resolved within the briefing's period. */
+  resolution?: StoryResolution;
+};
+
+export type ResolutionRole = 'resolution' | 'update' | 'start';
+export type StoryResolution = {
+  key: string;
+  label: string;
+  /** One sentence from how it began to how it ended. */
+  summary: string;
+  role: ResolutionRole;
+  /** Position from the first report (0) to the last. */
+  order: number;
 };
 
 /** Default importance of each criterion. The briefing page lets the reader slide these. */
@@ -187,6 +200,11 @@ const UI = {
       moreMany: '{n} more reports of this',
       storyline: 'Storyline',
       differentStories: '{n} different stories',
+      resolved: 'Resolved',
+      reports: '{n} reports',
+      roleResolution: 'How it ended',
+      roleUpdate: 'Update',
+      roleStart: 'How it began',
       atAGlance: 'At a glance',
       writtenByAi: 'written by AI from the stories below',
       alsoInteresting: 'Also interesting',
@@ -270,6 +288,11 @@ const UI = {
       moreMany: 'още {n} източника за същото',
       storyline: 'Сюжет',
       differentStories: '{n} различни новини',
+      resolved: 'Разрешено',
+      reports: '{n} съобщения',
+      roleResolution: 'Развръзка',
+      roleUpdate: 'Развитие',
+      roleStart: 'Начало',
       atAGlance: 'Накратко',
       writtenByAi: 'написано от AI по новините по-долу',
       alsoInteresting: 'Още интересно',
@@ -526,10 +549,12 @@ function titleKeys(title: string): { keys: Set<string>; names: Set<string> } {
 
 /**
  * Groups stories whose titles report the same event; the most informative one leads.
- * `loose` also merges titles that only share names, which is a guess: when the AI groups
- * the briefing it gets those as hints and decides, and the guess applies only without it.
+ * `loose` also merges titles that only share names, which is a guess. `exactOnly` merges
+ * only the same link or title: when the AI groups the briefing it gets the word matches
+ * as hints and decides, since "boy missing near Varna" and "boy found near Varna" share
+ * most words but are the start and the end of one event.
  */
-export function clusterStories(stories: BriefingStory[], loose = true): Array<{ story: BriefingStory; related: BriefingStory[] }> {
+export function clusterStories(stories: BriefingStory[], loose = true, exactOnly = false): Array<{ story: BriefingStory; related: BriefingStory[] }> {
   const clusters: Array<{ members: BriefingStory[]; keys: Set<string>; names: Set<string> }> = [];
   const seenLinks = new Set<string>();
   const countShared = (a: Set<string>, b: Set<string>) => Array.from(a).filter(key => b.has(key)).length;
@@ -538,7 +563,7 @@ export function clusterStories(stories: BriefingStory[], loose = true): Array<{ 
     if (!key || seenLinks.has(key)) continue;
     seenLinks.add(key);
     const { keys, names } = titleKeys(story.title);
-    const match = clusters.find(cluster => {
+    const match = exactOnly ? undefined : clusters.find(cluster => {
       const shared = countShared(keys, cluster.keys);
       const union = new Set([...keys, ...cluster.keys]).size || 1;
       // Most of the words in common, or the same two people or things named plus one more
@@ -663,6 +688,8 @@ export type StoryGrouping = {
   storylines: Map<string, string>;
   /** Storyline label → how its stories connect. */
   storylineWhy?: Map<string, string>;
+  /** Events that began and ended within the period, ids from first report to last. */
+  resolutions?: Array<{ ids: string[]; resolvedBy: string; label: string; summary: string }>;
 };
 
 /**
@@ -681,6 +708,8 @@ export function buildStorylinePrompt(items: GroupingItem[], language: 'en' | 'bg
     '   different lines of it, use different words, another language or another spelling of a name (Tesla / Тесла,',
     '   Roadster / Роудстър). A joint statement by the same people reported twice is one happening. Two different',
     '   strikes, statements by one person on different subjects, or two events in the same war are NOT duplicates.',
+    '   A report that something ended (found, freed, reopened, caught) is NOT a duplicate of the report that it began;',
+    '   those go under "resolutions".',
     '   "maybeSameAs" lists items whose headlines name the same people or things. Check each of them against the',
     '   summaries and decide; sharing names alone does not make two items one happening.',
     '   For each set add "why": one sentence naming the shared happening, e.g. "Both report the four former prime',
@@ -695,8 +724,14 @@ export function buildStorylinePrompt(items: GroupingItem[], language: 'en' | 'bg
     '   never joins a war, politics or economy storyline, even when it uses words like "war", "attack" or "drama".',
     `   Give each a 2-5 word label, a "why" sentence saying how its items connect, and the ids that belong to it.`,
     '   An item can be in at most one storyline. Most items belong to none.',
+    '3. "resolutions": events that began AND were resolved within these items: a later item ends what an earlier one',
+    '   reported (a missing person found, hostages freed, a fire contained, a closed road or airport reopened, a strike',
+    '   called off, a suspect caught). List the ids from the first report to the last, say which id resolves it',
+    '   ("resolvedBy"), give a 2-5 word label and a "summary": one sentence from how it began to how it ended, with',
+    '   the times or facts the items give. Only when the later item clearly ends it; an update that does not end it is',
+    '   not a resolution. Items in a resolution are in no storyline.',
     `Write labels and reasons in ${language === 'bg' ? 'Bulgarian' : 'English'}.`,
-    'Return strict JSON only: {"duplicates":[{"ids":["id","id"],"why":"..."}],"storylines":[{"label":"...","why":"...","ids":["id","id"]}]}',
+    'Return strict JSON only: {"duplicates":[{"ids":["id","id"],"why":"..."}],"storylines":[{"label":"...","why":"...","ids":["id","id"]}],"resolutions":[{"ids":["first","last"],"resolvedBy":"last","label":"...","summary":"..."}]}',
     `Items: ${JSON.stringify(items)}`
   ].join('\n');
 }
@@ -705,10 +740,10 @@ export function parseStorylines(text: string): StoryGrouping {
   const raw = String(text || '');
   const start = raw.indexOf('{');
   const end = raw.lastIndexOf('}');
-  const result: StoryGrouping = { duplicates: [], duplicateWhy: [], storylines: new Map(), storylineWhy: new Map() };
+  const result: StoryGrouping = { duplicates: [], duplicateWhy: [], storylines: new Map(), storylineWhy: new Map(), resolutions: [] };
   if (start < 0 || end <= start) return result;
   try {
-    const parsed = JSON.parse(raw.slice(start, end + 1)) as { duplicates?: unknown; storylines?: unknown };
+    const parsed = JSON.parse(raw.slice(start, end + 1)) as { duplicates?: unknown; storylines?: unknown; resolutions?: unknown };
     const ids = (value: unknown) => (Array.isArray(value) ? value.filter((id): id is string => typeof id === 'string' && !!id.trim()).map(id => id.trim()) : []);
     const textOf = (value: unknown, max: number) => (typeof value === 'string' ? value.trim().slice(0, max) : '');
     if (Array.isArray(parsed?.duplicates)) {
@@ -728,6 +763,20 @@ export function parseStorylines(text: string): StoryGrouping {
         const why = textOf(line?.why, 240);
         if (why) result.storylineWhy!.set(label, why);
         for (const id of ids(line?.ids)) if (!result.storylines.has(id)) result.storylines.set(id, label);
+      }
+    }
+    if (Array.isArray(parsed?.resolutions)) {
+      for (const arc of parsed.resolutions as Array<Record<string, unknown>>) {
+        const members = Array.from(new Set(ids(arc?.ids)));
+        const label = textOf(arc?.label, 60);
+        if (members.length < 2 || members.length > 8 || !label) continue;
+        const named = textOf(arc?.resolvedBy, 200);
+        result.resolutions!.push({
+          ids: members,
+          resolvedBy: members.includes(named) ? named : members[members.length - 1],
+          label,
+          summary: textOf(arc?.summary, 300)
+        });
       }
     }
   } catch {
@@ -767,12 +816,34 @@ export function applyGrouping(rated: RatedStory[], grouping: StoryGrouping, aiRa
     const why = grouping.duplicateWhy?.[index];
     if (why && !reasons.has(lead)) reasons.set(lead, why);
   });
-  const kept = rated
+  let kept = rated
     .filter(entry => !absorbed.has(entry))
     .map(entry => (extraRelated.has(entry)
       ? withCoverage({ ...entry, related: [...entry.related, ...(extraRelated.get(entry) || [])], duplicateWhy: reasons.get(entry) }, aiRan, language)
       : entry));
-  const lineOf = (entry: RatedStory) => topicKey(grouping.storylines.get(entry.story.id) || '');
+  // An event that began and ended in the period: its reports become one group, the
+  // resolution first. A report folded as a duplicate counts as the story it was folded into.
+  const leadOf = new Map<string, RatedStory>();
+  for (const entry of kept) for (const story of [entry.story, ...entry.related]) if (!leadOf.has(story.id)) leadOf.set(story.id, entry);
+  const arcs = new Map<RatedStory, StoryResolution>();
+  (grouping.resolutions || []).forEach((arc, arcIndex) => {
+    const members: RatedStory[] = [];
+    for (const id of arc.ids) {
+      const entry = leadOf.get(id);
+      if (entry && !members.includes(entry) && !arcs.has(entry)) members.push(entry);
+    }
+    if (members.length < 2) return;
+    const resolver = leadOf.get(arc.resolvedBy);
+    const key = `resolution-${arcIndex}-${topicKey(arc.label)}`;
+    members.forEach((entry, order) => {
+      const role: ResolutionRole = entry === resolver || (!members.includes(resolver as RatedStory) && order === members.length - 1)
+        ? 'resolution'
+        : order === 0 ? 'start' : 'update';
+      arcs.set(entry, { key, label: arc.label, summary: arc.summary, role, order });
+    });
+  });
+  kept = kept.map(entry => (arcs.has(entry) ? { ...entry, resolution: arcs.get(entry) } : entry));
+  const lineOf = (entry: RatedStory) => (entry.resolution ? '' : topicKey(grouping.storylines.get(entry.story.id) || ''));
   const members = new Map<string, RatedStory[]>();
   for (const entry of kept) {
     const key = lineOf(entry);
@@ -792,7 +863,7 @@ export function applyGrouping(rated: RatedStory[], grouping: StoryGrouping, aiRa
   }
   return kept.map(entry => {
     const label = grouping.storylines.get(entry.story.id) || '';
-    if (!fits(entry) || (counts.get(topicKey(label)) || 0) < 2) return entry;
+    if (entry.resolution || !fits(entry) || (counts.get(topicKey(label)) || 0) < 2) return entry;
     return { ...entry, storyline: label, storylineWhy: grouping.storylineWhy?.get(label) || undefined };
   });
 }
@@ -818,6 +889,8 @@ export type DigestItem = {
   storyline: string;
   sources: number;
   impacts: StoryImpacts;
+  /** Set when the story began and ended within the period: how it went. */
+  resolved?: string;
 };
 
 /**
@@ -837,6 +910,7 @@ export function buildDigestPrompt(items: DigestItem[], language: 'en' | 'bg', re
     '  number, place), and what it means for the reader. Do not just repeat the headline. No generic phrases such as',
     '  "significant development" or "affects many people".',
     `- ${LITERAL_FACTS_RULE} The story summaries below may themselves repeat a headline's figure of speech; do not copy it.`,
+    '- A story with "resolved" began and ended within this period: give it one bullet that says how it ended.',
     '- Finish with one bullet of kind "interesting" for the most surprising or unusual story not covered above, if any.',
     '- kind: "critical" for bullets about stories rated critical, "leading" for the other important ones, "interesting" for the last.',
     '- ids: the ids of the stories the bullet is about.',
@@ -1026,13 +1100,20 @@ const PAGE_SCRIPT = String.raw`
       const score = data.aiRan && story.ratedBy === 'rules' ? Math.min(raw, data.uncheckedCap) : raw;
       return { story, index, score, level: levelOf(score) };
     }).sort((a, b) => b.score - a.score || b.story.publishedMs - a.story.publishedMs);
+    // A unit is one story, a storyline, or an event that began and ended in the period.
     const units = [], byLine = {};
     for (const entry of all) {
-      const key = (entry.story.storyline || '').toLowerCase().trim();
+      const arc = entry.story.resolution;
+      const key = arc ? arc.key : (entry.story.storyline || '').toLowerCase().trim();
       if (key && byLine[key]) { byLine[key].entries.push(entry); continue; }
-      const unit = { label: entry.story.storyline || '', entries: [entry], score: entry.score, level: entry.level, dimension: entry.story.dimension, publishedMs: entry.story.publishedMs };
+      const unit = { label: arc ? arc.label : entry.story.storyline || '', resolution: arc || null, entries: [entry], score: entry.score, level: entry.level, dimension: entry.story.dimension, publishedMs: entry.story.publishedMs };
       if (key) byLine[key] = unit;
       units.push(unit);
+    }
+    // The resolution leads, then the updates from the latest back to how it began.
+    const roleRank = { resolution: 0, update: 1, start: 2 };
+    for (const unit of units) {
+      if (unit.resolution) unit.entries.sort((a, b) => roleRank[a.story.resolution.role] - roleRank[b.story.resolution.role] || b.story.resolution.order - a.story.resolution.order);
     }
     const cap = Math.max(2, Math.ceil(data.limit * 0.3));
     const picked = [], overflow = [], per = {};
@@ -1154,8 +1235,29 @@ const PAGE_SCRIPT = String.raw`
     return article;
   }
 
+  function resolvedNode(unit) {
+    const box = el('div', 'resolved level-' + unit.level);
+    const head = el('div', 'resolved-head');
+    head.append(
+      el('span', 'storyline-kicker', T.resolved),
+      el('span', 'storyline-label', unit.label),
+      el('span', 'storyline-count', fill(T.reports, { n: unit.entries.length }))
+    );
+    box.append(head);
+    const summary = unit.entries.map(entry => entry.story.resolution.summary).find(Boolean);
+    if (summary) box.append(el('p', 'resolved-summary', summary));
+    const roles = { resolution: T.roleResolution, update: T.roleUpdate, start: T.roleStart };
+    unit.entries.forEach(entry => {
+      const step = el('div', 'resolved-step role-' + entry.story.resolution.role);
+      step.append(el('p', 'resolved-role', roles[entry.story.resolution.role] + ' · ' + entry.story.time), card(entry));
+      box.append(step);
+    });
+    return box;
+  }
+
   function unitNode(unit) {
     if (unit.entries.length < 2) return card(unit.entries[0]);
+    if (unit.resolution) return resolvedNode(unit);
     const box = el('div', 'storyline level-' + unit.level);
     const head = el('div', 'storyline-head');
     head.append(
@@ -1188,7 +1290,17 @@ const PAGE_SCRIPT = String.raw`
   // call everything critical. The dot takes the colour of the strongest story a line
   // points to, at the current slider weights; only the closing curiosity is marked.
   function glanceLines(picked) {
-    const entries = picked.flatMap(unit => unit.entries).sort((a, b) => b.score - a.score || b.story.publishedMs - a.story.publishedMs);
+    // One line per resolved event: its strongest report stands for it, told by its summary.
+    const seenArcs = new Set();
+    const entries = picked.flatMap(unit => unit.entries)
+      .sort((a, b) => b.score - a.score || b.story.publishedMs - a.story.publishedMs)
+      .filter(e => {
+        const arc = e.story.resolution;
+        if (!arc) return true;
+        if (seenArcs.has(arc.key)) return false;
+        seenArcs.add(arc.key);
+        return true;
+      });
     const levelAt = {};
     entries.forEach(e => { levelAt[e.index] = e.level; });
     const order = ['critical', 'high', 'notable', 'routine'];
@@ -1209,7 +1321,7 @@ const PAGE_SCRIPT = String.raw`
     const curious = entries
       .filter(e => !lead.includes(e) && e.story.scores.interest >= 2)
       .sort((a, b) => b.story.scores.interest - a.story.scores.interest || b.score - a.score)[0];
-    const line = (e, tag) => ({ tag, cls: 'level-' + e.level, text: e.story.summary || e.story.title, targets: [e.index] });
+    const line = (e, tag) => ({ tag, cls: 'level-' + e.level, text: (e.story.resolution && e.story.resolution.summary) || e.story.summary || e.story.title, targets: [e.index] });
     return lead.map(e => line(e, '')).concat(curious ? [line(curious, T.alsoInteresting)] : []);
   }
   function glance(picked) {
@@ -1367,6 +1479,7 @@ function pageStory(entry: RatedStory, language: BriefingLanguage) {
     storyline: entry.storyline || '',
     storylineWhy: entry.storylineWhy || '',
     duplicateWhy: entry.duplicateWhy || '',
+    resolution: entry.resolution || null,
     related: entry.related
       .sort((a, b) => a.publishedMs - b.publishedMs)
       .map(other => ({ title: other.title, source: shortSource(other.source || ''), time: formatTime(other.publishedMs, language), link: safeUrl(other.link) }))
@@ -1418,12 +1531,12 @@ export function renderBriefingHtml(
   :root { --bg: #f6f7f9; --card: #ffffff; --text: #16181d; --muted: #616875; --border: #e2e5ea; --accent: #2f6fde;
     --critical: #c62828; --high: #e07a00; --notable: #2f6fde; --routine: #8a919c; --chip: #eef1f5;
     --economic: #1f8a4c; --political: #6a4cc7; --social: #c2410c; --security: #b42318;
-    --storyline: #4b5bbd; --storyline-bg: #eceefb; }
+    --storyline: #4b5bbd; --storyline-bg: #eceefb; --resolved: #1f7a45; --resolved-bg: #e9f5ee; }
   @media (prefers-color-scheme: dark) {
     :root { --bg: #111317; --card: #1a1d23; --text: #e8eaee; --muted: #9aa1ad; --border: #2a2e36; --accent: #7aa7ff;
       --critical: #ff6b6b; --high: #ffa94d; --notable: #7aa7ff; --routine: #8a919c; --chip: #242830;
       --economic: #4ade80; --political: #a78bfa; --social: #fb923c; --security: #f87171;
-      --storyline: #4652a8; --storyline-bg: #1c1f33; }
+      --storyline: #4652a8; --storyline-bg: #1c1f33; --resolved: #2f8f57; --resolved-bg: #15241b; }
   }
   * { box-sizing: border-box; }
   body { margin: 0; background: var(--bg); color: var(--text); font: 15px/1.55 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
@@ -1523,6 +1636,16 @@ export function renderBriefingHtml(
   .storyline-why { margin: 10px 16px 0; font-size: 13px; color: var(--muted); }
   .storyline > article { margin: 10px 10px 0; }
   .storyline > article:last-child { margin-bottom: 10px; }
+  /* An event that began and ended in the period: green frame, summary on top, the
+     resolution first and the first report last. */
+  .resolved { border: 2px solid var(--resolved); border-radius: 14px; margin: 26px 0; background: var(--resolved-bg); overflow: hidden; }
+  .resolved-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; padding: 10px 16px; background: var(--resolved); color: #fff; }
+  .resolved-summary { margin: 10px 16px 0; font-weight: 600; }
+  .resolved-step { margin: 10px 10px 0; }
+  .resolved-step:last-child { margin-bottom: 10px; }
+  .resolved-step > article { margin: 4px 0 0; }
+  .resolved-role { margin: 0 4px; font-size: 11.5px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; color: var(--muted); }
+  .role-resolution .resolved-role { color: var(--resolved); }
   .storyline-label { font-weight: 700; font-size: 15px; }
   .storyline-count { font-size: 12.5px; }
   .dupes { margin-top: 8px; font-size: 13px; color: var(--muted); }
@@ -1625,9 +1748,9 @@ export async function buildBriefing(stories: BriefingStory[], options: BriefingO
   const inWindow = stories.filter(story => story.publishedMs >= window.startMs && story.publishedMs < window.endMs);
   const language = options.language || 'en';
   const context = { localTerms: options.localTerms, trackedTerms: options.trackedTerms, region: options.region, language };
-  // With the AI grouping the briefing, only near-identical titles are merged up front; looser
+  // With the AI grouping the briefing, only the same link or title is merged up front; word
   // matches go to it as hints so it decides from what the stories say.
-  let rated: RatedStory[] = clusterStories(inWindow, !options.groupWithAi).map(({ story, related }) => {
+  let rated: RatedStory[] = clusterStories(inWindow, true, !!options.groupWithAi).map(({ story, related }) => {
     const rating = ruleRating(story, related, window, context);
     const score = scoreOf(rating.scores);
     return { story, related, rating, score, level: levelOf(score) };
@@ -1713,7 +1836,8 @@ export async function buildBriefing(stories: BriefingStory[], options: BriefingO
         area: UI[language].dimensions[entry.rating.dimension],
         storyline: entry.storyline || '',
         sources: distinctSources([entry.story, ...entry.related]).length,
-        impacts: entry.rating.impacts
+        impacts: entry.rating.impacts,
+        ...(entry.resolution ? { resolved: entry.resolution.summary || entry.resolution.label } : {})
       })));
     } catch {
       // The page builds its own list from the top stories.
