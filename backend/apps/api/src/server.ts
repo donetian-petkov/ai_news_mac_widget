@@ -16,10 +16,12 @@ import { titleTokens as cachedTitleTokens } from './titleTokens';
 import {
   buildAiRatingPrompt,
   buildBriefing,
+  buildDigestPrompt,
   buildStorylinePrompt,
   createBriefingStore,
   msUntilNextRun,
   parseAiRatings,
+  parseDigest,
   parseStorylines,
   previousHourWindow,
   rollingWindow,
@@ -27,6 +29,8 @@ import {
   type AiStoryRating,
   type BriefingPeriod,
   type BriefingRecord,
+  type DigestBullet,
+  type DigestItem,
   type GroupingItem,
   type StoryGrouping
 } from './briefing';
@@ -9864,7 +9868,7 @@ async function groupBriefingStorylinesWithAi(items: GroupingItem[]): Promise<Sto
     generateAiText(
       'ask',
       buildStorylinePrompt(items, summaryLang === 'bg' ? 'bg' : 'en'),
-      Math.max(600, Math.min(4000, 200 + items.length * 30)),
+      Math.max(800, Math.min(5000, 300 + items.length * 60)),
       0,
       'Briefing storylines'
     ),
@@ -9872,6 +9876,17 @@ async function groupBriefingStorylinesWithAi(items: GroupingItem[]): Promise<Sto
     'Briefing storylines'
   );
   return parseStorylines(text || '');
+}
+
+async function writeBriefingDigestWithAi(items: DigestItem[]): Promise<DigestBullet[]> {
+  const text = await withTimeout(
+    generateAiText('ask', buildDigestPrompt(items, summaryLang === 'bg' ? 'bg' : 'en', localRegion), 1500, 0, 'Briefing summary'),
+    60_000,
+    'Briefing summary'
+  );
+  const bullets = parseDigest(text || '');
+  if (!bullets.length) throw new Error('AI returned no summary');
+  return bullets;
 }
 
 type BriefingScope = { feedUrls?: string[]; onlyMatches?: boolean; label?: string };
@@ -9904,7 +9919,8 @@ async function generateBriefing(period: BriefingPeriod, window: { startMs: numbe
     trackedTerms: matchTerms(),
     region: localRegion,
     rateWithAi: aiEnabled && aiAvailable ? candidates => rateBriefingStoriesWithAi(candidates, feedUrlById) : undefined,
-    groupWithAi: aiEnabled && aiAvailable ? groupBriefingStorylinesWithAi : undefined
+    groupWithAi: aiEnabled && aiAvailable ? groupBriefingStorylinesWithAi : undefined,
+    digestWithAi: aiEnabled && aiAvailable ? writeBriefingDigestWithAi : undefined
   }, scheduled);
 }
 

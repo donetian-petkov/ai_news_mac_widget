@@ -10,6 +10,7 @@ import {
   applyGrouping,
   msUntilNextRun,
   parseAiRatings,
+  parseDigest,
   parseStorylines,
   pickVaried,
   previousHourWindow,
@@ -299,6 +300,64 @@ describe('buildBriefing', () => {
     expect(lines['Drone strike in the Black Sea']).toBe('Black Sea security');
     expect(lines['Romania offers joint naval command']).toBe('Black Sea security');
     expect(lines['Embassy opens in Oman']).toBe('');
+  });
+
+  const statement = [
+    story({ id: 'pm-a', title: 'Костов, Борисов, Петков и Денков призоваха Радев да защити националната сигурност', source: 'Свободна точка', link: 'https://a' }),
+    story({ id: 'pm-b', title: 'Костов, Борисов и Петков: Мирът не се гарантира с надеждата, че Путин ще ни пощади', source: 'dnevnik.bg', link: 'https://b' }),
+    story({ id: 'tesla', title: 'Tesla представи летящ Roadster', source: 'dnevnik.bg', link: 'https://c' })
+  ];
+
+  it('lets the AI decide on name-only matches, shows its reasons and counts the merged sources', async () => {
+    const seen: Array<{ id: string; maybeSameAs?: string[] }> = [];
+    const briefing = await buildBriefing(statement, {
+      period: 'hour',
+      scope: 'All',
+      window: hour,
+      groupWithAi: async items => {
+        seen.push(...items);
+        return parseStorylines(JSON.stringify({ duplicates: [{ ids: ['pm-a', 'pm-b'], why: 'Both report the joint statement' }] }));
+      }
+    });
+    // Not merged up front: the AI got both, with the title rule's guess as a hint.
+    expect(seen.find(item => item.id === 'pm-a')?.maybeSameAs).toEqual(['pm-b']);
+    expect(seen.find(item => item.id === 'tesla')?.maybeSameAs).toBeUndefined();
+    const lead = pageData(briefing.html).stories.find((s: { related: unknown[] }) => s.related.length);
+    expect(lead.duplicateWhy).toBe('Both report the joint statement');
+    expect(lead.scores.coverage).toBe(1);
+    expect(lead.notes.coverage).toBe('Reported by Свободна точка, dnevnik.bg');
+  });
+
+  it('falls back to the title rule when the AI grouping fails', async () => {
+    const briefing = await buildBriefing(statement, {
+      period: 'hour', scope: 'All', window: hour, groupWithAi: async () => { throw new Error('down'); }
+    });
+    expect(pageData(briefing.html).stories).toHaveLength(2);
+  });
+
+  it('ships the AI summary with each line pointing at its story, folded reports included', async () => {
+    const briefing = await buildBriefing(statement, {
+      period: 'hour',
+      scope: 'All',
+      window: hour,
+      groupWithAi: async () => parseStorylines(JSON.stringify({ duplicates: [['pm-a', 'pm-b']] })),
+      digestWithAi: async items => {
+        expect(items.map(item => item.id).sort()).toHaveLength(2);
+        return parseDigest(JSON.stringify({ bullets: [
+          { kind: 'critical', text: 'Former PMs press Radev', ids: ['pm-a', 'pm-b'] },
+          { kind: 'odd', text: 'Tesla flies', ids: ['tesla', 'ghost'] },
+          { kind: 'leading', text: '' }
+        ] }));
+      }
+    });
+    const data = pageData(briefing.html);
+    const titleAt = (index: number) => data.stories[index].title;
+    expect(data.digest).toHaveLength(2);
+    expect(data.digest[0].kind).toBe('critical');
+    expect(data.digest[0].targets).toHaveLength(1);
+    expect(titleAt(data.digest[0].targets[0])).toMatch(/^Костов/);
+    expect(data.digest[1]).toMatchObject({ kind: 'leading', text: 'Tesla flies' });
+    expect(titleAt(data.digest[1].targets[0])).toMatch(/^Tesla/);
   });
 
   it('ships a page script that parses', async () => {

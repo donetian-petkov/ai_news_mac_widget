@@ -92,6 +92,10 @@ export type RatedStory = {
   level: PriorityLevel;
   /** Larger ongoing situation shared with other, different stories (e.g. "Black Sea security"). */
   storyline?: string;
+  /** The AI's one sentence on how the storyline's stories connect. */
+  storylineWhy?: string;
+  /** The AI's one sentence on why the folded reports are the same event. */
+  duplicateWhy?: string;
 };
 
 /** Default importance of each criterion. The briefing page lets the reader slide these. */
@@ -335,8 +339,12 @@ function titleKeys(title: string): { keys: Set<string>; names: Set<string> } {
   return { keys, names };
 }
 
-/** Groups stories whose titles report the same event; the most informative one leads. */
-export function clusterStories(stories: BriefingStory[]): Array<{ story: BriefingStory; related: BriefingStory[] }> {
+/**
+ * Groups stories whose titles report the same event; the most informative one leads.
+ * `loose` also merges titles that only share names, which is a guess: when the AI groups
+ * the briefing it gets those as hints and decides, and the guess applies only without it.
+ */
+export function clusterStories(stories: BriefingStory[], loose = true): Array<{ story: BriefingStory; related: BriefingStory[] }> {
   const clusters: Array<{ members: BriefingStory[]; keys: Set<string>; names: Set<string> }> = [];
   const seenLinks = new Set<string>();
   const countShared = (a: Set<string>, b: Set<string>) => Array.from(a).filter(key => b.has(key)).length;
@@ -351,7 +359,7 @@ export function clusterStories(stories: BriefingStory[]): Array<{ story: Briefin
       // Most of the words in common, or the same two people or things named plus one more
       // word: "Костов, Борисов, Петков и Денков призоваха…" and "Костов, Борисов и Петков: Мирът…"
       // quote different lines of one joint statement.
-      return (shared >= 2 && shared / union >= 0.35) || (countShared(names, cluster.names) >= 2 && shared >= 3);
+      return (shared >= 2 && shared / union >= 0.35) || (loose && countShared(names, cluster.names) >= 2 && shared >= 3);
     });
     if (match) {
       match.members.push(story);
@@ -441,33 +449,51 @@ export function parseAiRatings(text: string): AiStoryRating[] {
  * One short call over the headlines only: grouping needs every story in the same answer,
  * so labels stay consistent, while the detailed ratings run in parallel batches.
  */
-export type GroupingItem = { id: string; title: string; summary?: string };
+export type GroupingItem = {
+  id: string;
+  title: string;
+  summary?: string;
+  /** Ids whose headlines name the same people or things: a hint to check, not a verdict. */
+  maybeSameAs?: string[];
+};
 export type StoryGrouping = {
   /** Sets of ids that report the very same happening. */
   duplicates: string[][];
+  /** Why each set in `duplicates` is one happening, by position. */
+  duplicateWhy?: string[];
   /** id → label of the larger ongoing situation it belongs to. */
   storylines: Map<string, string>;
+  /** Storyline label → how its stories connect. */
+  storylineWhy?: Map<string, string>;
 };
 
 /**
  * One short call over all the headlines at once. Duplicates come back as explicit lists
  * of ids, not shared labels: separately written labels such as "military strike" match
- * by accident and glue unrelated stories together.
+ * by accident and glue unrelated stories together. Each group carries the AI's reason,
+ * which the page shows, so a wrong group is easy to spot.
  */
 export function buildStorylinePrompt(items: GroupingItem[], language: 'en' | 'bg'): string {
   return [
-    'You are given news items (id, headline, summary). Do two things.',
-    '1. "duplicates": lists of ids that report the SAME happening: one announcement, statement, decision, incident,',
+    'You are a news editor. You are given news items (id, headline, summary). Read what each one is actually about,',
+    'who does what, where and when, and then do two things.',
+    '1. "duplicates": sets of ids that report the SAME happening: one announcement, statement, decision, incident,',
     '   product reveal or match, covered by different outlets. They are duplicates even when the headlines quote',
     '   different lines of it, use different words, another language or another spelling of a name (Tesla / Тесла,',
     '   Roadster / Роудстър). A joint statement by the same people reported twice is one happening. Two different',
     '   strikes, statements by one person on different subjects, or two events in the same war are NOT duplicates.',
+    '   "maybeSameAs" lists items whose headlines name the same people or things. Check each of them against the',
+    '   summaries and decide; sharing names alone does not make two items one happening.',
+    '   For each set add "why": one sentence naming the shared happening, e.g. "Both report the four former prime',
+    '   ministers\' joint call on Radev over national security".',
     '2. "storylines": larger ongoing situations that at least two DIFFERENT happenings belong to, for example a drone',
     '   strike on a ship, a naval command offer and a moratorium proposal that are all about Black Sea security.',
     '   Put an item in a storyline only if its subject IS that situation. A sports, celebrity or entertainment item',
     '   never joins a war, politics or economy storyline, even when it uses words like "war", "attack" or "drama".',
-    `   Give each a 2-5 word label in ${language === 'bg' ? 'Bulgarian' : 'English'} and the ids that belong to it. An item can be in at most one storyline.`,
-    'Return strict JSON only: {"duplicates":[["id","id"]],"storylines":[{"label":"...","ids":["id","id"]}]}',
+    `   Give each a 2-5 word label, a "why" sentence saying how its items connect, and the ids that belong to it.`,
+    '   An item can be in at most one storyline. Most items belong to none.',
+    `Write labels and reasons in ${language === 'bg' ? 'Bulgarian' : 'English'}.`,
+    'Return strict JSON only: {"duplicates":[{"ids":["id","id"],"why":"..."}],"storylines":[{"label":"...","why":"...","ids":["id","id"]}]}',
     `Items: ${JSON.stringify(items)}`
   ].join('\n');
 }
@@ -476,22 +502,28 @@ export function parseStorylines(text: string): StoryGrouping {
   const raw = String(text || '');
   const start = raw.indexOf('{');
   const end = raw.lastIndexOf('}');
-  const result: StoryGrouping = { duplicates: [], storylines: new Map() };
+  const result: StoryGrouping = { duplicates: [], duplicateWhy: [], storylines: new Map(), storylineWhy: new Map() };
   if (start < 0 || end <= start) return result;
   try {
     const parsed = JSON.parse(raw.slice(start, end + 1)) as { duplicates?: unknown; storylines?: unknown };
     const ids = (value: unknown) => (Array.isArray(value) ? value.filter((id): id is string => typeof id === 'string' && !!id.trim()).map(id => id.trim()) : []);
+    const textOf = (value: unknown, max: number) => (typeof value === 'string' ? value.trim().slice(0, max) : '');
     if (Array.isArray(parsed?.duplicates)) {
       for (const set of parsed.duplicates) {
-        const members = Array.from(new Set(ids(set)));
+        // Either {"ids": [...], "why": "..."} or a bare list of ids.
+        const members = Array.from(new Set(ids(Array.isArray(set) ? set : set?.ids)));
         // A long list is the model lumping a whole topic together, not one happening.
-        if (members.length >= 2 && members.length <= 6) result.duplicates.push(members);
+        if (members.length < 2 || members.length > 6) continue;
+        result.duplicates.push(members);
+        result.duplicateWhy!.push(Array.isArray(set) ? '' : textOf(set?.why, 240));
       }
     }
     if (Array.isArray(parsed?.storylines)) {
       for (const line of parsed.storylines) {
-        const label = typeof line?.label === 'string' ? line.label.trim().slice(0, 60) : '';
+        const label = textOf(line?.label, 60);
         if (!label) continue;
+        const why = textOf(line?.why, 240);
+        if (why) result.storylineWhy!.set(label, why);
         for (const id of ids(line?.ids)) if (!result.storylines.has(id)) result.storylines.set(id, label);
       }
     }
@@ -501,34 +533,50 @@ export function parseStorylines(text: string): StoryGrouping {
   return result;
 }
 
+/** Coverage counts every source that reported the event, including folded reports. */
+function withCoverage(entry: RatedStory, aiRan: boolean): RatedStory {
+  const sources = distinctSources([entry.story, ...entry.related]);
+  const names = sources.map(shortSource);
+  const scores = { ...entry.rating.scores, coverage: coverageScore(sources.length) };
+  const notes = { ...entry.rating.notes, coverage: names.length > 1 ? `Reported by ${names.join(', ')}` : `Only ${names[0] || 'one source'} reports it` };
+  const raw = scoreOf(scores);
+  const score = aiRan && entry.rating.ratedBy === 'rules' ? Math.min(raw, UNCHECKED_SCORE_CAP) : raw;
+  return { ...entry, rating: { ...entry.rating, scores, notes }, score, level: levelOf(score) };
+}
+
 /**
  * Folds each set of duplicate reports into its strongest story (the others become the
  * "more reports" rows), then marks storylines that at least two remaining stories share.
  */
-export function applyGrouping(rated: RatedStory[], grouping: StoryGrouping): RatedStory[] {
+export function applyGrouping(rated: RatedStory[], grouping: StoryGrouping, aiRan = false): RatedStory[] {
   const byId = new Map(rated.map(entry => [entry.story.id, entry]));
   const absorbed = new Set<RatedStory>();
   const extraRelated = new Map<RatedStory, BriefingStory[]>();
-  for (const set of grouping.duplicates) {
+  const reasons = new Map<RatedStory, string>();
+  grouping.duplicates.forEach((set, index) => {
     const members = set.map(id => byId.get(id)).filter((entry): entry is RatedStory => !!entry && !absorbed.has(entry));
-    if (members.length < 2) continue;
+    if (members.length < 2) return;
     const [lead, ...rest] = members.sort((a, b) => b.score - a.score || b.story.publishedMs - a.story.publishedMs);
     for (const other of rest) {
       absorbed.add(other);
       extraRelated.set(lead, [...(extraRelated.get(lead) || []), other.story, ...other.related]);
     }
-  }
+    const why = grouping.duplicateWhy?.[index];
+    if (why && !reasons.has(lead)) reasons.set(lead, why);
+  });
   const kept = rated
     .filter(entry => !absorbed.has(entry))
-    .map(entry => (extraRelated.has(entry) ? { ...entry, related: [...entry.related, ...(extraRelated.get(entry) || [])] } : entry));
+    .map(entry => (extraRelated.has(entry)
+      ? withCoverage({ ...entry, related: [...entry.related, ...(extraRelated.get(entry) || [])], duplicateWhy: reasons.get(entry) }, aiRan)
+      : entry));
   const lineOf = (entry: RatedStory) => topicKey(grouping.storylines.get(entry.story.id) || '');
   const members = new Map<string, RatedStory[]>();
   for (const entry of kept) {
     const key = lineOf(entry);
     if (key) members.set(key, [...(members.get(key) || []), entry]);
   }
-  // A sports or entertainment story stays in a storyline only beside another of its kind,
-  // so a football row never sits inside a war storyline because of a dramatic headline.
+  // A safety net under the AI: a sports or entertainment story stays in a storyline only
+  // beside another of its kind, so a football row never sits inside a war storyline.
   const fits = (entry: RatedStory) => {
     const { dimension } = entry.rating;
     if (dimension !== 'sports' && dimension !== 'culture') return true;
@@ -541,8 +589,78 @@ export function applyGrouping(rated: RatedStory[], grouping: StoryGrouping): Rat
   }
   return kept.map(entry => {
     const label = grouping.storylines.get(entry.story.id) || '';
-    return fits(entry) && (counts.get(topicKey(label)) || 0) >= 2 ? { ...entry, storyline: label } : entry;
+    if (!fits(entry) || (counts.get(topicKey(label)) || 0) < 2) return entry;
+    return { ...entry, storyline: label, storylineWhy: grouping.storylineWhy?.get(label) || undefined };
   });
+}
+
+/** Sets of ids the loose title rule thinks are the same event, as hints or a fallback. */
+export function possibleDuplicates(rated: RatedStory[]): string[][] {
+  return clusterStories(rated.map(entry => entry.story), true)
+    .filter(cluster => cluster.related.length)
+    .map(cluster => [cluster.story.id, ...cluster.related.map(other => other.id)]);
+}
+
+// ---- the editor's summary at the top ----
+
+export type DigestKind = 'critical' | 'leading' | 'interesting';
+export type DigestBullet = { kind: DigestKind; text: string; ids: string[] };
+export type DigestItem = {
+  id: string;
+  title: string;
+  summary: string;
+  level: PriorityLevel;
+  score: number;
+  area: string;
+  storyline: string;
+  sources: number;
+  impacts: StoryImpacts;
+};
+
+/**
+ * One call over the stories the briefing shows, after rating and grouping: the AI reads
+ * them together and writes what matters, joining stories about one situation into one
+ * line instead of listing headlines.
+ */
+export function buildDigestPrompt(items: DigestItem[], language: 'en' | 'bg', region: string): string {
+  return [
+    `You are the editor of a short news briefing for a reader in ${region || 'their country'}.`,
+    'Below are the stories it covers, strongest first, each with its rating level, score (0-100), area, storyline,',
+    'number of sources and impacts. Write 3 to 6 bullets that tell the reader what matters in this period.',
+    '- Start with what is critical, then what leads. Put stories about the same situation in one bullet and say how',
+    '  they connect. Never join unrelated stories; a sports or entertainment story never shares a bullet with a war,',
+    '  politics or economy story.',
+    '- Each bullet is one or two plain sentences, at most 40 words: what happened, with the concrete fact (who, what,',
+    '  number, place), and what it means for the reader. Do not just repeat the headline. No generic phrases such as',
+    '  "significant development" or "affects many people".',
+    '- Finish with one bullet of kind "interesting" for the most surprising or unusual story not covered above, if any.',
+    '- kind: "critical" for bullets about stories rated critical, "leading" for the other important ones, "interesting" for the last.',
+    '- ids: the ids of the stories the bullet is about.',
+    `Write in ${language === 'bg' ? 'Bulgarian' : 'English'}.`,
+    'Return strict JSON only: {"bullets":[{"kind":"critical","text":"...","ids":["id"]}]}',
+    `Stories: ${JSON.stringify(items)}`
+  ].join('\n');
+}
+
+export function parseDigest(text: string): DigestBullet[] {
+  const raw = String(text || '');
+  const start = raw.indexOf('{');
+  const end = raw.lastIndexOf('}');
+  if (start < 0 || end <= start) return [];
+  try {
+    const list = (JSON.parse(raw.slice(start, end + 1)) as { bullets?: unknown })?.bullets;
+    if (!Array.isArray(list)) return [];
+    return list.flatMap((entry): DigestBullet[] => {
+      const item = (entry || {}) as Record<string, unknown>;
+      const text = typeof item.text === 'string' ? item.text.trim().slice(0, 400) : '';
+      if (!text) return [];
+      const kind: DigestKind = item.kind === 'critical' || item.kind === 'interesting' ? item.kind : 'leading';
+      const ids = Array.isArray(item.ids) ? item.ids.filter((id): id is string => typeof id === 'string' && !!id.trim()).map(id => id.trim()) : [];
+      return [{ kind, text, ids }];
+    }).slice(0, 7);
+  } catch {
+    return [];
+  }
 }
 
 function applyAiRating(rule: StoryRating, ai: AiStoryRating): StoryRating {
@@ -807,6 +925,7 @@ const PAGE_SCRIPT = String.raw`
       const sources = Array.from(new Set(story.related.map(other => other.source).filter(Boolean)));
       dupes.append(el('summary', '', story.related.length + ' more ' + (story.related.length === 1 ? 'report' : 'reports') + ' of this' + (sources.length ? ' · ' + sources.slice(0, 3).join(', ') + (sources.length > 3 ? '…' : '') : '')));
       const rows = el('ul');
+      if (story.duplicateWhy) rows.append(el('li', 'dupe-why', story.duplicateWhy));
       story.related.forEach(other => {
         const row = el('li');
         row.append(el('span', 'dupe-meta', [other.source, other.time].filter(Boolean).join(' · ')), link(other.link, other.title));
@@ -829,36 +948,64 @@ const PAGE_SCRIPT = String.raw`
       el('span', 'storyline-count', unit.entries.length + ' different stories')
     );
     box.append(head);
+    const why = unit.entries.map(entry => entry.story.storylineWhy).find(Boolean);
+    if (why) box.append(el('p', 'storyline-why', why));
     unit.entries.forEach(entry => box.append(card(entry)));
     return box;
   }
 
-  // What to read first: every Critical and High story (up to five), topped up to three with
-  // the next strongest, plus the most surprising one if it is not already there. Each line
-  // jumps to its card.
-  function glance(picked) {
+  // The summary at the top. The AI writes it when it can, reading the stories together;
+  // otherwise it lists every Critical and High story (up to five), topped up to three with
+  // the next strongest, plus the most surprising one. Each line jumps to its card.
+  function jumpTo(index, text) {
+    const a = el('a', '', text);
+    a.href = '#s-' + index;
+    a.addEventListener('click', () => {
+      // A story pushed under "More stories" by the sliders is folded away; open it first.
+      const target = document.getElementById('s-' + index);
+      const fold = target && target.closest('details:not([open])');
+      if (fold) fold.open = true;
+    });
+    return a;
+  }
+  function glanceLines(picked) {
+    if (data.digest.length) {
+      const tags = { critical: 'Critical', leading: 'Leading', interesting: 'Most interesting' };
+      return data.digest.map(bullet => ({ tag: tags[bullet.kind] || 'Leading', cls: 'kind-' + bullet.kind, text: bullet.text, targets: bullet.targets }));
+    }
     const entries = picked.flatMap(unit => unit.entries).sort((a, b) => b.score - a.score || b.story.publishedMs - a.story.publishedMs);
     const lead = entries.filter(e => e.level === 'critical' || e.level === 'high').slice(0, 5);
     for (const e of entries) {
       if (lead.length >= 3) break;
       if (!lead.includes(e)) lead.push(e);
     }
-    const lines = lead.map(e => ({ entry: e, tag: data.levelLabels[e.level], cls: 'level-' + e.level }));
     const curious = entries
       .filter(e => !lead.includes(e) && e.story.scores.interest >= 2)
       .sort((a, b) => b.story.scores.interest - a.story.scores.interest || b.score - a.score)[0];
-    if (curious) lines.push({ entry: curious, tag: 'Most interesting', cls: 'curious' });
+    const line = (e, tag, cls) => ({ tag, cls, text: e.story.summary || e.story.title, targets: [e.index] });
+    return lead.map(e => line(e, data.levelLabels[e.level], 'level-' + e.level))
+      .concat(curious ? [line(curious, 'Most interesting', 'kind-interesting')] : []);
+  }
+  function glance(picked) {
+    const lines = glanceLines(picked);
     if (!lines.length) return null;
     const box = el('section', 'glance');
-    box.append(el('h2', '', 'At a glance'));
+    const head = el('h2', '', 'At a glance');
+    if (data.digest.length) head.append(el('span', 'glance-by', 'written by AI from the stories below'));
+    box.append(head);
     const list = el('ul');
     for (const line of lines) {
-      const { story, index } = line.entry;
       const li = el('li', line.cls);
-      const jump = el('a', '', story.summary || story.title);
-      jump.href = '#s-' + index;
-      li.append(el('span', 'glance-tag', line.tag), jump);
-      if (story.related.length) li.append(el('span', 'glance-sources', ' · ' + (story.related.length + 1) + ' sources'));
+      li.append(el('span', 'glance-tag', line.tag));
+      if (line.targets.length === 1) {
+        li.append(jumpTo(line.targets[0], line.text));
+      } else {
+        li.append(el('span', 'glance-text', line.text));
+        line.targets.forEach(index => {
+          const source = data.stories[index] && data.stories[index].source;
+          li.append(' ', jumpTo(index, '→ ' + (source || 'story')));
+        });
+      }
       list.append(li);
     }
     box.append(list);
@@ -991,16 +1138,30 @@ function pageStory(entry: RatedStory) {
     whyItMatters: rating.whyItMatters || '',
     ratedBy: rating.ratedBy,
     storyline: entry.storyline || '',
+    storylineWhy: entry.storylineWhy || '',
+    duplicateWhy: entry.duplicateWhy || '',
     related: entry.related
       .sort((a, b) => a.publishedMs - b.publishedMs)
       .map(other => ({ title: other.title, source: shortSource(other.source || ''), time: formatTime(other.publishedMs), link: safeUrl(other.link) }))
   };
 }
 
-export function renderBriefingHtml(title: string, stories: RatedStory[], limit: number, storyCount: number, generatedAtMs: number, aiRan = false): string {
+export function renderBriefingHtml(
+  title: string, stories: RatedStory[], limit: number, storyCount: number, generatedAtMs: number, aiRan = false, digest: DigestBullet[] = []
+): string {
   const ratedByAi = stories.some(entry => entry.rating.ratedBy === 'ai');
+  // A bullet may name a report that was folded under another story; it points to that story.
+  const indexById = new Map<string, number>();
+  stories.forEach((entry, index) => {
+    for (const other of [entry.story, ...entry.related]) if (!indexById.has(other.id)) indexById.set(other.id, index);
+  });
   const data = {
     stories: stories.map(pageStory),
+    digest: digest.map(bullet => ({
+      kind: bullet.kind,
+      text: bullet.text,
+      targets: Array.from(new Set(bullet.ids.map(id => indexById.get(id)).filter((index): index is number => index !== undefined)))
+    })),
     storyCount,
     limit,
     defaults: DEFAULT_WEIGHTS,
@@ -1110,11 +1271,15 @@ export function renderBriefingHtml(title: string, stories: RatedStory[], limit: 
   .glance li { margin: 6px 0; }
   .glance a { color: var(--text); }
   .glance-tag { font-size: 12.5px; font-weight: 600; color: var(--routine); margin-right: 8px; }
-  .glance .level-critical .glance-tag { color: var(--critical); }
   .glance .level-high .glance-tag { color: var(--high); }
   .glance .level-notable .glance-tag { color: var(--notable); }
-  .glance .curious .glance-tag { color: var(--political); }
-  .glance-sources { font-size: 12.5px; color: var(--muted); }
+  .glance .level-critical .glance-tag, .glance .kind-critical .glance-tag { color: var(--critical); }
+  .glance .kind-leading .glance-tag { color: var(--high); }
+  .glance .kind-interesting .glance-tag { color: var(--political); }
+  .glance li > a:not(:nth-child(2)) { font-size: 12.5px; white-space: nowrap; color: var(--accent); }
+  .glance-by { margin-left: 8px; font-size: 11.5px; font-weight: 400; letter-spacing: 0; text-transform: none; }
+  .storyline-why { margin: -2px 6px 10px; font-size: 13px; color: var(--muted); }
+  .dupe-why { font-style: italic; }
   .storyline { border: 1px solid var(--border); border-radius: 14px; padding: 10px 10px 2px; margin: 18px 0; background: var(--chip); }
   .storyline-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; padding: 0 6px 8px; }
   .storyline-kicker { font-size: 11px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
@@ -1159,8 +1324,11 @@ export function renderBriefingHtml(title: string, stories: RatedStory[], limit: 
     The score is 0–100: one strong criterion is enough to lift a story, and each further one lifts it more, so a deadly attack
     does not also need to be surprising to rank high. The +numbers show each criterion's share of the score.
     Critical is ${LEVEL_THRESHOLDS.critical}+, High ${LEVEL_THRESHOLDS.high}+, Notable ${LEVEL_THRESHOLDS.notable}+, Routine below.
-    Reports of the same event are merged under one story (open "more reports" to see them), different stories about one ongoing situation are grouped
-    into a storyline, and no single area takes more than about a third of the list.
+    ${ratedByAi
+      ? 'The AI reads the stories together to merge reports of the same event under one story (open "more reports" to see them and why),'
+        + ' to group different stories about one ongoing situation into a storyline, and to write the summary at the top.'
+      : 'Reports with near-identical headlines are merged under one story (open "more reports" to see them).'}
+    No single area takes more than about a third of the list.
     ${ratedByAi
       ? 'Severity, scale, urgency, interest and the economic, political, social and security impact are judged by AI; coverage and relevance come from your sources and topics.'
       : 'AI was off, so keyword rules did the rating and there is no impact write-up; turn AI on for both.'}</p>
@@ -1200,8 +1368,10 @@ export type BriefingOptions = {
   region?: string;
   /** Rates candidates with AI; omitted or failing falls back to rules. */
   rateWithAi?: (candidates: AiRatingCandidate[]) => Promise<AiStoryRating[]>;
-  /** Labels storylines (id → label) from the headlines; omitted or failing means no grouping. */
+  /** Finds duplicates and storylines from the headlines; omitted or failing falls back to title rules. */
   groupWithAi?: (items: GroupingItem[]) => Promise<StoryGrouping>;
+  /** Writes the summary at the top; omitted or failing shows the top stories' own summaries. */
+  digestWithAi?: (items: DigestItem[]) => Promise<DigestBullet[]>;
   generatedAtMs?: number;
 };
 
@@ -1225,7 +1395,9 @@ export async function buildBriefing(stories: BriefingStory[], options: BriefingO
   const limit = period === 'day' ? 20 : 12;
   const inWindow = stories.filter(story => story.publishedMs >= window.startMs && story.publishedMs < window.endMs);
   const context = { localTerms: options.localTerms, trackedTerms: options.trackedTerms, region: options.region };
-  let rated: RatedStory[] = clusterStories(inWindow).map(({ story, related }) => {
+  // With the AI grouping the briefing, only near-identical titles are merged up front; looser
+  // matches go to it as hints so it decides from what the stories say.
+  let rated: RatedStory[] = clusterStories(inWindow, !options.groupWithAi).map(({ story, related }) => {
     const rating = ruleRating(story, related, window, context);
     const score = scoreOf(rating.scores);
     return { story, related, rating, score, level: levelOf(score) };
@@ -1281,18 +1453,42 @@ export async function buildBriefing(stories: BriefingStory[], options: BriefingO
 
   let merged = [...rated].sort((a, b) => b.score - a.score || b.story.publishedMs - a.story.publishedMs).slice(0, pageSize);
   if (options.groupWithAi && merged.length >= 2) {
+    const hints = possibleDuplicates(merged);
     try {
-      const groups = await options.groupWithAi(merged.map(entry => ({
-        id: entry.story.id,
-        title: entry.story.title,
-        summary: String(entry.story.summary || '').slice(0, 160)
-      })));
-      merged = applyGrouping(merged, groups);
+      const groups = await options.groupWithAi(merged.map(entry => {
+        const maybeSameAs = hints.find(set => set.includes(entry.story.id))?.filter(id => id !== entry.story.id);
+        return {
+          id: entry.story.id,
+          title: entry.story.title,
+          summary: String(entry.story.summary || '').slice(0, 200),
+          ...(maybeSameAs?.length ? { maybeSameAs } : {})
+        };
+      }));
+      merged = applyGrouping(merged, groups, aiRan);
     } catch {
-      // Show the stories ungrouped.
+      // No AI answer: fall back to the title rule's guesses, without storylines.
+      merged = applyGrouping(merged, { duplicates: hints, storylines: new Map() }, aiRan);
     }
   }
   const picked = pickVaried(merged, limit);
+  let digest: DigestBullet[] = [];
+  if (options.digestWithAi && picked.length) {
+    try {
+      digest = await options.digestWithAi(picked.map(entry => ({
+        id: entry.story.id,
+        title: entry.story.title,
+        summary: String(entry.story.summary || '').slice(0, 300),
+        level: entry.level,
+        score: entry.score,
+        area: DIMENSION_LABELS[entry.rating.dimension],
+        storyline: entry.storyline || '',
+        sources: distinctSources([entry.story, ...entry.related]).length,
+        impacts: entry.rating.impacts
+      })));
+    } catch {
+      // The page builds its own list from the top stories.
+    }
+  }
   const title = briefingTitle(period, scope, window.startMs, window.endMs);
   return {
     // Random part keeps the URL unguessable: the HTML page is served without a login.
@@ -1305,7 +1501,7 @@ export async function buildBriefing(stories: BriefingStory[], options: BriefingO
     windowEndMs: window.endMs,
     generatedAtMs,
     itemCount: picked.length,
-    html: renderBriefingHtml(title, merged, limit, inWindow.length, generatedAtMs, aiRan)
+    html: renderBriefingHtml(title, merged, limit, inWindow.length, generatedAtMs, aiRan, digest)
   };
 }
 
