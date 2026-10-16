@@ -13,6 +13,7 @@ import { z } from 'zod';
 import { registerProductFeatureApi, type ProductFeatureRuntime } from './productFeatures';
 import { chunk, fingerprintRecord, takeChangedRecords } from './newsPersistence';
 import { titleTokens as cachedTitleTokens } from './titleTokens';
+import { cleanSummary } from './summaryText';
 import { DEFAULT_MODEL_POLICY, fetchModels, fetchPrices, pickDefault, resolveChoice, withPrices, type ModelChoice, type ModelInfo, type ModelPolicy } from './modelCatalog';
 import {
   buildAiRatingPrompt,
@@ -2676,7 +2677,8 @@ function newsFromPersistedRow(row: PersistedNewsRow): NewsInternal {
     isMatch: row.isMatch,
     matchScore: Number(row.matchScore || 0),
     filteredOk: row.filteredOk,
-    summary: row.summary || undefined,
+    // Stored before summaries were cleaned: cut-off text, extra sentences, NO_SUMMARY notes.
+    summary: cleanSummary(row.summary || '') || undefined,
     research: row.research || undefined,
     insightStatus: (row.insightStatus as InsightStatus | null) || undefined,
     insights: safeJsonParseString<NewsInsights>(row.insightsJson),
@@ -6336,8 +6338,8 @@ async function oneLineSummary(
     { itemId, feedUrl, source, title }
   );
   if (!generated) return generated;
-  const summary = enforceSummaryLanguage(generated, summaryLang);
-  if (!summary || /^NO_SUMMARY\.?$/i.test(summary.trim())) return undefined;
+  const summary = cleanSummary(enforceSummaryLanguage(generated, summaryLang));
+  if (!summary) return undefined;
   if (summaryRepeatsHeadline(title, summary)) return undefined;
   return summary;
 }

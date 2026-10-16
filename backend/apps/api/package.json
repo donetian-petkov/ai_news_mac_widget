@@ -5,7 +5,7 @@
   "scripts": {
     "dev": "tsx watch src/server.ts",
     "build": "tsc -p tsconfig.json",
-    "test": "vitest run src/briefing.test.ts src/modelCatalog.test.ts src/productFeatures.test.ts src/newsPersistence.test.ts src/titleTokens.test.ts src/server.integration.test.ts",
+    "test": "vitest run src/briefing.test.ts src/modelCatalog.test.ts src/summaryText.test.ts src/productFeatures.test.ts src/newsPersistence.test.ts src/titleTokens.test.ts src/server.integration.test.ts",
     "start": "node dist/server.js",
     "prisma:generate": "prisma generate",
     "prisma:migrate": "node ../../../scripts/ensure-local-db.mjs"

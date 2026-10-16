@@ -1,6 +1,7 @@
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
+import { cleanSummary } from './summaryText';
 
 const HOUR_MS = 60 * 60 * 1000;
 
@@ -178,7 +179,10 @@ const UI = {
       notCheckedTip: 'The AI did not answer for this story, so keyword rules rated it; it is kept below High until the AI checks it',
       keywordTip: 'AI is off, so keyword rules rated this story',
       whyItMatters: 'Why it matters',
+      impact: 'Impact',
       why: 'Why {level} · {score}/100',
+      cappedLocal: 'Kept below Critical: it affects one place only.',
+      cappedNotNow: 'Kept below Critical: nothing urgent and no severe harm.',
       moreOne: '1 more report of this',
       moreMany: '{n} more reports of this',
       storyline: 'Storyline',
@@ -258,7 +262,10 @@ const UI = {
       notCheckedTip: 'AI не отговори за тази новина, затова е оценена по ключови думи; остава под „Важно“, докато AI я провери',
       keywordTip: 'AI е изключен, затова новината е оценена по ключови думи',
       whyItMatters: 'Защо е важно',
+      impact: 'Въздействие',
       why: 'Защо „{level}“ · {score}/100',
+      cappedLocal: 'Под „Критично“: засяга само едно място.',
+      cappedNotNow: 'Под „Критично“: нищо спешно и без тежки последици.',
       moreOne: 'още 1 източник за същото',
       moreMany: 'още {n} източника за същото',
       storyline: 'Сюжет',
@@ -362,7 +369,19 @@ function criterionLifts(scores: CriteriaScores, weights: CriteriaScores): number
  */
 export function scoreOf(scores: CriteriaScores, weights: CriteriaScores = DEFAULT_WEIGHTS): number {
   const unlifted = criterionLifts(scores, weights).reduce((rest, lift) => rest * (1 - lift), 1);
-  return Math.round((1 - unlifted) * 100);
+  const raw = Math.round((1 - unlifted) * 100);
+  return criticalCap(scores) ? Math.min(raw, LEVEL_THRESHOLDS.critical - 1) : raw;
+}
+
+/**
+ * Critical is kept for what reaches far and is either severe or happening now. A local
+ * crime or a background feature about one distant province can be High at most, however
+ * grim. The briefing page runs the same rule.
+ */
+export function criticalCap(scores: CriteriaScores): 'local' | 'notNow' | undefined {
+  if (clamp(scores.scale) < 2) return 'local';
+  if (clamp(scores.severity) < 3 && clamp(scores.urgency) < 2) return 'notNow';
+  return undefined;
 }
 
 export function levelOf(score: number): PriorityLevel {
@@ -564,17 +583,17 @@ export function buildAiRatingPrompt(candidates: AiRatingCandidate[], language: '
     LITERAL_FACTS_RULE,
     'Score four criteria from 0 (none) to 3 (strong):',
     `- severity: ${CRITERIA_TEXT.severity}. Sports, celebrity and entertainment score 0-1 even with dramatic words like "war" or "attack".`,
-    '- scale: 1 one town or group, 2 a whole country, 3 several countries or the world.',
-    '- urgency: 3 happening now or a deadline within days, 2 this week, 1 slow-moving, 0 none.',
+    '- scale: 1 one town, group or province (also one far away), 2 a whole country, 3 several countries or the world.',
+    '- urgency: 3 happening now or a deadline within days, 2 this week, 1 slow-moving, 0 none. Features and background pieces about a long-running situation score 0-1.',
     '- interest: how surprising, new or revealing it is (a first, a record, an unexpected twist, a hidden fact). Routine statements and scheduled events score 0-1.',
     'For each criterion add "<criterion>Why": at most 15 words naming the fact, e.g. "29 pupils killed when a school roof fell in Khyber Pakhtunkhwa".',
     'Fill it for low scores too, saying what this story lacks, e.g. severityWhy "A TV casting change; no one is harmed and no money is at stake".',
     'Add "impacts" with one specific sentence (at most 25 words) per angle about THIS story:',
-    '- economic: prices, jobs, markets, budgets, trade, energy, investment. Always fill it; if the effect is indirect, explain the chain (e.g. strikes on refineries -> fuel supply -> pump prices).',
+    '- economic: prices, jobs, markets, budgets, trade, energy, investment. If the effect is indirect, explain the chain (e.g. strikes on refineries -> fuel supply -> pump prices).',
     '- political: governments, laws, elections, diplomacy, institutions.',
     '- social: daily life, health, education, rights, communities.',
     '- security: physical safety, conflict, crime, infrastructure.',
-    'Fill at least two angles for every story, the economic one and the next most affected; use "" only where there is truly no effect.',
+    'Fill only the angles where this story has a real effect, and use "" for the rest. Never write that there is no effect.',
     `Pick one dimension from: ${IMPACT_DIMENSIONS.join(', ')}.`,
     `Write every text field in ${language === 'bg' ? 'Bulgarian' : 'English'}.`,
     'Return strict JSON only: {"ratings":[{"id":"...","severity":0,"severityWhy":"...","scale":0,"scaleWhy":"...","urgency":0,"urgencyWhy":"...","interest":0,"interestWhy":"...","dimension":"economy","impacts":{"economic":"...","political":"","social":"","security":""}}]}',
@@ -961,6 +980,7 @@ const PAGE_SCRIPT = String.raw`
   const fill = (text, values) => text.replace(/\{(\w+)\}/g, (_, key) => String(values[key]));
   // Score breakdowns the reader opened stay open when the sliders redraw the list.
   const openWhy = new Set();
+  const openImpact = new Set();
   const KEYS = data.criteria.map(c => c.key);
   const STORE = 'ai-news-briefing-weights';
   const sameWeights = (a, b) => KEYS.every(k => a[k] === b[k]);
@@ -980,8 +1000,18 @@ const PAGE_SCRIPT = String.raw`
     const heaviest = Math.max(0, ...KEYS.map(k => weights[k]));
     return KEYS.map(k => heaviest ? Math.max(0, weights[k]) / heaviest * scores[k] / 3 * data.strength : 0);
   }
-  function scoreOf(scores) {
+  function rawScoreOf(scores) {
     return Math.round((1 - lifts(scores).reduce((rest, lift) => rest * (1 - lift), 1)) * 100);
+  }
+  // Mirrors criticalCap: Critical needs wide reach and severe harm or urgency.
+  function capOf(scores) {
+    if (scores.scale < 2) return 'local';
+    if (scores.severity < 3 && scores.urgency < 2) return 'notNow';
+    return '';
+  }
+  function scoreOf(scores) {
+    const raw = rawScoreOf(scores);
+    return capOf(scores) ? Math.min(raw, data.thresholds.critical - 1) : raw;
   }
   function levelOf(score) {
     const t = data.thresholds;
@@ -1059,7 +1089,11 @@ const PAGE_SCRIPT = String.raw`
 
     const angles = data.angles.filter(a => story.impacts[a.key]);
     if (angles.length) {
-      const box = el('div', 'impacts');
+      // Folded like the score breakdown; the heading names the angles inside.
+      const box = el('details', 'impacts');
+      box.open = openImpact.has(entry.index);
+      box.addEventListener('toggle', () => { if (box.open) openImpact.add(entry.index); else openImpact.delete(entry.index); });
+      box.append(el('summary', 'impacts-head', T.impact + ' · ' + angles.map(a => a.label.toLowerCase()).join(', ')));
       for (const angle of angles) {
         const row = el('p', 'impact');
         row.append(el('span', 'angle angle-' + angle.key, angle.label), ' ' + story.impacts[angle.key]);
@@ -1077,6 +1111,10 @@ const PAGE_SCRIPT = String.raw`
     rated.open = openWhy.has(entry.index);
     rated.addEventListener('toggle', () => { if (rated.open) openWhy.add(entry.index); else openWhy.delete(entry.index); });
     rated.append(el('summary', 'rated-head', fill(T.why, { level: data.levelLabels[level], score })));
+    const cap = capOf(story.scores);
+    if (cap && rawScoreOf(story.scores) >= data.thresholds.critical) {
+      rated.append(el('p', 'rated-cap', cap === 'local' ? T.cappedLocal : T.cappedNotNow));
+    }
     const list = el('ul');
     // Each criterion's share of the score, in proportion to how hard it pushed.
     const storyLifts = lifts(story.scores);
@@ -1315,7 +1353,8 @@ function pageStory(entry: RatedStory, language: BriefingLanguage) {
     source: shortSource(story.source || ''),
     time: formatTime(story.publishedMs, language),
     publishedMs: story.publishedMs,
-    summary: story.summary || '',
+    // Older stored summaries may predate the clean-up at storage time.
+    summary: cleanSummary(story.summary || ''),
     coverUrl: safeUrl(story.coverUrl),
     dimension: rating.dimension,
     dimensionLabel: UI[language].dimensions[rating.dimension],
@@ -1440,6 +1479,8 @@ export function renderBriefingHtml(
   .level-high .badge { color: var(--high); }
   .level-notable .badge { color: var(--notable); }
   .impacts { margin-top: 8px; }
+  .impacts-head { font-size: 13px; font-weight: 600; color: var(--muted); cursor: pointer; width: fit-content; }
+  .rated-cap { margin: 4px 0 6px; font-style: italic; }
   .impact { margin-top: 4px; }
   .angle { display: inline-block; min-width: 72px; font-size: 11.5px; font-weight: 600; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); }
   .angle-economic { color: var(--economic); }
