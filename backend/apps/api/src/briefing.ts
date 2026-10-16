@@ -200,6 +200,8 @@ const UI = {
       moreMany: '{n} more reports of this',
       storyline: 'Storyline',
       differentStories: '{n} different stories',
+      moreInStoryline: '{n} more stories in this storyline',
+      moreUpdates: '{n} more updates',
       resolved: 'Resolved',
       reports: '{n} reports',
       roleResolution: 'How it ended',
@@ -288,6 +290,8 @@ const UI = {
       moreMany: 'още {n} източника за същото',
       storyline: 'Сюжет',
       differentStories: '{n} различни новини',
+      moreInStoryline: 'още {n} новини в сюжета',
+      moreUpdates: 'още {n} развития',
       resolved: 'Разрешено',
       reports: '{n} съобщения',
       roleResolution: 'Развръзка',
@@ -1056,6 +1060,7 @@ const PAGE_SCRIPT = String.raw`
   // Score breakdowns the reader opened stay open when the sliders redraw the list.
   const openWhy = new Set();
   const openImpact = new Set();
+  const openLines = new Set();
   const KEYS = data.criteria.map(c => c.key);
   const STORE = 'ai-news-briefing-weights';
   const sameWeights = (a, b) => KEYS.every(k => a[k] === b[k]);
@@ -1247,11 +1252,18 @@ const PAGE_SCRIPT = String.raw`
     const summary = unit.entries.map(entry => entry.story.resolution.summary).find(Boolean);
     if (summary) box.append(el('p', 'resolved-summary', summary));
     const roles = { resolution: T.roleResolution, update: T.roleUpdate, start: T.roleStart };
-    unit.entries.forEach(entry => {
-      const step = el('div', 'resolved-step role-' + entry.story.resolution.role);
-      step.append(el('p', 'resolved-role', roles[entry.story.resolution.role] + ' · ' + entry.story.time), card(entry));
-      box.append(step);
-    });
+    const step = entry => {
+      const node = el('div', 'resolved-step role-' + entry.story.resolution.role);
+      node.append(el('p', 'resolved-role', roles[entry.story.resolution.role] + ' · ' + entry.story.time), card(entry));
+      return node;
+    };
+    // How it ended and how it began stay in view; updates in between fold away when there are many.
+    const [ending, ...others] = unit.entries;
+    const beginning = others.length && others[others.length - 1].story.resolution.role === 'start' ? others.pop() : null;
+    box.append(step(ending));
+    if (others.length <= 1) others.forEach(entry => box.append(step(entry)));
+    else foldRest(box, unit, others, T.moreUpdates, step);
+    if (beginning) box.append(step(beginning));
     return box;
   }
 
@@ -1268,8 +1280,24 @@ const PAGE_SCRIPT = String.raw`
     box.append(head);
     const why = unit.entries.map(entry => entry.story.storylineWhy).find(Boolean);
     if (why) box.append(el('p', 'storyline-why', why));
-    unit.entries.forEach(entry => box.append(card(entry)));
+    // Up to three stories all show; a longer storyline shows its two strongest.
+    const shown = unit.entries.length <= 3 ? unit.entries.length : 2;
+    unit.entries.slice(0, shown).forEach(entry => box.append(card(entry)));
+    foldRest(box, unit, unit.entries.slice(shown), T.moreInStoryline, card);
     return box;
+  }
+
+  // The strongest story stays in view; the others fold away under one line, and a fold the
+  // reader opened stays open when the sliders redraw the list.
+  function foldRest(box, unit, rest, text, draw) {
+    if (!rest.length) return;
+    const fold = el('details', 'line-fold');
+    const key = unit.resolution ? unit.resolution.key : unit.label.toLowerCase();
+    fold.open = openLines.has(key);
+    fold.addEventListener('toggle', () => { if (fold.open) openLines.add(key); else openLines.delete(key); });
+    fold.append(el('summary', 'line-fold-head', fill(text, { n: rest.length })));
+    rest.forEach(entry => fold.append(draw(entry)));
+    box.append(fold);
   }
 
   // The summary at the top. The AI writes it when it can, reading the stories together;
@@ -1635,6 +1663,10 @@ export function renderBriefingHtml(
   .storyline-count { opacity: .85; }
   .storyline-why { margin: 10px 16px 0; font-size: 13px; color: var(--muted); }
   .storyline > article { margin: 10px 10px 0; }
+  .line-fold { margin: 10px 10px 10px; }
+  .line-fold-head { cursor: pointer; font-size: 13.5px; font-weight: 600; color: var(--storyline); padding: 4px 6px; width: fit-content; }
+  .resolved .line-fold-head { color: var(--resolved); }
+  .line-fold > article, .line-fold > .resolved-step { margin: 10px 0 0; }
   .storyline > article:last-child { margin-bottom: 10px; }
   /* An event that began and ended in the period: green frame, summary on top, the
      resolution first and the first report last. */
