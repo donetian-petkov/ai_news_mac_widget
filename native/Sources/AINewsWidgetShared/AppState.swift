@@ -1,4 +1,7 @@
 import Foundation
+#if canImport(AppKit)
+import AppKit
+#endif
 import SwiftUI
 
 @MainActor
@@ -512,10 +515,21 @@ public final class WidgetAppState: ObservableObject {
         }
     }
 
+    /// Copies straight away. The copy used to happen in the main window's view, so with only
+    /// the floating widget open the button said "Copied" while nothing reached the clipboard.
+    private func copyToPasteboard(_ text: String) {
+        #if canImport(AppKit)
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(text, forType: .string)
+        #else
+        pendingSharedURL = text
+        #endif
+    }
+
     public func shareStory(_ story: WidgetStory) async {
         await runBusy("Preparing share link...") {
             if let sourceLink = story.link, !sourceLink.isEmpty {
-                self.pendingSharedURL = sourceLink
+                self.copyToPasteboard(sourceLink)
                 self.statusMessage = "Copied article link for \(story.title)."
                 self.lastSharedStoryKey = story.storyKey
                 self.lastShareMessage = "Copied"
@@ -539,7 +553,7 @@ public final class WidgetAppState: ObservableObject {
                 "research": .string(story.research ?? "")
             ])
             let shareURL = response.url.hasPrefix("http") ? response.url : "\(self.backendURLString)\(response.url)"
-            self.pendingSharedURL = shareURL
+            self.copyToPasteboard(shareURL)
             self.statusMessage = "Copied local share link for \(story.title)."
             self.lastSharedStoryKey = story.storyKey
             self.lastShareMessage = "Copied local link"
