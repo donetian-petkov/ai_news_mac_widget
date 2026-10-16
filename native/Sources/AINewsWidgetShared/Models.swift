@@ -821,7 +821,19 @@ public struct RuntimeConfigResponse: Codable, Sendable {
     public var aiDefaults: GlobalAiDefaults?
     /// Models each provider offers now, newest first, with prices. Older backends omit it.
     public var modelCatalog: [String: [ModelCatalogEntry]]?
+    /// "cheapest" or "balanced": how models are picked for tasks nobody picked one for.
+    public var modelPolicy: String?
+    /// What each policy would pick right now: policy → task ("summary", "research", "ask") → model.
+    public var modelPolicyPreview: [String: [String: String]]?
     public var feeds: [RuntimeFeed]
+}
+
+public struct ModelPolicyResponse: Codable, Sendable {
+    public var ok: Bool
+    public var modelPolicy: String
+    public var summaryModel: String
+    public var researchModel: String
+    public var askModel: String
 }
 
 public struct ModelCatalogEntry: Codable, Equatable, Sendable {

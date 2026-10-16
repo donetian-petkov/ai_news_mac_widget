@@ -772,6 +772,21 @@ public final class WidgetAppState: ObservableObject {
         await saveFeedSettings(feed)
     }
 
+    public func setModelPolicy(_ policy: String) async {
+        await runBusy("Changing how models are picked...") {
+            let api = try self.makeAPIClient()
+            let result = try await api.setModelPolicy(policy)
+            // Keep the settings fields in step, so "Save settings" does not bring back old picks.
+            self.accountSettings.summaryModel = result.summaryModel
+            self.accountSettings.researchModel = result.researchModel
+            self.accountSettings.askModel = result.askModel
+            await self.loadRuntimeContext()
+            self.statusMessage = result.modelPolicy == "cheapest"
+                ? "Every AI task now uses \(result.summaryModel), the cheapest current model."
+                : "Summaries use \(result.summaryModel); research and briefings use \(result.researchModel)."
+        }
+    }
+
     public func saveGlobalAiDefaults() async {
         await runBusy("Saving global AI settings...") {
             let api = try self.makeAPIClient()

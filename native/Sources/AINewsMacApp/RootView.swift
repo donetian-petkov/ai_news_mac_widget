@@ -2951,6 +2951,8 @@ private struct SettingsView: View {
                     suggestions: SettingsView.providerOptions
                 )
 
+                ModelPolicyPicker()
+
                 EditableComboField(
                     placeholder: "Summary model",
                     value: Binding(
@@ -3331,6 +3333,47 @@ private struct SettingsView: View {
 
 /// A text field that also offers a dropdown of suggested values.
 /// Users can pick a suggestion or type any custom value (free text).
+/// How models are picked for tasks the user has not picked one for, with what each choice
+/// means in plain words and which models it would use right now.
+private struct ModelPolicyPicker: View {
+    @EnvironmentObject private var state: WidgetAppState
+
+    private var policy: String { state.runtimeConfig?.modelPolicy ?? "cheapest" }
+
+    private func preview(_ policy: String, _ task: String) -> String {
+        state.runtimeConfig?.modelPolicyPreview?[policy]?[task].flatMap { $0.isEmpty ? nil : $0 } ?? "—"
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Picker("Model choice", selection: Binding(
+                get: { policy },
+                set: { next in
+                    guard next != policy else { return }
+                    Task { await state.setModelPolicy(next) }
+                }
+            )) {
+                Text("Cheapest (default)").tag("cheapest")
+                Text("Balanced").tag("balanced")
+            }
+            .pickerStyle(.segmented)
+            .disabled(state.runtimeConfig?.modelPolicy == nil)
+
+            Text(policy == "cheapest"
+                ? "Every AI task (summaries, questions, research and briefings) uses the cheapest model of your provider's newest generation, now \(preview("cheapest", "summary")). Lowest cost: a briefing costs about a cent. Analysis can be less sharp."
+                : "Summaries and questions use the newest low-cost model, now \(preview("balanced", "summary")). Research and briefings use the newest mid-priced model, now \(preview("balanced", "research")): sharper analysis, at more than ten times the cost for those tasks (a briefing costs about 15 cents).")
+                .font(.caption)
+                .foregroundStyle(AINewsTheme.textSecondary)
+                .fixedSize(horizontal: false, vertical: true)
+
+            Text("The models follow your provider's current list. Picking a model below overrides this for that task; changing this choice clears those picks.")
+                .font(.caption)
+                .foregroundStyle(AINewsTheme.textSecondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+}
+
 private struct EditableComboField: View {
     let placeholder: String
     @Binding var value: String

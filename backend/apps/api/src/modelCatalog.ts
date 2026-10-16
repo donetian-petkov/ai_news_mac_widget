@@ -19,6 +19,15 @@ export type ModelInfo = {
 };
 
 /** `fromEnv`: pinned by an env variable rather than picked in the app. */
+/**
+ * How models are picked when the user has not picked one for a task.
+ * cheapest: every task uses the cheapest model of the provider's newest generation.
+ * balanced: summaries and questions use the newest cheap model, research and briefings
+ *           the newest mid-priced one.
+ */
+export type ModelPolicy = 'cheapest' | 'balanced';
+export const DEFAULT_MODEL_POLICY: ModelPolicy = 'cheapest';
+
 export type ModelChoice = { model: string; byUser: boolean; fromEnv?: boolean };
 
 type FetchLike = (url: string, init?: { headers?: Record<string, string>; signal?: AbortSignal }) => Promise<{
@@ -88,16 +97,31 @@ export function withPrices(provider: CatalogProvider, models: Array<{ id: string
 
 const newestFirst = (a: ModelInfo, b: ModelInfo) => b.createdMs - a.createdMs || a.id.length - b.id.length || a.id.localeCompare(b.id);
 
+/** The model generation in an id: "gpt-6.1-sol" and "gpt-6-luna" → 6, "claude-haiku-5-5" → 5. */
+export function generationOf(id: string): number | undefined {
+  const match = String(id || '').split('/').pop()?.match(/(\d+)/);
+  return match ? Number(match[1]) : undefined;
+}
+
 /**
- * Summaries and quick questions run on every story, so they get the newest cheap model
- * (at most $1 per million output tokens). Research and briefings get the newest mid-priced
- * one (up to $15), not the most expensive flagship. Without prices: the newest model.
+ * Picks by price and age, never by name, so new models show up and retired ones drop out.
+ * cheapest: the cheapest model of the newest generation, for every task.
+ * balanced: summaries and questions get the newest model up to $1 per million output
+ * tokens; research and briefings the newest one up to $15, not the flagship.
+ * Without prices: the newest model.
  */
-export function pickDefault(kind: ModelKind, models: ModelInfo[]): string | undefined {
+export function pickDefault(kind: ModelKind, models: ModelInfo[], policy: ModelPolicy = DEFAULT_MODEL_POLICY): string | undefined {
   const sorted = [...models].sort(newestFirst);
   const priced = sorted.filter(model => model.outputPerM !== undefined);
   if (!priced.length) return sorted[0]?.id;
   const out = (model: ModelInfo) => model.outputPerM as number;
+  if (policy === 'cheapest') {
+    const generations = priced.map(model => generationOf(model.id)).filter((value): value is number => value !== undefined);
+    const newest = generations.length ? Math.max(...generations) : undefined;
+    const family = newest === undefined ? priced : priced.filter(model => generationOf(model.id) === newest);
+    const cost = (model: ModelInfo) => out(model) + (model.inputPerM || 0);
+    return [...family].sort((a, b) => cost(a) - cost(b) || newestFirst(a, b))[0]?.id;
+  }
   const pick = kind === 'research'
     ? priced.find(model => out(model) > 1 && out(model) <= 15)
     : priced.find(model => out(model) <= 1);
@@ -112,10 +136,10 @@ export function pickDefault(kind: ModelKind, models: ModelInfo[]): string | unde
  * the choice was automatic, the default for that kind takes over; `replaced` says what
  * was dropped so the user can be told.
  */
-export function resolveChoice(kind: ModelKind, current: ModelChoice | undefined, models: ModelInfo[]): ModelChoice & { replaced?: string } {
+export function resolveChoice(kind: ModelKind, current: ModelChoice | undefined, models: ModelInfo[], policy: ModelPolicy = DEFAULT_MODEL_POLICY): ModelChoice & { replaced?: string } {
   const offered = new Set(models.map(model => model.id));
   if (current?.model && current.byUser && offered.has(current.model)) return current;
-  const fallback = pickDefault(kind, models) || current?.model || '';
+  const fallback = pickDefault(kind, models, policy) || current?.model || '';
   if (current?.byUser && current.model && !offered.has(current.model)) {
     return { model: fallback, byUser: false, replaced: current.model };
   }

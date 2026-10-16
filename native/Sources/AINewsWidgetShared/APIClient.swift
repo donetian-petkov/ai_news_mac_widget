@@ -122,6 +122,12 @@ public struct APIClient: Sendable {
         return response.feed
     }
 
+    /// "cheapest" or "balanced". Models picked by hand are dropped so the policy applies at once.
+    public func setModelPolicy(_ policy: String) async throws -> ModelPolicyResponse {
+        struct Body: Codable { var policy: String }
+        return try await send(path: "/api/runtime/model-policy", method: "PUT", body: Body(policy: policy))
+    }
+
     public func saveGlobalAiDefaults(_ defaults: GlobalAiDefaults) async throws {
         struct Body: Codable {
             var summaryEnabled: Bool

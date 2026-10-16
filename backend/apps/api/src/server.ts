@@ -13,7 +13,7 @@ import { z } from 'zod';
 import { registerProductFeatureApi, type ProductFeatureRuntime } from './productFeatures';
 import { chunk, fingerprintRecord, takeChangedRecords } from './newsPersistence';
 import { titleTokens as cachedTitleTokens } from './titleTokens';
-import { fetchModels, fetchPrices, resolveChoice, withPrices, type ModelChoice, type ModelInfo } from './modelCatalog';
+import { DEFAULT_MODEL_POLICY, fetchModels, fetchPrices, pickDefault, resolveChoice, withPrices, type ModelChoice, type ModelInfo, type ModelPolicy } from './modelCatalog';
 import {
   buildAiRatingPrompt,
   buildBriefing,
@@ -487,6 +487,8 @@ type Config = {
   availableModels: ModelOptionsByProvider;
   /** Every model each provider offers now, with its price. */
   modelCatalog: Record<AIProvider, ModelInfo[]>;
+  modelPolicy: ModelPolicy;
+  modelPolicyPreview: Record<ModelPolicy, AiModelSelection>;
   aiFeatures: AiInsightFeatureSettings;
   localRegion: string;
   localLlmBaseUrl: string;
@@ -1060,6 +1062,8 @@ app.get('/api/runtime/config', async (req, res) => {
       researchModel: activeSelection.research,
       askModel: activeSelection.ask,
       modelCatalog: modelCatalogs,
+      modelPolicy,
+      modelPolicyPreview: modelPolicyPreview(),
       summaryLang,
       researchLang,
       titleDisplayLanguage,
@@ -1130,6 +1134,31 @@ app.put('/api/runtime/feed-settings', async (req, res) => {
   } catch (error) {
     res.status(500).json({ error: (error as Error).message || 'Failed to update feed settings.' });
   }
+});
+
+// Switches how models are picked. Models picked by hand are dropped for every provider, so
+// the new policy takes effect at once; the settings text says so.
+app.put('/api/runtime/model-policy', async (req, res) => {
+  const user = await requireAuthUser(req, res);
+  if (!user) return;
+  const policy = (req.body as { policy?: unknown } | undefined)?.policy;
+  if (policy !== 'cheapest' && policy !== 'balanced') {
+    res.status(400).json({ error: 'policy must be "cheapest" or "balanced".' });
+    return;
+  }
+  modelPolicy = policy;
+  for (const provider of AI_PROVIDERS) {
+    for (const kind of MODEL_KINDS) {
+      const choice = modelChoices[provider][kind];
+      if (choice.byUser && !choice.fromEnv) modelChoices[provider][kind] = { model: choice.model, byUser: false };
+    }
+    resolveModelChoices(provider);
+  }
+  clearAiQueue();
+  markDirty();
+  broadcastConfig();
+  const selection = currentModelSelection(aiProvider);
+  res.json({ ok: true, modelPolicy, summaryModel: selection.summary, researchModel: selection.research, askModel: selection.ask });
 });
 
 app.put('/api/runtime/ai-defaults', async (req, res) => {
@@ -2152,6 +2181,16 @@ function envModel(provider: AIProvider, kind: AiModelKind): string {
 }
 
 const modelCatalogs: Record<AIProvider, ModelInfo[]> = { openai: [], claude: [], openrouter: [], local: [] };
+// "cheapest" unless AI_MODEL_POLICY=balanced; changed in the app's settings and saved.
+let modelPolicy: ModelPolicy = process.env.AI_MODEL_POLICY === 'balanced' ? 'balanced'
+  : process.env.AI_MODEL_POLICY === 'cheapest' ? 'cheapest' : DEFAULT_MODEL_POLICY;
+
+/** What each policy would pick right now for the active provider, for the settings text. */
+function modelPolicyPreview(): Record<ModelPolicy, AiModelSelection> {
+  const models = modelCatalogs[aiProvider];
+  const preview = (policy: ModelPolicy) => Object.fromEntries(MODEL_KINDS.map(kind => [kind, pickDefault(kind, models, policy) || ''])) as AiModelSelection;
+  return { cheapest: preview('cheapest'), balanced: preview('balanced') };
+}
 const modelChoices = Object.fromEntries(AI_PROVIDERS.map(provider => [
   provider,
   Object.fromEntries(MODEL_KINDS.map(kind => {
@@ -2235,6 +2274,18 @@ function loadModelCatalogCache() {
   }
 }
 
+/** Re-checks the chosen models against the provider's list and the policy; returns notices. */
+function resolveModelChoices(provider: AIProvider): string[] {
+  const notices: string[] = [];
+  if (!modelCatalogs[provider].length) return notices;
+  for (const kind of MODEL_KINDS) {
+    const next = resolveChoice(kind, modelChoices[provider][kind], modelCatalogs[provider], modelPolicy);
+    if (next.replaced) notices.push(`${kind} model ${next.replaced} is no longer offered by ${provider}; switched to ${next.model}`);
+    modelChoices[provider][kind] = { model: next.model, byUser: next.byUser, ...(next.byUser && next.fromEnv ? { fromEnv: true } : {}) };
+  }
+  return notices;
+}
+
 const modelCatalogInFlight = new Map<AIProvider, Promise<void>>();
 
 /** Reads the provider's model list and prices, then re-checks the chosen models against it. */
@@ -2251,12 +2302,7 @@ function refreshModelCatalog(provider: AIProvider): Promise<void> {
       ]);
       if (!models.length) return;
       modelCatalogs[provider] = withPrices(provider, models, prices);
-      const notices: string[] = [];
-      for (const kind of MODEL_KINDS) {
-        const next = resolveChoice(kind, modelChoices[provider][kind], modelCatalogs[provider]);
-        if (next.replaced) notices.push(`${kind} model ${next.replaced} is no longer offered by ${provider}; switched to ${next.model}`);
-        modelChoices[provider][kind] = { model: next.model, byUser: next.byUser, ...(next.byUser && next.fromEnv ? { fromEnv: true } : {}) };
-      }
+      const notices = resolveModelChoices(provider);
       try {
         ensureDataDir();
         fs.writeFileSync(modelCatalogPath(), JSON.stringify(modelCatalogs), 'utf8');
@@ -2567,6 +2613,7 @@ type PersistedState = {
   feedRuntime: Record<string, FeedRuntime>;
   recent?: NewsInternal[];
   modelChoices?: Partial<Record<AIProvider, Partial<Record<AiModelKind, ModelChoice>>>>;
+  modelPolicy?: ModelPolicy;
 };
 
 type PersistedNewsRow = Prisma.NewsItemRecordGetPayload<Record<string, never>>;
@@ -3066,7 +3113,8 @@ function saveStateNow() {
     customizedFeedUrls: Array.from(customizedFeedUrls),
     hiddenIds: Array.from(hiddenIds),
     feedRuntime: feedRuntimeObj(),
-    modelChoices
+    modelChoices,
+    modelPolicy
   };
 
   try {
@@ -6664,6 +6712,8 @@ function broadcastConfig() {
     askModel: activeSelection.ask,
     availableModels: modelOptionsSnapshot(),
     modelCatalog: modelCatalogs,
+    modelPolicy,
+    modelPolicyPreview: modelPolicyPreview(),
     aiFeatures,
     localRegion,
     localLlmBaseUrl,
@@ -8709,6 +8759,9 @@ async function applyLoadedState(st: PersistedState | null) {
   if (Array.isArray(st.keywords)) {
     keywords = normalizeKeywordList(st.keywords);
   }
+  if ((st.modelPolicy === 'cheapest' || st.modelPolicy === 'balanced') && !process.env.AI_MODEL_POLICY) {
+    modelPolicy = st.modelPolicy;
+  }
   if (st.modelChoices && typeof st.modelChoices === 'object') {
     for (const provider of AI_PROVIDERS) {
       for (const kind of MODEL_KINDS) {
@@ -8900,6 +8953,8 @@ socketServer.on('connection', (ws: WebSocket) => {
     askModel: activeSelection.ask,
     availableModels: modelOptionsSnapshot(),
     modelCatalog: modelCatalogs,
+    modelPolicy,
+    modelPolicyPreview: modelPolicyPreview(),
     aiFeatures,
     localRegion,
     localLlmBaseUrl,
@@ -9846,9 +9901,8 @@ function briefingLocalTerms(): string[] {
 
 // Briefings are written on request and always use AI when a provider key is set, even with
 // the widget's AI toggle off: the toggle is about the background work on every story.
-// Briefings run on the research model: by default the newest mid-priced one, since the
-// cheapest models take headline figures of speech literally. An instance that wants the
-// cheapest model everywhere picks it as its research model in the settings.
+// Briefings run on the research model: under the default "cheapest" policy that is the
+// cheapest model of the newest generation; under "balanced" the newest mid-priced one.
 
 /** The AI prompts and the page labels use this one language, so the page never mixes them. */
 function briefingLanguage(): 'en' | 'bg' {

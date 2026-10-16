@@ -20,12 +20,23 @@ describe('model catalog', () => {
     expect(costLabel('openai')).toBe('price unknown');
   });
 
-  it('picks the newest cheap model for summaries and the newest mid-priced one for research', () => {
+  it('balanced: picks the newest cheap model for summaries and the newest mid-priced one for research', () => {
     const models = [model('flagship', 30, 50), model('mid-new', 29, 10), model('cheap-new', 28, 0.5), model('cheap-old', 1, 0.4), model('mid-old', 2, 8)];
-    expect(pickDefault('summary', models)).toBe('cheap-new');
-    expect(pickDefault('ask', models)).toBe('cheap-new');
-    expect(pickDefault('research', models)).toBe('mid-new');
-    expect(pickDefault('summary', [model('a', 1), model('b', 2)])).toBe('b');
+    expect(pickDefault('summary', models, 'balanced')).toBe('cheap-new');
+    expect(pickDefault('ask', models, 'balanced')).toBe('cheap-new');
+    expect(pickDefault('research', models, 'balanced')).toBe('mid-new');
+    expect(pickDefault('summary', [model('a', 1), model('b', 2)], 'balanced')).toBe('b');
+  });
+
+  it('by default gives every task the cheapest model of the newest generation', () => {
+    const models = [
+      model('gpt-6.1-sol', 30, 10), model('gpt-6-astra', 28, 50), model('gpt-6-luna', 27, 0.5),
+      model('gpt-5-nano', 1, 0.4), model('gpt-5.6-terra', 20, 12)
+    ];
+    for (const kind of ['summary', 'research', 'ask'] as const) expect(pickDefault(kind, models)).toBe('gpt-6-luna');
+    expect(pickDefault('research', models, 'balanced')).toBe('gpt-6.1-sol');
+    // A newer generation takes over once it is listed.
+    expect(pickDefault('summary', [...models, model('gpt-7-mini', 40, 3)])).toBe('gpt-7-mini');
   });
 
   it('keeps a chosen model while it is offered and replaces it when it is removed', () => {
@@ -33,7 +44,7 @@ describe('model catalog', () => {
     expect(resolveChoice('summary', { model: 'mid', byUser: true }, models)).toEqual({ model: 'mid', byUser: true });
     expect(resolveChoice('summary', { model: 'gone', byUser: true }, models)).toEqual({ model: 'cheap', byUser: false, replaced: 'gone' });
     // An automatic choice moves to the newest default.
-    expect(resolveChoice('research', { model: 'old', byUser: false }, models)).toEqual({ model: 'mid', byUser: false });
+    expect(resolveChoice('research', { model: 'old', byUser: false }, models, 'balanced')).toEqual({ model: 'mid', byUser: false });
   });
 
   it('reads the provider list, newest first', async () => {
