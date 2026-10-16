@@ -18,7 +18,8 @@ export type ModelInfo = {
   costLabel: string;
 };
 
-export type ModelChoice = { model: string; byUser: boolean };
+/** `fromEnv`: pinned by an env variable rather than picked in the app. */
+export type ModelChoice = { model: string; byUser: boolean; fromEnv?: boolean };
 
 type FetchLike = (url: string, init?: { headers?: Record<string, string>; signal?: AbortSignal }) => Promise<{
   ok: boolean;

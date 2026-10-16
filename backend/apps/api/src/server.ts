@@ -2156,7 +2156,7 @@ const modelChoices = Object.fromEntries(AI_PROVIDERS.map(provider => [
   provider,
   Object.fromEntries(MODEL_KINDS.map(kind => {
     const pinned = envModel(provider, kind);
-    return [kind, { model: pinned, byUser: !!pinned }];
+    return [kind, { model: pinned, byUser: !!pinned, fromEnv: !!pinned }];
   }))
 ])) as Record<AIProvider, Record<AiModelKind, ModelChoice>>;
 
@@ -2255,7 +2255,7 @@ function refreshModelCatalog(provider: AIProvider): Promise<void> {
       for (const kind of MODEL_KINDS) {
         const next = resolveChoice(kind, modelChoices[provider][kind], modelCatalogs[provider]);
         if (next.replaced) notices.push(`${kind} model ${next.replaced} is no longer offered by ${provider}; switched to ${next.model}`);
-        modelChoices[provider][kind] = { model: next.model, byUser: next.byUser };
+        modelChoices[provider][kind] = { model: next.model, byUser: next.byUser, ...(next.byUser && next.fromEnv ? { fromEnv: true } : {}) };
       }
       try {
         ensureDataDir();
@@ -8713,9 +8713,10 @@ async function applyLoadedState(st: PersistedState | null) {
     for (const provider of AI_PROVIDERS) {
       for (const kind of MODEL_KINDS) {
         const saved = st.modelChoices[provider]?.[kind];
-        // A model pinned in the environment wins over a saved one.
+        // A model pinned in the environment wins over a saved one, and a saved pin whose
+        // env variable is gone goes back to the automatic choice.
         if (typeof saved?.model === 'string' && saved.model && !envModel(provider, kind)) {
-          modelChoices[provider][kind] = { model: saved.model.slice(0, 160), byUser: saved.byUser === true };
+          modelChoices[provider][kind] = { model: saved.model.slice(0, 160), byUser: saved.byUser === true && saved.fromEnv !== true };
         }
       }
     }
