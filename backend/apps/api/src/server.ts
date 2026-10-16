@@ -17,6 +17,7 @@ import {
   buildAiRatingPrompt,
   buildBriefing,
   buildDigestPrompt,
+  LITERAL_FACTS_RULE,
   buildStorylinePrompt,
   createBriefingStore,
   parseAiRatings,
@@ -5213,7 +5214,7 @@ function generateDailyBriefingPayload(
 }
 
 function summaryInstruction(lang: SummaryLang): string {
-  const quality = 'Use the context/article text, not the headline alone. Add one concrete detail that is NOT already in the headline. If no extra factual detail is available, return exactly NO_SUMMARY.';
+  const quality = `Use the context/article text, not the headline alone. Add one concrete detail that is NOT already in the headline. If no extra factual detail is available, return exactly NO_SUMMARY. ${LITERAL_FACTS_RULE}`;
   if (lang === 'bg') return `${quality} Write ONE short sentence in Bulgarian (max 22 words). Do NOT include English text. Do NOT use "/" separators.`;
   if (lang === 'en') return `${quality} Write ONE short sentence in English (max 22 words). Do NOT include Bulgarian text. Do NOT use "/" separators.`;
   return `${quality} Write TWO short sentences: first Bulgarian (max 18 words), then English (max 18 words). Separate with " / ".`;
@@ -5231,7 +5232,7 @@ function enforceSummaryLanguage(summaryRaw: string, lang: SummaryLang): string {
 }
 
 function summaryInstructionWithoutTranslation(title: string): string {
-  const quality = 'Use the context/article text, not the headline alone. Add one concrete detail that is NOT already in the headline. If no extra factual detail is available, return exactly NO_SUMMARY.';
+  const quality = `Use the context/article text, not the headline alone. Add one concrete detail that is NOT already in the headline. If no extra factual detail is available, return exactly NO_SUMMARY. ${LITERAL_FACTS_RULE}`;
   if (looksBulgarianTitle(title)) {
     return `${quality} Write ONE short sentence in Bulgarian (max 22 words). Do not translate.`;
   }
@@ -9837,6 +9838,10 @@ function briefingLocalTerms(): string[] {
 
 // Briefings are written on request and always use AI when a provider key is set, even with
 // the widget's AI toggle off: the toggle is about the background work on every story.
+// Briefings run on the research model (gpt-4.1-mini by default), not the ask model: the
+// smallest models took headline figures of speech literally and lumped unrelated stories.
+// They are written only on request, so the stronger model costs little.
+
 /** The AI prompts and the page labels use this one language, so the page never mixes them. */
 function briefingLanguage(): 'en' | 'bg' {
   return summaryLang === 'en' ? 'en' : 'bg';
@@ -9851,7 +9856,7 @@ async function rateBriefingStoriesWithAi(candidates: AiRatingCandidate[], feedUr
   if (!missing.length) return cached;
   const text = await withTimeout(
     generateAiText(
-      'ask',
+      'research',
       buildAiRatingPrompt(missing, briefingLanguage(), localRegion),
       Math.max(800, Math.min(9000, 300 + missing.length * 320)),
       0,
@@ -9876,7 +9881,7 @@ async function rateBriefingStoriesWithAi(candidates: AiRatingCandidate[], feedUr
 async function groupBriefingStorylinesWithAi(items: GroupingItem[]): Promise<StoryGrouping> {
   const text = await withTimeout(
     generateAiText(
-      'ask',
+      'research',
       buildStorylinePrompt(items, briefingLanguage()),
       Math.max(800, Math.min(5000, 300 + items.length * 60)),
       0,
@@ -9892,7 +9897,7 @@ async function groupBriefingStorylinesWithAi(items: GroupingItem[]): Promise<Sto
 
 async function writeBriefingDigestWithAi(items: DigestItem[]): Promise<DigestBullet[]> {
   const text = await withTimeout(
-    generateAiText('ask', buildDigestPrompt(items, briefingLanguage(), localRegion), 1500, 0, 'Briefing summary', undefined, true),
+    generateAiText('research', buildDigestPrompt(items, briefingLanguage(), localRegion), 1500, 0, 'Briefing summary', undefined, true),
     60_000,
     'Briefing summary'
   );

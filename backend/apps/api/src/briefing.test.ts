@@ -397,3 +397,13 @@ describe('language', () => {
     expect(briefing.html).not.toContain('How stories are rated');
   });
 });
+
+describe('prompts', () => {
+  it('tell the AI not to take a headline figure of speech literally', async () => {
+    const { buildAiRatingPrompt, buildStorylinePrompt, buildDigestPrompt, LITERAL_FACTS_RULE } = await import('./briefing.js');
+    expect(LITERAL_FACTS_RULE).toContain('figures of speech');
+    expect(buildAiRatingPrompt([], 'bg', 'България')).toContain(LITERAL_FACTS_RULE);
+    expect(buildStorylinePrompt([], 'bg')).toContain(LITERAL_FACTS_RULE);
+    expect(buildDigestPrompt([], 'bg', 'България')).toContain(LITERAL_FACTS_RULE);
+  });
+});

@@ -543,12 +543,25 @@ export function clusterStories(stories: BriefingStory[], loose = true): Array<{ 
 
 // ---- AI rating ----
 
+/**
+ * Headlines speak in figures of speech ("Черно море удари българската реколта"); taken
+ * literally they turn a sea into the one blocking grain exports. Every prompt that writes
+ * text for the reader carries this rule.
+ */
+export const LITERAL_FACTS_RULE = [
+  'Say who or what actually does each thing. Headlines use figures of speech: a sea, a market, a city or a country name',
+  'often stands for people, ships, a government or a risk ("the Black Sea hit the harvest" means ships avoid the Black',
+  'Sea, not that the sea acts). Never repeat such a figure as a fact. If the text does not say who or what causes',
+  'something, describe what is known (ships refuse to come to Bulgarian ports) and do not invent or guess a cause.'
+].join(' ');
+
 export function buildAiRatingPrompt(candidates: AiRatingCandidate[], language: 'en' | 'bg', region: string): string {
   return [
     `You are a news editor rating how much each story matters to an ordinary reader in ${region || 'their country'}.`,
     'Use only each headline and summary. Be specific to each story: every explanation must name the concrete fact behind it',
     '(a number, place, person, decision, amount or date). Never write generic phrases such as "significant impact",',
     '"important development", "affects many people" or "relevant to readers".',
+    LITERAL_FACTS_RULE,
     'Score four criteria from 0 (none) to 3 (strong):',
     `- severity: ${CRITERIA_TEXT.severity}. Sports, celebrity and entertainment score 0-1 even with dramatic words like "war" or "attack".`,
     '- scale: 1 one town or group, 2 a whole country, 3 several countries or the world.',
@@ -642,6 +655,7 @@ export function buildStorylinePrompt(items: GroupingItem[], language: 'en' | 'bg
   return [
     'You are a news editor. You are given news items (id, headline, summary). Read what each one is actually about,',
     'who does what, where and when, and then do two things.',
+    LITERAL_FACTS_RULE,
     '1. "duplicates": sets of ids that report the SAME happening: one announcement, statement, decision, incident,',
     '   product reveal or match, covered by different outlets. They are duplicates even when the headlines quote',
     '   different lines of it, use different words, another language or another spelling of a name (Tesla / Тесла,',
@@ -802,6 +816,7 @@ export function buildDigestPrompt(items: DigestItem[], language: 'en' | 'bg', re
     '- Each bullet is one or two plain sentences, at most 40 words: what happened, with the concrete fact (who, what,',
     '  number, place), and what it means for the reader. Do not just repeat the headline. No generic phrases such as',
     '  "significant development" or "affects many people".',
+    `- ${LITERAL_FACTS_RULE} The story summaries below may themselves repeat a headline's figure of speech; do not copy it.`,
     '- Finish with one bullet of kind "interesting" for the most surprising or unusual story not covered above, if any.',
     '- kind: "critical" for bullets about stories rated critical, "leading" for the other important ones, "interesting" for the last.',
     '- ids: the ids of the stories the bullet is about.',
