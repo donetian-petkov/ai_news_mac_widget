@@ -9846,8 +9846,9 @@ function briefingLocalTerms(): string[] {
 
 // Briefings are written on request and always use AI when a provider key is set, even with
 // the widget's AI toggle off: the toggle is about the background work on every story.
-// Briefings run on the ask model, the newest cheap one (about a cent per briefing); pick a
-// stronger ask model in the settings for sharper grouping and summaries.
+// Briefings run on the research model: by default the newest mid-priced one, since the
+// cheapest models take headline figures of speech literally. An instance that wants the
+// cheapest model everywhere picks it as its research model in the settings.
 
 /** The AI prompts and the page labels use this one language, so the page never mixes them. */
 function briefingLanguage(): 'en' | 'bg' {
@@ -9863,7 +9864,7 @@ async function rateBriefingStoriesWithAi(candidates: AiRatingCandidate[], feedUr
   if (!missing.length) return cached;
   const text = await withTimeout(
     generateAiText(
-      'ask',
+      'research',
       buildAiRatingPrompt(missing, briefingLanguage(), localRegion),
       Math.max(800, Math.min(9000, 300 + missing.length * 320)),
       0,
@@ -9888,7 +9889,7 @@ async function rateBriefingStoriesWithAi(candidates: AiRatingCandidate[], feedUr
 async function groupBriefingStorylinesWithAi(items: GroupingItem[]): Promise<StoryGrouping> {
   const text = await withTimeout(
     generateAiText(
-      'ask',
+      'research',
       buildStorylinePrompt(items, briefingLanguage()),
       Math.max(800, Math.min(5000, 300 + items.length * 60)),
       0,
@@ -9904,7 +9905,7 @@ async function groupBriefingStorylinesWithAi(items: GroupingItem[]): Promise<Sto
 
 async function writeBriefingDigestWithAi(items: DigestItem[]): Promise<DigestBullet[]> {
   const text = await withTimeout(
-    generateAiText('ask', buildDigestPrompt(items, briefingLanguage(), localRegion), 1500, 0, 'Briefing summary', undefined, true),
+    generateAiText('research', buildDigestPrompt(items, briefingLanguage(), localRegion), 1500, 0, 'Briefing summary', undefined, true),
     60_000,
     'Briefing summary'
   );
