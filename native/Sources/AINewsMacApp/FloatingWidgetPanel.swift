@@ -825,6 +825,8 @@ private struct FloatingWidgetView: View {
     @State private var loading = false
     @State private var openingBriefing = false
     @State private var showBriefingChoices = false
+    /// Position on the custom-period slider (see `customBriefingHours`).
+    @State private var customBriefingStop = 7.0
     @State private var copiedStoryKey: String?
     @State private var draggedStoryKey: String?
     @State private var layoutMode: FloatingWidgetLayoutMode
@@ -1524,12 +1526,61 @@ private struct FloatingWidgetView: View {
             VStack(alignment: .leading, spacing: 2) {
                 briefingChoice("Hourly briefing", detail: displayCategoryName, systemImage: "clock", period: .hour)
                 briefingChoice("Daily briefing", detail: displayCategoryName, systemImage: "calendar", period: .day)
+                briefingChoice("Weekly briefing", detail: displayCategoryName, systemImage: "calendar.badge.clock", period: .week)
+                briefingChoice("Monthly briefing", detail: displayCategoryName, systemImage: "calendar.circle", period: .month)
+                customBriefingRow
                 Divider().padding(.vertical, 4)
                 briefingChoice("Hourly briefing", detail: "All columns", systemImage: "square.stack", period: nil)
             }
             .padding(8)
-            .frame(width: 240)
+            .frame(width: 280)
         }
+    }
+
+    // Stops for the custom period, from one hour to the 90 days stories are kept.
+    private static let customBriefingHours = [1, 2, 3, 6, 12, 24, 48, 72, 120, 168, 336, 504, 720, 1440, 2160]
+
+    private var customHours: Int {
+        let stops = Self.customBriefingHours
+        return stops[min(stops.count - 1, max(0, Int(customBriefingStop.rounded())))]
+    }
+
+    private static func periodLabel(hours: Int) -> String {
+        if hours < 24 { return hours == 1 ? "Last hour" : "Last \(hours) hours" }
+        let days = hours / 24
+        if days % 30 == 0 { return days == 30 ? "Last month" : "Last \(days / 30) months" }
+        if days % 7 == 0 { return days == 7 ? "Last week" : "Last \(days / 7) weeks" }
+        return days == 1 ? "Last day" : "Last \(days) days"
+    }
+
+    /// Any period from an hour to 90 days: slide to the length, then write it.
+    private var customBriefingRow: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(spacing: 10) {
+                Image(systemName: "slider.horizontal.3")
+                    .frame(width: 18)
+                VStack(alignment: .leading, spacing: 1) {
+                    Text("Custom period")
+                    Text("\(Self.periodLabel(hours: customHours)) · \(displayCategoryName)")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
+                Spacer(minLength: 0)
+                Button("Write") {
+                    showBriefingChoices = false
+                    let hours = customHours
+                    Task { await openBriefing(.custom, hours: hours) }
+                }
+                .controlSize(.small)
+            }
+            Slider(value: $customBriefingStop, in: 0...Double(Self.customBriefingHours.count - 1), step: 1)
+                .controlSize(.small)
+                .padding(.leading, 28)
+                .help("Length of the period, from 1 hour to 90 days")
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 6)
     }
 
     private func briefingChoice(_ title: String, detail: String, systemImage: String, period: APIClient.BriefingPeriod?) -> some View {
@@ -1559,7 +1610,7 @@ private struct FloatingWidgetView: View {
 
     /// Writes a briefing now for this widget's feeds (or an hourly one for every column when
     /// `period` is nil) and opens it in the browser.
-    private func openBriefing(_ period: APIClient.BriefingPeriod?) async {
+    private func openBriefing(_ period: APIClient.BriefingPeriod?, hours: Int? = nil) async {
         guard let api = try? state.authorizedAPIClient() else { return }
         openingBriefing = true
         defer { openingBriefing = false }
@@ -1571,6 +1622,7 @@ private struct FloatingWidgetView: View {
                 }
                 briefing = try await api.generateBriefing(
                     period: period,
+                    hours: hours,
                     feedUrls: feedUrls,
                     onlyMatches: isFiltered,
                     label: displayCategoryName

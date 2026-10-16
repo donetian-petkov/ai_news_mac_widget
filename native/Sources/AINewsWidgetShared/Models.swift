@@ -1026,7 +1026,7 @@ public struct ProviderKeyStatusResponse: Codable, Sendable {
 public struct Briefing: Codable, Sendable, Identifiable {
     public var id: String
     public var title: String
-    /// "hour" or "day".
+    /// "hour", "day", "week", "month" or "custom".
     public var period: String
     public var scope: String
     public var windowStartMs: Double

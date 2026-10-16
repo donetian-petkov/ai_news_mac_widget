@@ -389,13 +389,18 @@ public struct APIClient: Sendable {
     public enum BriefingPeriod: String, Sendable {
         case hour
         case day
+        case week
+        case month
+        /// Any length from 1 hour to 90 days, given as `hours`.
+        case custom
     }
 
-    /// Writes a briefing for the hour or day that ends now. Empty `feedUrls` means all columns;
+    /// Writes a briefing for the period that ends now. Empty `feedUrls` means all columns;
     /// `onlyMatches` limits it to stories matching keywords and tracked topics.
-    public func generateBriefing(period: BriefingPeriod, feedUrls: [String], onlyMatches: Bool, label: String) async throws -> Briefing {
+    public func generateBriefing(period: BriefingPeriod, hours: Int? = nil, feedUrls: [String], onlyMatches: Bool, label: String) async throws -> Briefing {
         struct Body: Codable {
             var period: String
+            var hours: Int?
             var feedUrls: [String]
             var onlyMatches: Bool
             var label: String
@@ -403,9 +408,9 @@ public struct APIClient: Sendable {
         let response: BriefingResponse = try await send(
             path: "/api/briefings/generate",
             method: "POST",
-            body: Body(period: period.rawValue, feedUrls: feedUrls, onlyMatches: onlyMatches, label: label),
-            // The backend may ask the AI to rate the stories first.
-            timeout: 120
+            body: Body(period: period.rawValue, hours: period == .custom ? hours : nil, feedUrls: feedUrls, onlyMatches: onlyMatches, label: label),
+            // The backend asks the AI to rate the stories first; a month has many.
+            timeout: 240
         )
         guard let item = response.item else { throw APIClientError.invalidResponse }
         return item

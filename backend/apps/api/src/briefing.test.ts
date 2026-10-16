@@ -465,3 +465,28 @@ describe('resolutions', () => {
     expect(data.text.roleStart).toBe('Начало');
   });
 });
+
+describe('periods', () => {
+  it('covers a week, a month or a custom number of hours, and grows the page with the period', async () => {
+    const { rollingWindow, briefingSize, briefingTitle, MAX_CUSTOM_HOURS } = await import('./briefing.js');
+    const now = at(14);
+    const hoursOf = (w: { startMs: number; endMs: number }) => (w.endMs - w.startMs) / 3_600_000;
+    expect(hoursOf(rollingWindow('week', now))).toBe(168);
+    expect(hoursOf(rollingWindow('month', now))).toBe(720);
+    expect(hoursOf(rollingWindow('custom', now, 72))).toBe(72);
+    expect(hoursOf(rollingWindow('custom', now, 99_999))).toBe(MAX_CUSTOM_HOURS);
+    expect(briefingSize(rollingWindow('hour', now))).toEqual({ limit: 12, pageSize: 36 });
+    expect(briefingSize(rollingWindow('week', now))).toEqual({ limit: 25, pageSize: 70 });
+    expect(briefingSize(rollingWindow('month', now))).toEqual({ limit: 30, pageSize: 80 });
+    const week = rollingWindow('week', now);
+    expect(briefingTitle('week', 'Всички колони', week.startMs, week.endMs, 'bg')).toMatch(/^Седмичен бюлетин · Всички колони · .+ – .+$/);
+  });
+
+  it('shows the date with each story time in a briefing longer than a day', async () => {
+    const window = { startMs: at(14) - 7 * 86_400_000, endMs: at(14) };
+    const briefing = await buildBriefing([story({ title: 'Old story', publishedMs: at(14) - 3 * 86_400_000 })], { period: 'week', scope: 'All', window });
+    const time = pageData(briefing.html).stories[0].time;
+    expect(time).toMatch(/\d{1,2}:\d{2}/);
+    expect(time.length).toBeGreaterThan(5);
+  });
+});

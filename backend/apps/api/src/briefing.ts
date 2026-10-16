@@ -5,7 +5,12 @@ import { cleanSummary } from './summaryText';
 
 const HOUR_MS = 60 * 60 * 1000;
 
-export type BriefingPeriod = 'hour' | 'day';
+export type BriefingPeriod = 'hour' | 'day' | 'week' | 'month' | 'custom';
+
+/** Hours each fixed period covers; "custom" brings its own. */
+export const PERIOD_HOURS: Record<Exclude<BriefingPeriod, 'custom'>, number> = { hour: 1, day: 24, week: 168, month: 720 };
+/** Stories are kept for 90 days, so a custom period goes back at most that far. */
+export const MAX_CUSTOM_HOURS = 90 * 24;
 
 export const IMPACT_DIMENSIONS = [
   'security', 'politics', 'economy', 'health', 'environment', 'society', 'technology', 'culture', 'sports', 'other'
@@ -165,7 +170,7 @@ const UI = {
     yourRegion: 'your region',
     mentions: (parts: string[]) => `Mentions ${parts.join(' and ')}`,
     noneMentioned: (count: number, region: string) => `None of your ${count} topics${region ? ` or ${region}` : ''} is mentioned`,
-    title: (period: BriefingPeriod) => (period === 'day' ? 'Daily briefing' : 'Hourly briefing'),
+    title: (period: BriefingPeriod) => ({ hour: 'Hourly briefing', day: 'Daily briefing', week: 'Weekly briefing', month: 'Monthly briefing', custom: 'Briefing' })[period],
     countLine: (count: string, when: string) => `${count} stories · generated ${when}`,
     footer: (ai: boolean) => `<strong>How stories are rated.</strong> Each story gets 0–3 on six criteria, each with the fact behind it.
     The sliders set how much each criterion counts compared with the others (they are remembered for every briefing).
@@ -255,7 +260,7 @@ const UI = {
     yourRegion: 'вашия регион',
     mentions: (parts: string[]) => `Споменава ${parts.join(' и ')}`,
     noneMentioned: (count: number, region: string) => `Не се споменава нито една от вашите ${count} теми${region ? ` или ${region}` : ''}`,
-    title: (period: BriefingPeriod) => (period === 'day' ? 'Дневен бюлетин' : 'Часов бюлетин'),
+    title: (period: BriefingPeriod) => ({ hour: 'Часов бюлетин', day: 'Дневен бюлетин', week: 'Седмичен бюлетин', month: 'Месечен бюлетин', custom: 'Бюлетин' })[period],
     countLine: (count: string, when: string) => `${count} новини · създаден ${when}`,
     footer: (ai: boolean) => `<strong>Как се оценяват новините.</strong> Всяка новина получава 0–3 по шест критерия, всеки с факта зад оценката.
     Плъзгачите задават колко тежи всеки критерий спрямо другите (запомнят се за всеки бюлетин).
@@ -997,9 +1002,29 @@ export function pickVaried(rated: RatedStory[], limit: number): RatedStory[] {
 
 // ---- windows and titles ----
 
-/** The hour or day that ends now. */
-export function rollingWindow(period: BriefingPeriod, nowMs: number): { startMs: number; endMs: number } {
-  return { startMs: nowMs - (period === 'day' ? 24 * HOUR_MS : HOUR_MS), endMs: nowMs };
+/** The period that ends now: an hour, day, week or month, or `customHours` for "custom". */
+export function rollingWindow(period: BriefingPeriod, nowMs: number, customHours?: number): { startMs: number; endMs: number } {
+  const hours = period === 'custom'
+    ? Math.max(1, Math.min(MAX_CUSTOM_HOURS, Math.round(Number(customHours) || 24)))
+    : PERIOD_HOURS[period];
+  return { startMs: nowMs - hours * HOUR_MS, endMs: nowMs };
+}
+
+/**
+ * How many stories a briefing shows and keeps for the sliders, growing with its length:
+ * an hour shows 12 of 36, a day 20 of 60, a week 25 of 70, a month or more 30 of 80.
+ */
+export function briefingSize(window: { startMs: number; endMs: number }): { limit: number; pageSize: number } {
+  const hours = (window.endMs - window.startMs) / HOUR_MS;
+  if (hours <= 1.5) return { limit: 12, pageSize: 36 };
+  if (hours <= 36) return { limit: 20, pageSize: 60 };
+  if (hours <= 24 * 8) return { limit: 25, pageSize: 70 };
+  return { limit: 30, pageSize: 80 };
+}
+
+/** Longer than a day: story times need their date. */
+function spansDays(window: { startMs: number; endMs: number }): boolean {
+  return window.endMs - window.startMs > 26 * HOUR_MS;
 }
 
 function formatTime(ms: number, language: BriefingLanguage = 'en'): string {
@@ -1013,9 +1038,12 @@ function formatDay(ms: number, language: BriefingLanguage = 'en'): string {
 export function briefingTitle(period: BriefingPeriod, scope: string, startMs: number, endMs: number, language: BriefingLanguage = 'en'): string {
   const day = (ms: number) => formatDay(ms, language);
   const time = (ms: number) => formatTime(ms, language);
-  const when = period === 'day'
-    ? `${day(startMs)} ${time(startMs)} – ${day(endMs)} ${time(endMs)}`
-    : `${day(startMs)}, ${time(startMs)}–${time(endMs)}`;
+  const hours = (endMs - startMs) / HOUR_MS;
+  const when = hours > 72
+    ? `${day(startMs)} – ${day(endMs)}`
+    : hours > 1.5
+      ? `${day(startMs)} ${time(startMs)} – ${day(endMs)} ${time(endMs)}`
+      : `${day(startMs)}, ${time(startMs)}–${time(endMs)}`;
   return `${UI[language].title(period)} · ${scope} · ${when}`;
 }
 
@@ -1486,13 +1514,14 @@ function shortSource(source: string): string {
   return String(source || '').split(/\s+[–—|-]\s+/)[0].trim();
 }
 
-function pageStory(entry: RatedStory, language: BriefingLanguage) {
+function pageStory(entry: RatedStory, language: BriefingLanguage, withDate = false) {
   const { story, rating } = entry;
+  const when = (ms: number) => (withDate ? `${formatDay(ms, language)} ${formatTime(ms, language)}` : formatTime(ms, language));
   return {
     title: story.title,
     link: safeUrl(story.link),
     source: shortSource(story.source || ''),
-    time: formatTime(story.publishedMs, language),
+    time: when(story.publishedMs),
     publishedMs: story.publishedMs,
     // Older stored summaries may predate the clean-up at storage time.
     summary: cleanSummary(story.summary || ''),
@@ -1510,13 +1539,13 @@ function pageStory(entry: RatedStory, language: BriefingLanguage) {
     resolution: entry.resolution || null,
     related: entry.related
       .sort((a, b) => a.publishedMs - b.publishedMs)
-      .map(other => ({ title: other.title, source: shortSource(other.source || ''), time: formatTime(other.publishedMs, language), link: safeUrl(other.link) }))
+      .map(other => ({ title: other.title, source: shortSource(other.source || ''), time: when(other.publishedMs), link: safeUrl(other.link) }))
   };
 }
 
 export function renderBriefingHtml(
   title: string, stories: RatedStory[], limit: number, storyCount: number, generatedAtMs: number, aiRan = false, digest: DigestBullet[] = [],
-  language: BriefingLanguage = 'en'
+  language: BriefingLanguage = 'en', withDates = false
 ): string {
   const t = UI[language];
   const ratedByAi = stories.some(entry => entry.rating.ratedBy === 'ai');
@@ -1526,7 +1555,7 @@ export function renderBriefingHtml(
     for (const other of [entry.story, ...entry.related]) if (!indexById.has(other.id)) indexById.set(other.id, index);
   });
   const data = {
-    stories: stories.map(entry => pageStory(entry, language)),
+    stories: stories.map(entry => pageStory(entry, language, withDates)),
     digest: digest.map(bullet => ({
       kind: bullet.kind,
       text: bullet.text,
@@ -1773,23 +1802,34 @@ export type BriefingRecord = {
 
 export type Briefing = BriefingRecord & { html: string };
 
+/** Stories past this many are ranked by the keyword rules alone before anything else. */
+const PRE_RANK_LIMIT = 2500;
+
 export async function buildBriefing(stories: BriefingStory[], options: BriefingOptions, scheduled = false): Promise<Briefing> {
   const { period, scope, window } = options;
   const generatedAtMs = options.generatedAtMs ?? Date.now();
-  const limit = period === 'day' ? 20 : 12;
+  const { limit, pageSize } = briefingSize(window);
   const inWindow = stories.filter(story => story.publishedMs >= window.startMs && story.publishedMs < window.endMs);
+  // A month holds thousands of stories. The keyword rules rank them one by one first and
+  // only the strongest go on to merging and the AI, which compare stories with each other.
+  const candidates = inWindow.length > PRE_RANK_LIMIT
+    ? inWindow
+      .map(story => ({ story, score: scoreOf(ruleRating(story, [], window, { localTerms: options.localTerms, trackedTerms: options.trackedTerms, region: options.region }).scores) }))
+      .sort((a, b) => b.score - a.score || b.story.publishedMs - a.story.publishedMs)
+      .slice(0, PRE_RANK_LIMIT)
+      .map(entry => entry.story)
+    : inWindow;
   const language = options.language || 'en';
   const context = { localTerms: options.localTerms, trackedTerms: options.trackedTerms, region: options.region, language };
   // With the AI grouping the briefing, only the same link or title is merged up front; word
   // matches go to it as hints so it decides from what the stories say.
-  let rated: RatedStory[] = clusterStories(inWindow, true, !!options.groupWithAi).map(({ story, related }) => {
+  let rated: RatedStory[] = clusterStories(candidates, true, !!options.groupWithAi).map(({ story, related }) => {
     const rating = ruleRating(story, related, window, context);
     const score = scoreOf(rating.scores);
     return { story, related, rating, score, level: levelOf(score) };
   });
 
-  // The page holds more than it shows, so moving the sliders can bring other stories up.
-  const pageSize = period === 'day' ? 60 : 36;
+  // The page holds more than it shows (pageSize), so moving the sliders can bring other stories up.
   let aiRan = false;
   if (options.rateWithAi && rated.length) {
     // Every story that can reach the page goes to the AI (a few spare, since merging the
@@ -1887,7 +1927,7 @@ export async function buildBriefing(stories: BriefingStory[], options: BriefingO
     windowEndMs: window.endMs,
     generatedAtMs,
     itemCount: picked.length,
-    html: renderBriefingHtml(title, merged, limit, inWindow.length, generatedAtMs, aiRan, digest, language)
+    html: renderBriefingHtml(title, merged, limit, inWindow.length, generatedAtMs, aiRan, digest, language, spansDays(window))
   };
 }
 

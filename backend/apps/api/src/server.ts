@@ -26,6 +26,7 @@ import {
   parseDigest,
   parseStorylines,
   rollingWindow,
+  MAX_CUSTOM_HOURS,
   type AiRatingCandidate,
   type AiStoryRating,
   type BriefingPeriod,
@@ -9972,11 +9973,35 @@ async function writeBriefingDigestWithAi(items: DigestItem[]): Promise<DigestBul
 
 type BriefingScope = { feedUrls?: string[]; onlyMatches?: boolean; label?: string };
 
+// The newest stories live in memory; a week, a month or a long custom period reaches back
+// into the stored archive (kept 90 days), read here for that window only. A month is about
+// 17,000 stories, so the limit is set to hold a whole 90 days.
+const BRIEFING_ARCHIVE_LIMIT = 60_000;
+
+async function briefingSourceItems(window: { startMs: number; endMs: number }, feedUrls: Set<string>): Promise<NewsInternal[]> {
+  const inMemory = recent.filter(item => item.publishedMs >= window.startMs && item.publishedMs < window.endMs);
+  const oldestInMemory = recent.reduce((oldest, item) => Math.min(oldest, item.publishedMs || Infinity), Infinity);
+  if (window.startMs >= oldestInMemory) return inMemory;
+  try {
+    const rows = await prisma.newsItemRecord.findMany({
+      where: { publishedMs: { gte: window.startMs, lt: window.endMs }, feedUrl: { in: Array.from(feedUrls) } },
+      orderBy: { publishedMs: 'desc' },
+      take: BRIEFING_ARCHIVE_LIMIT
+    });
+    const seenKeys = new Set(inMemory.map(item => newsRecordKey(item.feedUrl, item.id)));
+    const older = rows.map(newsFromPersistedRow).filter(item => !seenKeys.has(newsRecordKey(item.feedUrl, item.id)));
+    return [...inMemory, ...older];
+  } catch (error) {
+    console.warn('Could not read older stories for the briefing:', (error as Error).message);
+    return inMemory;
+  }
+}
+
 async function generateBriefing(period: BriefingPeriod, window: { startMs: number; endMs: number }, scope: BriefingScope) {
   const feeds = currentFeeds();
   const requested = new Set((scope.feedUrls || []).filter(url => url !== FILTERED_FEED_URL));
   const feedUrls = new Set(feeds.map(feed => feed.url).filter(url => !requested.size || requested.has(url)));
-  const stories = recent
+  const stories = (await briefingSourceItems(window, feedUrls))
     .filter(item => feedUrls.has(item.feedUrl) && !hiddenIds.has(item.id) && (!scope.onlyMatches || item.isMatch))
     .map(item => ({
       id: item.id,
@@ -10037,7 +10062,9 @@ app.get('/api/briefings/latest', async (req, res) => {
 });
 
 const generateBriefingSchema = z.object({
-  period: z.union([z.literal('hour'), z.literal('day')]).default('hour'),
+  period: z.union([z.literal('hour'), z.literal('day'), z.literal('week'), z.literal('month'), z.literal('custom')]).default('hour'),
+  /** Length of a "custom" period, 1 hour to 90 days. */
+  hours: z.number().int().min(1).max(MAX_CUSTOM_HOURS).optional(),
   feedUrls: z.array(z.string().trim().min(1).max(400)).max(80).optional(),
   onlyMatches: z.boolean().optional(),
   label: z.string().trim().max(80).optional()
@@ -10052,9 +10079,9 @@ app.post('/api/briefings/generate', async (req, res) => {
     res.status(400).json({ error: 'Invalid briefing request.' });
     return;
   }
-  const { period, ...scope } = parsed.data;
+  const { period, hours, ...scope } = parsed.data;
   try {
-    const briefing = await generateBriefing(period, rollingWindow(period, Date.now()), scope);
+    const briefing = await generateBriefing(period, rollingWindow(period, Date.now(), hours), scope);
     briefings.save(briefing);
     const { html: _html, ...record } = briefing;
     res.status(201).json({ ok: true, item: briefingResponse(record) });
