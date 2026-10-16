@@ -107,6 +107,21 @@ describe('clusterStories', () => {
     const ukraine = clusters.find(cluster => cluster.story.id === 'aj');
     expect(ukraine?.related.map(s => s.id)).toEqual(['nyt']);
   });
+
+  it('merges reports that spell names in another script or quote other lines of one statement', () => {
+    const clusters = clusterStories([
+      story({ id: 'tesla-a', title: 'Първата летяща кола е тук: Tesla представи Roadster (ВИДЕО)', link: 'a' }),
+      story({ id: 'tesla-b', title: '"Тесла" демонстрира летяща версия на модела си "Роудстър"', link: 'b' }),
+      story({ id: 'pm-a', title: 'Костов, Борисов, Петков и Денков призоваха Радев да защити националната сигурност', link: 'c' }),
+      story({ id: 'pm-b', title: 'Костов, Борисов и Петков: Мирът не се гарантира с надеждата, че Путин ще ни пощади', link: 'd' }),
+      story({ id: 'other', title: 'Радев: Борисов носи отговорност за бюджета', link: 'e' }),
+      story({ id: 'sport', title: 'Стоичков избухна след драмата на ЦСКА. Посочи виновника', link: 'f' })
+    ]);
+    const groups = clusters.map(cluster => [cluster.story.id, ...cluster.related.map(s => s.id)].sort());
+    expect(groups).toHaveLength(4);
+    expect(groups).toContainEqual(['tesla-a', 'tesla-b']);
+    expect(groups).toContainEqual(['pm-a', 'pm-b']);
+  });
 });
 
 const entry = (id: string, score: number, dimension: RatedStory['rating']['dimension']): RatedStory => ({
@@ -155,6 +170,17 @@ describe('applyGrouping', () => {
     expect(grouped[0].related.map(s => s.id)).toEqual(['nyt']);
     expect(grouped.map(g => g.storyline)).toEqual([undefined, 'Black Sea security', 'Black Sea security', undefined]);
     expect(parseStorylines('nope').duplicates).toEqual([]);
+  });
+
+  it('keeps a sports story out of a storyline about something else', () => {
+    const groups = parseStorylines(JSON.stringify({
+      storylines: [{ label: 'Ukraine war', ids: ['starlink', 'ships', 'football'] }, { label: 'CSKA', ids: ['cska', 'coach'] }]
+    }));
+    const grouped = applyGrouping([
+      entry('starlink', 60, 'politics'), entry('ships', 46, 'society'), entry('football', 43, 'sports'),
+      entry('cska', 30, 'sports'), entry('coach', 28, 'sports')
+    ], groups);
+    expect(grouped.map(g => g.storyline)).toEqual(['Ukraine war', 'Ukraine war', undefined, 'CSKA', 'CSKA']);
   });
 
   it('ignores a duplicate list so long it must be a whole topic, not one happening', () => {

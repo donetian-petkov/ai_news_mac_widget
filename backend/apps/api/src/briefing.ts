@@ -300,30 +300,65 @@ export function ruleRating(
 
 // ---- grouping the same event from several sources ----
 
-function stemSet(text: string): Set<string> {
-  return new Set(words(text).filter(word => word.length >= 4).map(word => word.slice(0, 5)));
+const LATIN_OF: Record<string, string> = {
+  а: 'a', б: 'b', в: 'v', г: 'g', д: 'd', е: 'e', ж: 'zh', з: 'z', и: 'i', й: 'y', к: 'k', л: 'l', м: 'm', н: 'n', о: 'o',
+  п: 'p', р: 'r', с: 's', т: 't', у: 'u', ф: 'f', х: 'h', ц: 'ts', ч: 'ch', ш: 'sh', щ: 'sht', ъ: 'a', ь: 'y', ю: 'yu', я: 'ya'
+};
+
+/**
+ * A key that survives spelling and script: Latin letters, vowels and doubled letters
+ * dropped, first four consonants. "Тесла" and "Tesla" both give "tsl", "Роудстър" and
+ * "Roadster" both "rdst", "strikes" and "strike" both "strk".
+ */
+function wordKey(word: string): string {
+  const latin = Array.from(word.toLowerCase(), letter => LATIN_OF[letter] ?? letter).join('');
+  return latin.replace(/[aeiouy]/g, '').replace(/(.)\1+/g, '$1').slice(0, 4);
 }
 
-/** Groups stories whose titles share most of their words; the most informative one leads. */
+/**
+ * The title's word keys, and separately the names in it: capitalised words after the
+ * first. A title in Title Case has no usable names, since every word is capitalised.
+ */
+function titleKeys(title: string): { keys: Set<string>; names: Set<string> } {
+  const tokens = String(title || '').split(/[^\p{L}\p{N}]+/u).filter(Boolean);
+  const capitalised = (token: string) => /^\p{Lu}/u.test(token);
+  const titleCase = tokens.filter(token => token.length > 1 && capitalised(token)).length > tokens.length / 2;
+  const keys = new Set<string>();
+  const names = new Set<string>();
+  tokens.forEach((token, index) => {
+    const key = wordKey(token);
+    if (key.length < 3) return;
+    const name = !titleCase && index > 0 && capitalised(token);
+    if (token.length >= 4 || name) keys.add(key);
+    if (name) names.add(key);
+  });
+  return { keys, names };
+}
+
+/** Groups stories whose titles report the same event; the most informative one leads. */
 export function clusterStories(stories: BriefingStory[]): Array<{ story: BriefingStory; related: BriefingStory[] }> {
-  const clusters: Array<{ members: BriefingStory[]; stems: Set<string> }> = [];
+  const clusters: Array<{ members: BriefingStory[]; keys: Set<string>; names: Set<string> }> = [];
   const seenLinks = new Set<string>();
+  const countShared = (a: Set<string>, b: Set<string>) => Array.from(a).filter(key => b.has(key)).length;
   for (const story of [...stories].sort((a, b) => a.publishedMs - b.publishedMs)) {
     const key = (story.link || story.title).trim().toLowerCase();
     if (!key || seenLinks.has(key)) continue;
     seenLinks.add(key);
-    const stems = stemSet(story.title);
+    const { keys, names } = titleKeys(story.title);
     const match = clusters.find(cluster => {
-      let shared = 0;
-      stems.forEach(stem => { if (cluster.stems.has(stem)) shared += 1; });
-      const union = new Set([...stems, ...cluster.stems]).size || 1;
-      return shared >= 2 && shared / union >= 0.35;
+      const shared = countShared(keys, cluster.keys);
+      const union = new Set([...keys, ...cluster.keys]).size || 1;
+      // Most of the words in common, or the same two people or things named plus one more
+      // word: "Костов, Борисов, Петков и Денков призоваха…" and "Костов, Борисов и Петков: Мирът…"
+      // quote different lines of one joint statement.
+      return (shared >= 2 && shared / union >= 0.35) || (countShared(names, cluster.names) >= 2 && shared >= 3);
     });
     if (match) {
       match.members.push(story);
-      stems.forEach(stem => match.stems.add(stem));
+      keys.forEach(item => match.keys.add(item));
+      names.forEach(item => match.names.add(item));
     } else {
-      clusters.push({ members: [story], stems });
+      clusters.push({ members: [story], keys, names });
     }
   }
   const informative = (story: BriefingStory) => (story.summary ? 2 : 0) + (story.coverUrl ? 1 : 0);
@@ -422,11 +457,15 @@ export type StoryGrouping = {
 export function buildStorylinePrompt(items: GroupingItem[], language: 'en' | 'bg'): string {
   return [
     'You are given news items (id, headline, summary). Do two things.',
-    '1. "duplicates": lists of ids that report the SAME happening: the same actors doing the same thing at the same',
-    '   place and time, possibly worded differently or in another language. Two different strikes, two different',
-    '   statements, or two events in the same war are NOT duplicates. When unsure, do not list them. Most items have no duplicate.',
+    '1. "duplicates": lists of ids that report the SAME happening: one announcement, statement, decision, incident,',
+    '   product reveal or match, covered by different outlets. They are duplicates even when the headlines quote',
+    '   different lines of it, use different words, another language or another spelling of a name (Tesla / Тесла,',
+    '   Roadster / Роудстър). A joint statement by the same people reported twice is one happening. Two different',
+    '   strikes, statements by one person on different subjects, or two events in the same war are NOT duplicates.',
     '2. "storylines": larger ongoing situations that at least two DIFFERENT happenings belong to, for example a drone',
     '   strike on a ship, a naval command offer and a moratorium proposal that are all about Black Sea security.',
+    '   Put an item in a storyline only if its subject IS that situation. A sports, celebrity or entertainment item',
+    '   never joins a war, politics or economy storyline, even when it uses words like "war", "attack" or "drama".',
     `   Give each a 2-5 word label in ${language === 'bg' ? 'Bulgarian' : 'English'} and the ids that belong to it. An item can be in at most one storyline.`,
     'Return strict JSON only: {"duplicates":[["id","id"]],"storylines":[{"label":"...","ids":["id","id"]}]}',
     `Items: ${JSON.stringify(items)}`
@@ -482,14 +521,27 @@ export function applyGrouping(rated: RatedStory[], grouping: StoryGrouping): Rat
   const kept = rated
     .filter(entry => !absorbed.has(entry))
     .map(entry => (extraRelated.has(entry) ? { ...entry, related: [...entry.related, ...(extraRelated.get(entry) || [])] } : entry));
+  const lineOf = (entry: RatedStory) => topicKey(grouping.storylines.get(entry.story.id) || '');
+  const members = new Map<string, RatedStory[]>();
+  for (const entry of kept) {
+    const key = lineOf(entry);
+    if (key) members.set(key, [...(members.get(key) || []), entry]);
+  }
+  // A sports or entertainment story stays in a storyline only beside another of its kind,
+  // so a football row never sits inside a war storyline because of a dramatic headline.
+  const fits = (entry: RatedStory) => {
+    const { dimension } = entry.rating;
+    if (dimension !== 'sports' && dimension !== 'culture') return true;
+    return (members.get(lineOf(entry)) || []).some(other => other !== entry && other.rating.dimension === dimension);
+  };
   const counts = new Map<string, number>();
   for (const entry of kept) {
-    const key = topicKey(grouping.storylines.get(entry.story.id) || '');
-    if (key) counts.set(key, (counts.get(key) || 0) + 1);
+    const key = lineOf(entry);
+    if (key && fits(entry)) counts.set(key, (counts.get(key) || 0) + 1);
   }
   return kept.map(entry => {
     const label = grouping.storylines.get(entry.story.id) || '';
-    return (counts.get(topicKey(label)) || 0) >= 2 ? { ...entry, storyline: label } : entry;
+    return fits(entry) && (counts.get(topicKey(label)) || 0) >= 2 ? { ...entry, storyline: label } : entry;
   });
 }
 
@@ -644,10 +696,10 @@ const PAGE_SCRIPT = String.raw`
   // A unit is one story, or a storyline: several different stories about one ongoing
   // situation, shown together and ranked by their strongest story.
   function rank() {
-    const all = data.stories.map(story => {
+    const all = data.stories.map((story, index) => {
       const raw = scoreOf(story.scores);
       const score = data.aiRan && story.ratedBy === 'rules' ? Math.min(raw, data.uncheckedCap) : raw;
-      return { story, score, level: levelOf(score) };
+      return { story, index, score, level: levelOf(score) };
     }).sort((a, b) => b.score - a.score || b.story.publishedMs - a.story.publishedMs);
     const units = [], byLine = {};
     for (const entry of all) {
@@ -688,6 +740,7 @@ const PAGE_SCRIPT = String.raw`
   function card(entry) {
     const { story, score, level } = entry;
     const article = el('article', 'level-' + level);
+    article.id = 's-' + entry.index;
     if (story.coverUrl) {
       const img = el('img', 'cover');
       img.src = story.coverUrl;
@@ -770,9 +823,45 @@ const PAGE_SCRIPT = String.raw`
     if (unit.entries.length < 2) return card(unit.entries[0]);
     const box = el('div', 'storyline level-' + unit.level);
     const head = el('div', 'storyline-head');
-    head.append(el('span', 'storyline-label', unit.label), el('span', 'storyline-count', unit.entries.length + ' stories'));
+    head.append(
+      el('span', 'storyline-kicker', 'Storyline'),
+      el('span', 'storyline-label', unit.label),
+      el('span', 'storyline-count', unit.entries.length + ' different stories')
+    );
     box.append(head);
     unit.entries.forEach(entry => box.append(card(entry)));
+    return box;
+  }
+
+  // What to read first: every Critical and High story (up to five), topped up to three with
+  // the next strongest, plus the most surprising one if it is not already there. Each line
+  // jumps to its card.
+  function glance(picked) {
+    const entries = picked.flatMap(unit => unit.entries).sort((a, b) => b.score - a.score || b.story.publishedMs - a.story.publishedMs);
+    const lead = entries.filter(e => e.level === 'critical' || e.level === 'high').slice(0, 5);
+    for (const e of entries) {
+      if (lead.length >= 3) break;
+      if (!lead.includes(e)) lead.push(e);
+    }
+    const lines = lead.map(e => ({ entry: e, tag: data.levelLabels[e.level], cls: 'level-' + e.level }));
+    const curious = entries
+      .filter(e => !lead.includes(e) && e.story.scores.interest >= 2)
+      .sort((a, b) => b.story.scores.interest - a.story.scores.interest || b.score - a.score)[0];
+    if (curious) lines.push({ entry: curious, tag: 'Most interesting', cls: 'curious' });
+    if (!lines.length) return null;
+    const box = el('section', 'glance');
+    box.append(el('h2', '', 'At a glance'));
+    const list = el('ul');
+    for (const line of lines) {
+      const { story, index } = line.entry;
+      const li = el('li', line.cls);
+      const jump = el('a', '', story.summary || story.title);
+      jump.href = '#s-' + index;
+      li.append(el('span', 'glance-tag', line.tag), jump);
+      if (story.related.length) li.append(el('span', 'glance-sources', ' · ' + (story.related.length + 1) + ' sources'));
+      list.append(li);
+    }
+    box.append(list);
     return box;
   }
 
@@ -790,6 +879,8 @@ const PAGE_SCRIPT = String.raw`
     if (!data.stories.length) {
       root.append(el('p', 'empty', 'No new stories were published in this period.'));
     } else {
+      const summary = glance(picked);
+      if (summary) root.append(summary);
       const priority = picked.filter(e => e.level === 'critical' || e.level === 'high');
       const others = picked.filter(e => e.level !== 'critical' && e.level !== 'high');
       if (priority.length) root.append(section('Priority', priority));
@@ -1010,8 +1101,23 @@ export function renderBriefingHtml(title: string, stories: RatedStory[], limit: 
   .pts { font-variant-numeric: tabular-nums; color: var(--text); }
   .rated li.zero, .rated li.zero .cname, .rated li.zero .pts { opacity: .6; }
   .rules-tag { font-style: italic; }
-  .storyline { border: 1px solid var(--border); border-radius: 14px; padding: 10px 10px 2px; margin-bottom: 12px; background: var(--chip); }
-  .storyline-head { display: flex; align-items: baseline; gap: 10px; padding: 0 6px 8px; }
+  html { scroll-behavior: smooth; }
+  article { scroll-margin-top: 16px; }
+  article:target { box-shadow: 0 0 0 2px var(--accent); }
+  .glance { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 12px 16px 14px; margin-top: 18px; }
+  .glance h2 { margin: 0 0 6px; }
+  .glance ul { margin: 0; padding-left: 18px; }
+  .glance li { margin: 6px 0; }
+  .glance a { color: var(--text); }
+  .glance-tag { font-size: 12.5px; font-weight: 600; color: var(--routine); margin-right: 8px; }
+  .glance .level-critical .glance-tag { color: var(--critical); }
+  .glance .level-high .glance-tag { color: var(--high); }
+  .glance .level-notable .glance-tag { color: var(--notable); }
+  .glance .curious .glance-tag { color: var(--political); }
+  .glance-sources { font-size: 12.5px; color: var(--muted); }
+  .storyline { border: 1px solid var(--border); border-radius: 14px; padding: 10px 10px 2px; margin: 18px 0; background: var(--chip); }
+  .storyline-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; padding: 0 6px 8px; }
+  .storyline-kicker { font-size: 11px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
   .storyline-label { font-weight: 700; font-size: 15px; }
   .storyline-count { font-size: 12.5px; color: var(--muted); }
   .storyline article { margin-bottom: 8px; }
