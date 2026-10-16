@@ -182,8 +182,8 @@ const UI = {
       : 'Reports with near-identical headlines are merged under one story (open "more reports" to see them).'}
     No single area takes more than about a third of the list.
     ${ai
-      ? 'Severity, scale, urgency, interest and the economic, political, social and security impact are judged by AI; coverage and relevance come from your sources and topics.'
-      : 'AI was off, so keyword rules did the rating and there is no impact write-up.'}`,
+      ? 'Severity, scale, urgency and interest are judged by AI; coverage and relevance come from your sources and topics.'
+      : 'AI was off, so keyword rules did the rating.'}`,
     importance: 'Importance',
     importanceAria: 'Importance of each criterion',
     importanceHint: 'How much each criterion counts. The stories re-rank as you slide.',
@@ -272,8 +272,8 @@ const UI = {
       : 'Съобщения с почти еднакви заглавия се обединяват под една новина (отворете „още източника“, за да ги видите).'}
     Никоя област не заема повече от около една трета от списъка.
     ${ai
-      ? 'Тежестта, обхватът, спешността, интересът и икономическото, политическото, социалното и свързаното със сигурността въздействие се оценяват от AI; отразяването и значимостта идват от вашите източници и теми.'
-      : 'AI беше изключен, затова оценката е по ключови думи и няма описание на въздействието.'}`,
+      ? 'Тежестта, обхватът, спешността и интересът се оценяват от AI; отразяването и значимостта идват от вашите източници и теми.'
+      : 'AI беше изключен, затова оценката е по ключови думи.'}`,
     importance: 'Важност',
     importanceAria: 'Важност на всеки критерий',
     importanceHint: 'Колко тежи всеки критерий. Новините се пренареждат, докато местите плъзгачите.',
@@ -626,15 +626,9 @@ export function buildAiRatingPrompt(candidates: AiRatingCandidate[], language: '
     '  The summary adds details the headline leaves out; read both before deciding what the story is about.',
     'For each criterion add "<criterion>Why": at most 15 words naming the fact, e.g. "29 pupils killed when a school roof fell in Khyber Pakhtunkhwa".',
     'Fill it for low scores too, saying what this story lacks, e.g. severityWhy "A TV casting change; no one is harmed and no money is at stake".',
-    'Add "impacts" with one specific sentence (at most 25 words) per angle about THIS story:',
-    '- economic: prices, jobs, markets, budgets, trade, energy, investment. If the effect is indirect, explain the chain (e.g. strikes on refineries -> fuel supply -> pump prices).',
-    '- political: governments, laws, elections, diplomacy, institutions.',
-    '- social: daily life, health, education, rights, communities.',
-    '- security: physical safety, conflict, crime, infrastructure.',
-    'Fill only the angles where this story has a real effect, and use "" for the rest. Never write that there is no effect.',
     `Pick one dimension from: ${IMPACT_DIMENSIONS.join(', ')}.`,
     `Write every text field in ${language === 'bg' ? 'Bulgarian' : 'English'}.`,
-    'Return strict JSON only: {"ratings":[{"id":"...","severity":0,"severityWhy":"...","scale":0,"scaleWhy":"...","urgency":0,"urgencyWhy":"...","interest":0,"interestWhy":"...","dimension":"economy","impacts":{"economic":"...","political":"","social":"","security":""}}]}',
+    'Return strict JSON only: {"ratings":[{"id":"...","severity":0,"severityWhy":"...","scale":0,"scaleWhy":"...","urgency":0,"urgencyWhy":"...","interest":0,"interestWhy":"...","dimension":"economy"}]}',
     'Include every candidate exactly once.',
     `Candidates: ${JSON.stringify(candidates)}`
   ].join('\n');
@@ -914,7 +908,7 @@ export function buildDigestPrompt(items: DigestItem[], language: 'en' | 'bg', re
   return [
     `You are the editor of a short news briefing for a reader in ${region || 'their country'}.`,
     'Below are the stories it covers, strongest first, each with its rating level, score (0-100), area, storyline,',
-    'number of sources and impacts. Write 3 to 6 bullets that tell the reader what matters in this period.',
+    'and number of sources. Write 3 to 6 bullets that tell the reader what matters in this period.',
     '- Start with what is critical, then what leads. Put stories about the same situation in one bullet and say how',
     '  they connect. Never join unrelated stories; a sports or entertainment story never shares a bullet with a war,',
     '  politics or economy story.',
@@ -1090,7 +1084,6 @@ const PAGE_SCRIPT = String.raw`
   const fill = (text, values) => text.replace(/\{(\w+)\}/g, (_, key) => String(values[key]));
   // Score breakdowns the reader opened stay open when the sliders redraw the list.
   const openWhy = new Set();
-  const openImpact = new Set();
   const openLines = new Set();
   const KEYS = data.criteria.map(c => c.key);
   const STORE = 'ai-news-briefing-weights';
@@ -1205,24 +1198,6 @@ const PAGE_SCRIPT = String.raw`
     body.append(meta, h3);
     if (story.summary) body.append(el('p', 'summary', story.summary));
 
-    const angles = data.angles.filter(a => story.impacts[a.key]);
-    if (angles.length) {
-      // Folded like the score breakdown; the heading names the angles inside.
-      const box = el('details', 'impacts');
-      box.open = openImpact.has(entry.index);
-      box.addEventListener('toggle', () => { if (box.open) openImpact.add(entry.index); else openImpact.delete(entry.index); });
-      box.append(el('summary', 'impacts-head', T.impact + ' · ' + angles.map(a => a.label.toLowerCase()).join(', ')));
-      for (const angle of angles) {
-        const row = el('p', 'impact');
-        row.append(el('span', 'angle angle-' + angle.key, angle.label), ' ' + story.impacts[angle.key]);
-        box.append(row);
-      }
-      body.append(box);
-    } else if (story.whyItMatters) {
-      const row = el('p', 'impact');
-      row.append(el('span', 'angle', T.whyItMatters), ' ' + story.whyItMatters);
-      body.append(row);
-    }
 
     // The breakdown is folded away; the badge already says the level and score.
     const rated = el('details', 'rated');
