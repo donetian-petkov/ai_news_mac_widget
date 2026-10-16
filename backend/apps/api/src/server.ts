@@ -9891,7 +9891,25 @@ async function loadSavedProviderKeysFromDb() {
 // its own feeds. Stories are rated for how much they matter (see briefing.ts).
 const briefings = createBriefingStore(path.join(DATA_DIR, 'briefings'));
 // AI ratings per story, so the daily briefing and repeat runs do not pay for them again.
+// Kept on disk too: a restart would otherwise re-rate every story and reorder the next
+// briefing even when the news has not changed.
+const BRIEFING_RATINGS_PATH = path.join(DATA_DIR, 'briefing-ratings.json');
 const briefingAiRatings = new Map<string, AiStoryRating>();
+try {
+  const saved = JSON.parse(fs.readFileSync(BRIEFING_RATINGS_PATH, 'utf8')) as [string, AiStoryRating][];
+  if (Array.isArray(saved)) for (const [key, rating] of saved) briefingAiRatings.set(key, rating);
+} catch {
+  // No saved ratings yet.
+}
+function saveBriefingRatings(): void {
+  try {
+    const tmp = `${BRIEFING_RATINGS_PATH}.tmp`;
+    fs.writeFileSync(tmp, JSON.stringify([...briefingAiRatings]), 'utf8');
+    fs.renameSync(tmp, BRIEFING_RATINGS_PATH);
+  } catch (error) {
+    console.warn('Could not save briefing ratings:', error);
+  }
+}
 
 function briefingLocalTerms(): string[] {
   const region = String(localRegion || '').trim();
@@ -9940,6 +9958,7 @@ async function rateBriefingStoriesWithAi(candidates: AiRatingCandidate[], feedUr
     if (oldest === undefined) break;
     briefingAiRatings.delete(oldest);
   }
+  saveBriefingRatings();
   return [...cached, ...fresh];
 }
 
