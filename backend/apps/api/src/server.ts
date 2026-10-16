@@ -9837,16 +9837,22 @@ function briefingLocalTerms(): string[] {
 
 // Briefings are written on request and always use AI when a provider key is set, even with
 // the widget's AI toggle off: the toggle is about the background work on every story.
+/** The AI prompts and the page labels use this one language, so the page never mixes them. */
+function briefingLanguage(): 'en' | 'bg' {
+  return summaryLang === 'en' ? 'en' : 'bg';
+}
+
 async function rateBriefingStoriesWithAi(candidates: AiRatingCandidate[], feedUrlById: Map<string, string>): Promise<AiStoryRating[]> {
   if (!aiAvailable) throw new Error('No AI provider is set up');
-  const cacheKey = (id: string) => `${feedUrlById.get(id) || ''}::${id}`;
+  // Keyed by language too: switching it must not reuse notes written in the other one.
+  const cacheKey = (id: string) => `${briefingLanguage()}::${feedUrlById.get(id) || ''}::${id}`;
   const cached = candidates.map(candidate => briefingAiRatings.get(cacheKey(candidate.id))).filter((r): r is AiStoryRating => !!r);
   const missing = candidates.filter(candidate => !briefingAiRatings.has(cacheKey(candidate.id)));
   if (!missing.length) return cached;
   const text = await withTimeout(
     generateAiText(
       'ask',
-      buildAiRatingPrompt(missing, summaryLang === 'bg' ? 'bg' : 'en', localRegion),
+      buildAiRatingPrompt(missing, briefingLanguage(), localRegion),
       Math.max(800, Math.min(9000, 300 + missing.length * 320)),
       0,
       'Briefing rating',
@@ -9871,7 +9877,7 @@ async function groupBriefingStorylinesWithAi(items: GroupingItem[]): Promise<Sto
   const text = await withTimeout(
     generateAiText(
       'ask',
-      buildStorylinePrompt(items, summaryLang === 'bg' ? 'bg' : 'en'),
+      buildStorylinePrompt(items, briefingLanguage()),
       Math.max(800, Math.min(5000, 300 + items.length * 60)),
       0,
       'Briefing storylines',
@@ -9886,7 +9892,7 @@ async function groupBriefingStorylinesWithAi(items: GroupingItem[]): Promise<Sto
 
 async function writeBriefingDigestWithAi(items: DigestItem[]): Promise<DigestBullet[]> {
   const text = await withTimeout(
-    generateAiText('ask', buildDigestPrompt(items, summaryLang === 'bg' ? 'bg' : 'en', localRegion), 1500, 0, 'Briefing summary', undefined, true),
+    generateAiText('ask', buildDigestPrompt(items, briefingLanguage(), localRegion), 1500, 0, 'Briefing summary', undefined, true),
     60_000,
     'Briefing summary'
   );
@@ -9915,15 +9921,21 @@ async function generateBriefing(period: BriefingPeriod, window: { startMs: numbe
       coverUrl: item.coverUrl
     }));
   const feedUrlById = new Map(stories.map(story => [story.id, story.feedUrl]));
+  const bg = briefingLanguage() === 'bg';
   const label = String(scope.label || '').trim().slice(0, 80)
-    || (scope.onlyMatches ? 'Filtered' : requested.size === 1 ? feeds.find(feed => requested.has(feed.url))?.label || 'Feed' : 'All columns');
+    || (scope.onlyMatches ? (bg ? 'Филтрирани' : 'Filtered')
+      : requested.size === 1 ? feeds.find(feed => requested.has(feed.url))?.label || (bg ? 'Източник' : 'Feed')
+        : (bg ? 'Всички колони' : 'All columns'));
+  // The region is a setting in English ("Bulgaria"); a Bulgarian page names it in Bulgarian.
+  const region = bg && /bulgari/i.test(localRegion) ? 'България' : localRegion;
   return buildBriefing(stories, {
     period,
     scope: label,
     window,
     localTerms: briefingLocalTerms(),
     trackedTerms: matchTerms(),
-    region: localRegion,
+    region,
+    language: briefingLanguage(),
     rateWithAi: aiAvailable ? candidates => rateBriefingStoriesWithAi(candidates, feedUrlById) : undefined,
     groupWithAi: aiAvailable ? groupBriefingStorylinesWithAi : undefined,
     digestWithAi: aiAvailable ? writeBriefingDigestWithAi : undefined

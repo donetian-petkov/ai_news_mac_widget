@@ -379,3 +379,21 @@ describe('createBriefingStore', () => {
     expect(fs.readdirSync(dir).filter(name => name.endsWith('.html'))).toHaveLength(2);
   });
 });
+
+describe('language', () => {
+  it('writes the page and the keyword notes in Bulgarian when the briefing is in Bulgarian', async () => {
+    const briefing = await buildBriefing([story({ title: 'Нов закон за пътищата', source: 'БНТ' })], {
+      period: 'day', scope: 'Всички колони', window: hour, language: 'bg'
+    });
+    const data = pageData(briefing.html);
+    expect(briefing.title).toMatch(/^Дневен бюлетин · Всички колони/);
+    expect(briefing.html).toContain('<html lang="bg">');
+    expect(data.stories[0].notes.coverage).toBe('Съобщава само БНТ');
+    expect(data.stories[0].notes.severity).toBe('Не се споменават жертви, ранени, щети или загубени пари');
+    expect(data.criteria[0].label).toBe('Тежест');
+    expect(data.levelLabels.high).toBe('Важно');
+    expect(data.text.atAGlance).toBe('Накратко');
+    expect(briefing.html).toContain('Как се оценяват новините');
+    expect(briefing.html).not.toContain('How stories are rated');
+  });
+});

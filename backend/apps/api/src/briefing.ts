@@ -118,6 +118,165 @@ const CRITERIA_LABELS: Record<Criterion, string> = {
 };
 
 const LEVEL_LABELS: Record<PriorityLevel, string> = { critical: 'Critical', high: 'High', notable: 'Notable', routine: 'Routine' };
+
+export type BriefingLanguage = 'en' | 'bg';
+
+/**
+ * Everything the page and the keyword notes say, in the briefing's language, so labels
+ * never come out in English beside Bulgarian AI text. `page` goes to the browser script;
+ * "{n}"-style slots are filled there.
+ */
+const UI = {
+  en: {
+    locale: 'en-GB',
+    dimensions: DIMENSION_LABELS,
+    criteria: CRITERIA_LABELS,
+    criteriaText: CRITERIA_TEXT,
+    levels: LEVEL_LABELS,
+    angles: { economic: 'Economic', political: 'Political', social: 'Social', security: 'Security' } as Record<ImpactAngle, string>,
+    presets: ['Balanced', 'Critical first', 'Interesting', 'Close to home'],
+    noHarmYet: (area: string) => `${area} story, but no harm is reported yet`,
+    figureOfSpeech: (quote: string, area: string) => `${quote} — figure of speech in a ${area.toLowerCase()} story`,
+    severalCountries: (list: string) => `Involves several countries: ${list}`,
+    reportedBy: (names: string) => `Reported by ${names}`,
+    onlyOne: (name: string) => `Only ${name} reports it`,
+    oneSource: 'one source',
+    zero: {
+      severity: 'No deaths, injuries, damage or money lost are mentioned',
+      scale: 'No country-wide or international reach is mentioned',
+      urgency: 'No deadline, live event or warning is mentioned',
+      interest: 'No first, record, surprise or new revelation in the headline'
+    },
+    yourTopics: (count: number) => (count > 1 ? 'your topics' : 'your topic'),
+    yourRegion: 'your region',
+    mentions: (parts: string[]) => `Mentions ${parts.join(' and ')}`,
+    noneMentioned: (count: number, region: string) => `None of your ${count} topics${region ? ` or ${region}` : ''} is mentioned`,
+    title: (period: BriefingPeriod) => (period === 'day' ? 'Daily briefing' : 'Hourly briefing'),
+    countLine: (count: string, when: string) => `${count} stories · generated ${when}`,
+    footer: (ai: boolean) => `<strong>How stories are rated.</strong> Each story gets 0–3 on six criteria, each with the fact behind it.
+    The sliders set how much each criterion counts compared with the others (they are remembered for every briefing).
+    The score is 0–100: one strong criterion is enough to lift a story, and each further one lifts it more, so a deadly attack
+    does not also need to be surprising to rank high. The +numbers show each criterion's share of the score.
+    Critical is ${LEVEL_THRESHOLDS.critical}+, High ${LEVEL_THRESHOLDS.high}+, Notable ${LEVEL_THRESHOLDS.notable}+, Routine below.
+    ${ai
+      ? 'The AI reads the stories together to merge reports of the same event under one story (open "more reports" to see them and why), to group different stories about one ongoing situation into a storyline, and to write the summary at the top.'
+      : 'Reports with near-identical headlines are merged under one story (open "more reports" to see them).'}
+    No single area takes more than about a third of the list.
+    ${ai
+      ? 'Severity, scale, urgency, interest and the economic, political, social and security impact are judged by AI; coverage and relevance come from your sources and topics.'
+      : 'AI was off, so keyword rules did the rating and there is no impact write-up.'}`,
+    importance: 'Importance',
+    importanceAria: 'Importance of each criterion',
+    importanceHint: 'How much each criterion counts. The stories re-rank as you slide.',
+    close: 'Close',
+    goTop: 'Go to top',
+    goBottom: 'Go to bottom',
+    page: {
+      of: '{a} of {b}',
+      notChecked: 'not checked by AI',
+      keywordRated: 'keyword-rated',
+      notCheckedTip: 'The AI did not answer for this story, so keyword rules rated it; it is kept below High until the AI checks it',
+      keywordTip: 'AI is off, so keyword rules rated this story',
+      whyItMatters: 'Why it matters',
+      why: 'Why {level} · {score}/100',
+      moreOne: '1 more report of this',
+      moreMany: '{n} more reports of this',
+      storyline: 'Storyline',
+      differentStories: '{n} different stories',
+      atAGlance: 'At a glance',
+      writtenByAi: 'written by AI from the stories below',
+      alsoInteresting: 'Also interesting',
+      story: 'story',
+      empty: 'No new stories were published in this period.',
+      priority: 'Priority',
+      alsoWorth: 'Also worth knowing',
+      stories: 'Stories',
+      moreStories: 'More stories ({n})',
+      custom: 'Custom',
+      bandAria: '{label} importance'
+    }
+  },
+  bg: {
+    locale: 'bg-BG',
+    dimensions: {
+      security: 'Сигурност и конфликти', politics: 'Политика и управление', economy: 'Икономика и пари', health: 'Здраве',
+      environment: 'Природа и бедствия', society: 'Общество и правосъдие', technology: 'Технологии',
+      culture: 'Култура и забавления', sports: 'Спорт', other: 'Друго'
+    } as Record<ImpactDimension, string>,
+    criteria: { severity: 'Тежест', scale: 'Обхват', urgency: 'Спешност', interest: 'Интерес', coverage: 'Отразяване', relevance: 'Значимост' } as Record<Criterion, string>,
+    criteriaText: {
+      severity: 'вреда за живот, безопасност, права или пари',
+      scale: 'колко хора засяга (местно, национално, международно)',
+      urgency: 'дали се случва сега или изисква действие скоро',
+      interest: 'колко е изненадващо, ново или разкриващо',
+      coverage: 'колко източника съобщават за същото събитие',
+      relevance: 'дали засяга вашите теми или регион'
+    } as Record<Criterion, string>,
+    levels: { critical: 'Критично', high: 'Важно', notable: 'Забележимо', routine: 'Рутинно' } as Record<PriorityLevel, string>,
+    angles: { economic: 'Икономика', political: 'Политика', social: 'Общество', security: 'Сигурност' } as Record<ImpactAngle, string>,
+    presets: ['Балансирано', 'Първо критичното', 'Интересно', 'Близо до дома'],
+    noHarmYet: (area: string) => `Новина от „${area}“, но не се съобщава за вреди`,
+    figureOfSpeech: (quote: string, area: string) => `${quote} — в преносен смисъл, новина от „${area}“`,
+    severalCountries: (list: string) => `Засяга няколко държави: ${list}`,
+    reportedBy: (names: string) => `Съобщават: ${names}`,
+    onlyOne: (name: string) => `Съобщава само ${name}`,
+    oneSource: 'един източник',
+    zero: {
+      severity: 'Не се споменават жертви, ранени, щети или загубени пари',
+      scale: 'Не се споменава национален или международен обхват',
+      urgency: 'Не се споменава срок, събитие на живо или предупреждение',
+      interest: 'В заглавието няма първо, рекорд, изненада или ново разкритие'
+    },
+    yourTopics: (count: number) => (count > 1 ? 'вашите теми' : 'вашата тема'),
+    yourRegion: 'вашия регион',
+    mentions: (parts: string[]) => `Споменава ${parts.join(' и ')}`,
+    noneMentioned: (count: number, region: string) => `Не се споменава нито една от вашите ${count} теми${region ? ` или ${region}` : ''}`,
+    title: (period: BriefingPeriod) => (period === 'day' ? 'Дневен бюлетин' : 'Часов бюлетин'),
+    countLine: (count: string, when: string) => `${count} новини · създаден ${when}`,
+    footer: (ai: boolean) => `<strong>Как се оценяват новините.</strong> Всяка новина получава 0–3 по шест критерия, всеки с факта зад оценката.
+    Плъзгачите задават колко тежи всеки критерий спрямо другите (запомнят се за всеки бюлетин).
+    Резултатът е 0–100: един силен критерий стига, за да издигне новината, а всеки следващ я издига още, така че смъртоносна атака
+    не трябва да е и изненадваща, за да е високо. Числата +N показват дела на всеки критерий в резултата.
+    Критично е ${LEVEL_THRESHOLDS.critical}+, Важно ${LEVEL_THRESHOLDS.high}+, Забележимо ${LEVEL_THRESHOLDS.notable}+, Рутинно под това.
+    ${ai
+      ? 'AI чете новините заедно: обединява съобщенията за едно и също събитие под една новина (отворете „още източника“, за да ги видите и защо), групира различни новини за една ситуация в сюжет и пише обобщението най-горе.'
+      : 'Съобщения с почти еднакви заглавия се обединяват под една новина (отворете „още източника“, за да ги видите).'}
+    Никоя област не заема повече от около една трета от списъка.
+    ${ai
+      ? 'Тежестта, обхватът, спешността, интересът и икономическото, политическото, социалното и свързаното със сигурността въздействие се оценяват от AI; отразяването и значимостта идват от вашите източници и теми.'
+      : 'AI беше изключен, затова оценката е по ключови думи и няма описание на въздействието.'}`,
+    importance: 'Важност',
+    importanceAria: 'Важност на всеки критерий',
+    importanceHint: 'Колко тежи всеки критерий. Новините се пренареждат, докато местите плъзгачите.',
+    close: 'Затвори',
+    goTop: 'Нагоре',
+    goBottom: 'Надолу',
+    page: {
+      of: '{a} от {b}',
+      notChecked: 'не е проверено от AI',
+      keywordRated: 'оценено по ключови думи',
+      notCheckedTip: 'AI не отговори за тази новина, затова е оценена по ключови думи; остава под „Важно“, докато AI я провери',
+      keywordTip: 'AI е изключен, затова новината е оценена по ключови думи',
+      whyItMatters: 'Защо е важно',
+      why: 'Защо „{level}“ · {score}/100',
+      moreOne: 'още 1 източник за същото',
+      moreMany: 'още {n} източника за същото',
+      storyline: 'Сюжет',
+      differentStories: '{n} различни новини',
+      atAGlance: 'Накратко',
+      writtenByAi: 'написано от AI по новините по-долу',
+      alsoInteresting: 'Още интересно',
+      story: 'новина',
+      empty: 'В този период няма нови новини.',
+      priority: 'Приоритетни',
+      alsoWorth: 'Също си струва',
+      stories: 'Новини',
+      moreStories: 'Още новини ({n})',
+      custom: 'Ръчно',
+      bandAria: 'Важност: {label}'
+    }
+  }
+};
 const LEVEL_THRESHOLDS = { critical: 70, high: 50, notable: 25 };
 /** Highest score a keyword-rated story can get when the AI rated the rest of the briefing. */
 const UNCHECKED_SCORE_CAP = LEVEL_THRESHOLDS.high - 1;
@@ -217,6 +376,11 @@ function distinctSources(stories: BriefingStory[]): string[] {
   return Array.from(new Set(stories.map(story => String(story.source || story.feedUrl).trim()).filter(Boolean)));
 }
 
+function coverageNote(names: string[], language: BriefingLanguage = 'en'): string {
+  const t = UI[language];
+  return names.length > 1 ? t.reportedBy(names.join(', ')) : t.onlyOne(names[0] || t.oneSource);
+}
+
 function coverageScore(sourceCount: number): number {
   return sourceCount >= 4 ? 3 : sourceCount === 3 ? 2 : sourceCount === 2 ? 1 : 0;
 }
@@ -225,8 +389,9 @@ export function ruleRating(
   story: BriefingStory,
   related: BriefingStory[],
   window: { startMs: number; endMs: number },
-  context: { localTerms?: string[]; trackedTerms?: string[]; region?: string } = {}
+  context: { localTerms?: string[]; trackedTerms?: string[]; region?: string; language?: BriefingLanguage } = {}
 ): StoryRating {
+  const t = UI[context.language || 'en'];
   const textWords = words(`${story.title} ${story.summary || ''}`);
   // Sports and entertainment words are unambiguous context, while words like "war" or
   // "attack" are often used as metaphors there, so their hits count double.
@@ -243,12 +408,12 @@ export function ruleRating(
   if (severity) notes.severity = quoteAround(story, severityHits[0]);
   if (!severity && (dimension === 'security' || dimension === 'health' || dimension === 'environment')) {
     severity = 1;
-    notes.severity = `${DIMENSION_LABELS[dimension]} story, but no harm is reported yet`;
+    notes.severity = t.noHarmYet(t.dimensions[dimension]);
   }
   // Sports and entertainment borrow dramatic words ("war", "attack") without real-world harm.
   if (lightweight && severity > 1) {
     severity = 1;
-    notes.severity = `${quoteAround(story, severityHits[0])} — figure of speech in a ${DIMENSION_LABELS[dimension].toLowerCase()} story`;
+    notes.severity = t.figureOfSpeech(quoteAround(story, severityHits[0]), t.dimensions[dimension]);
   }
 
   const scaleHits = termHits(textWords, SCALE_TERMS);
@@ -257,7 +422,7 @@ export function ruleRating(
   const scale = lightweight ? Math.min(1, reach) : reach;
   if (scale) {
     notes.scale = countryHits.length >= 2
-      ? `Involves several countries: ${countryHits.slice(0, 3).map(hit => `“${hit}”`).join(', ')}`
+      ? t.severalCountries(countryHits.slice(0, 3).map(hit => `“${hit}”`).join(', '))
       : quoteAround(story, scaleHits[0] || countryHits[0]);
   }
 
@@ -273,23 +438,23 @@ export function ruleRating(
   const sources = distinctSources([story, ...related]);
   const coverage = coverageScore(sources.length);
   const names = sources.map(shortSource);
-  notes.coverage = names.length > 1 ? `Reported by ${names.join(', ')}` : `Only ${names[0] || 'one source'} reports it`;
+  notes.coverage = coverageNote(names, context.language);
 
   // Zero scores get a reason too, so the reader sees what was looked for and not found.
-  if (!severity) notes.severity = 'No deaths, injuries, damage or money lost are mentioned';
-  if (!scale) notes.scale = 'No country-wide or international reach is mentioned';
-  if (!urgency) notes.urgency = 'No deadline, live event or warning is mentioned';
-  if (!interest) notes.interest = 'No first, record, surprise or new revelation in the headline';
+  if (!severity) notes.severity = t.zero.severity;
+  if (!scale) notes.scale = t.zero.scale;
+  if (!urgency) notes.urgency = t.zero.urgency;
+  if (!interest) notes.interest = t.zero.interest;
 
   const topics = trackedHits(textWords, context.trackedTerms || []);
   const localHits = termHits(textWords, context.localTerms || []);
   const relevance = Math.min(3, (topics.length ? 1 : 0) + (topics.length > 1 ? 1 : 0) + (localHits.length ? 1 : 0));
   const relevanceParts: string[] = [];
-  if (topics.length) relevanceParts.push(`your ${topics.length > 1 ? 'topics' : 'topic'} ${topics.slice(0, 3).map(topic => `“${topic}”`).join(', ')}`);
-  if (localHits.length) relevanceParts.push(`${context.region || 'your region'} ${quoteAround(story, localHits[0], 2)}`);
-  if (relevanceParts.length) notes.relevance = `Mentions ${relevanceParts.join(' and ')}`;
+  if (topics.length) relevanceParts.push(`${t.yourTopics(topics.length)} ${topics.slice(0, 3).map(topic => `“${topic}”`).join(', ')}`);
+  if (localHits.length) relevanceParts.push(`${context.region || t.yourRegion} ${quoteAround(story, localHits[0], 2)}`);
+  if (relevanceParts.length) notes.relevance = t.mentions(relevanceParts);
   else if (context.trackedTerms?.length || context.region) {
-    notes.relevance = `None of your ${context.trackedTerms?.length || 0} topics${context.region ? ` or ${context.region}` : ''} is mentioned`;
+    notes.relevance = t.noneMentioned(context.trackedTerms?.length || 0, context.region || '');
   }
 
   return {
@@ -538,11 +703,11 @@ export function parseStorylines(text: string): StoryGrouping {
 }
 
 /** Coverage counts every source that reported the event, including folded reports. */
-function withCoverage(entry: RatedStory, aiRan: boolean): RatedStory {
+function withCoverage(entry: RatedStory, aiRan: boolean, language: BriefingLanguage): RatedStory {
   const sources = distinctSources([entry.story, ...entry.related]);
   const names = sources.map(shortSource);
   const scores = { ...entry.rating.scores, coverage: coverageScore(sources.length) };
-  const notes = { ...entry.rating.notes, coverage: names.length > 1 ? `Reported by ${names.join(', ')}` : `Only ${names[0] || 'one source'} reports it` };
+  const notes = { ...entry.rating.notes, coverage: coverageNote(names, language) };
   const raw = scoreOf(scores);
   const score = aiRan && entry.rating.ratedBy === 'rules' ? Math.min(raw, UNCHECKED_SCORE_CAP) : raw;
   return { ...entry, rating: { ...entry.rating, scores, notes }, score, level: levelOf(score) };
@@ -552,7 +717,7 @@ function withCoverage(entry: RatedStory, aiRan: boolean): RatedStory {
  * Folds each set of duplicate reports into its strongest story (the others become the
  * "more reports" rows), then marks storylines that at least two remaining stories share.
  */
-export function applyGrouping(rated: RatedStory[], grouping: StoryGrouping, aiRan = false): RatedStory[] {
+export function applyGrouping(rated: RatedStory[], grouping: StoryGrouping, aiRan = false, language: BriefingLanguage = 'en'): RatedStory[] {
   const byId = new Map(rated.map(entry => [entry.story.id, entry]));
   const absorbed = new Set<RatedStory>();
   const extraRelated = new Map<RatedStory, BriefingStory[]>();
@@ -571,7 +736,7 @@ export function applyGrouping(rated: RatedStory[], grouping: StoryGrouping, aiRa
   const kept = rated
     .filter(entry => !absorbed.has(entry))
     .map(entry => (extraRelated.has(entry)
-      ? withCoverage({ ...entry, related: [...entry.related, ...(extraRelated.get(entry) || [])], duplicateWhy: reasons.get(entry) }, aiRan)
+      ? withCoverage({ ...entry, related: [...entry.related, ...(extraRelated.get(entry) || [])], duplicateWhy: reasons.get(entry) }, aiRan, language)
       : entry));
   const lineOf = (entry: RatedStory) => topicKey(grouping.storylines.get(entry.story.id) || '');
   const members = new Map<string, RatedStory[]>();
@@ -724,19 +889,21 @@ export function rollingWindow(period: BriefingPeriod, nowMs: number): { startMs:
   return { startMs: nowMs - (period === 'day' ? 24 * HOUR_MS : HOUR_MS), endMs: nowMs };
 }
 
-function formatTime(ms: number): string {
-  return new Date(ms).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+function formatTime(ms: number, language: BriefingLanguage = 'en'): string {
+  return new Date(ms).toLocaleTimeString(UI[language].locale, { hour: '2-digit', minute: '2-digit' });
 }
 
-function formatDay(ms: number): string {
-  return new Date(ms).toLocaleDateString([], { weekday: 'short', day: 'numeric', month: 'short' });
+function formatDay(ms: number, language: BriefingLanguage = 'en'): string {
+  return new Date(ms).toLocaleDateString(UI[language].locale, { weekday: 'short', day: 'numeric', month: 'short' });
 }
 
-export function briefingTitle(period: BriefingPeriod, scope: string, startMs: number, endMs: number): string {
+export function briefingTitle(period: BriefingPeriod, scope: string, startMs: number, endMs: number, language: BriefingLanguage = 'en'): string {
+  const day = (ms: number) => formatDay(ms, language);
+  const time = (ms: number) => formatTime(ms, language);
   const when = period === 'day'
-    ? `${formatDay(startMs)} ${formatTime(startMs)} – ${formatDay(endMs)} ${formatTime(endMs)}`
-    : `${formatDay(startMs)}, ${formatTime(startMs)}–${formatTime(endMs)}`;
-  return `${period === 'day' ? 'Daily' : 'Hourly'} briefing · ${scope} · ${when}`;
+    ? `${day(startMs)} ${time(startMs)} – ${day(endMs)} ${time(endMs)}`
+    : `${day(startMs)}, ${time(startMs)}–${time(endMs)}`;
+  return `${UI[language].title(period)} · ${scope} · ${when}`;
 }
 
 // ---- HTML ----
@@ -775,6 +942,10 @@ const PRESETS: Array<{ name: string; weights: CriteriaScores }> = [
 const PAGE_SCRIPT = String.raw`
 (() => {
   const data = JSON.parse(document.getElementById('briefing-data').textContent);
+  const T = data.text;
+  const fill = (text, values) => text.replace(/\{(\w+)\}/g, (_, key) => String(values[key]));
+  // Score breakdowns the reader opened stay open when the sliders redraw the list.
+  const openWhy = new Set();
   const KEYS = data.criteria.map(c => c.key);
   const STORE = 'ai-news-briefing-weights';
   const sameWeights = (a, b) => KEYS.every(k => a[k] === b[k]);
@@ -862,10 +1033,8 @@ const PAGE_SCRIPT = String.raw`
     const meta = el('p', 'meta');
     meta.append(el('span', 'badge', data.levelLabels[level] + ' · ' + score), ' ' + [story.source, story.time, story.dimensionLabel].filter(Boolean).join(' · '));
     if (story.ratedBy === 'rules') {
-      const tag = el('span', 'rules-tag', data.aiRan ? 'not checked by AI' : 'keyword-rated');
-      tag.title = data.aiRan
-        ? 'The AI did not answer for this story, so keyword rules rated it; it is kept below High until the AI checks it'
-        : 'AI is off, so keyword rules rated this story';
+      const tag = el('span', 'rules-tag', data.aiRan ? T.notChecked : T.keywordRated);
+      tag.title = data.aiRan ? T.notCheckedTip : T.keywordTip;
       meta.append(' · ', tag);
     }
     const h3 = el('h3');
@@ -884,12 +1053,15 @@ const PAGE_SCRIPT = String.raw`
       body.append(box);
     } else if (story.whyItMatters) {
       const row = el('p', 'impact');
-      row.append(el('span', 'angle', 'Why it matters'), ' ' + story.whyItMatters);
+      row.append(el('span', 'angle', T.whyItMatters), ' ' + story.whyItMatters);
       body.append(row);
     }
 
-    const rated = el('div', 'rated');
-    rated.append(el('p', 'rated-head', 'Rated ' + data.levelLabels[level].toLowerCase() + ' (' + score + '/100) because:'));
+    // The breakdown is folded away; the badge already says the level and score.
+    const rated = el('details', 'rated');
+    rated.open = openWhy.has(entry.index);
+    rated.addEventListener('toggle', () => { if (rated.open) openWhy.add(entry.index); else openWhy.delete(entry.index); });
+    rated.append(el('summary', 'rated-head', fill(T.why, { level: data.levelLabels[level], score })));
     const list = el('ul');
     // Each criterion's share of the score, in proportion to how hard it pushed.
     const storyLifts = lifts(story.scores);
@@ -913,7 +1085,7 @@ const PAGE_SCRIPT = String.raw`
       // Other reports of the same event, folded away under the main story.
       const dupes = el('details', 'dupes');
       const sources = Array.from(new Set(story.related.map(other => other.source).filter(Boolean)));
-      dupes.append(el('summary', '', story.related.length + ' more ' + (story.related.length === 1 ? 'report' : 'reports') + ' of this' + (sources.length ? ' · ' + sources.slice(0, 3).join(', ') + (sources.length > 3 ? '…' : '') : '')));
+      dupes.append(el('summary', '', fill(story.related.length === 1 ? T.moreOne : T.moreMany, { n: story.related.length }) + (sources.length ? ' · ' + sources.slice(0, 3).join(', ') + (sources.length > 3 ? '…' : '') : '')));
       const rows = el('ul');
       if (story.duplicateWhy) rows.append(el('li', 'dupe-why', story.duplicateWhy));
       story.related.forEach(other => {
@@ -933,9 +1105,9 @@ const PAGE_SCRIPT = String.raw`
     const box = el('div', 'storyline level-' + unit.level);
     const head = el('div', 'storyline-head');
     head.append(
-      el('span', 'storyline-kicker', 'Storyline'),
+      el('span', 'storyline-kicker', T.storyline),
       el('span', 'storyline-label', unit.label),
-      el('span', 'storyline-count', unit.entries.length + ' different stories')
+      el('span', 'storyline-count', fill(T.differentStories, { n: unit.entries.length }))
     );
     box.append(head);
     const why = unit.entries.map(entry => entry.story.storylineWhy).find(Boolean);
@@ -970,7 +1142,7 @@ const PAGE_SCRIPT = String.raw`
     if (data.digest.length) {
       return data.digest.map(bullet => ({
         cls: 'level-' + levelOfTargets(bullet.targets),
-        tag: bullet.kind === 'interesting' ? 'Also interesting' : '',
+        tag: bullet.kind === 'interesting' ? T.alsoInteresting : '',
         text: bullet.text,
         targets: bullet.targets
       }));
@@ -984,14 +1156,14 @@ const PAGE_SCRIPT = String.raw`
       .filter(e => !lead.includes(e) && e.story.scores.interest >= 2)
       .sort((a, b) => b.story.scores.interest - a.story.scores.interest || b.score - a.score)[0];
     const line = (e, tag) => ({ tag, cls: 'level-' + e.level, text: e.story.summary || e.story.title, targets: [e.index] });
-    return lead.map(e => line(e, '')).concat(curious ? [line(curious, 'Also interesting')] : []);
+    return lead.map(e => line(e, '')).concat(curious ? [line(curious, T.alsoInteresting)] : []);
   }
   function glance(picked) {
     const lines = glanceLines(picked);
     if (!lines.length) return null;
     const box = el('section', 'glance');
-    const head = el('h2', '', 'At a glance');
-    if (data.digest.length) head.append(el('span', 'glance-by', 'written by AI from the stories below'));
+    const head = el('h2', '', T.atAGlance);
+    if (data.digest.length) head.append(el('span', 'glance-by', T.writtenByAi));
     box.append(head);
     const list = el('ul');
     for (const line of lines) {
@@ -1003,7 +1175,7 @@ const PAGE_SCRIPT = String.raw`
         li.append(el('span', 'glance-text', line.text));
         line.targets.forEach(index => {
           const source = data.stories[index] && data.stories[index].source;
-          li.append(' ', jumpTo(index, '→ ' + (source || 'story')));
+          li.append(' ', jumpTo(index, '→ ' + (source || T.story)));
         });
       }
       list.append(li);
@@ -1024,18 +1196,18 @@ const PAGE_SCRIPT = String.raw`
     const root = document.getElementById('stories');
     root.replaceChildren();
     if (!data.stories.length) {
-      root.append(el('p', 'empty', 'No new stories were published in this period.'));
+      root.append(el('p', 'empty', T.empty));
     } else {
       const summary = glance(picked);
       if (summary) root.append(summary);
       const priority = picked.filter(e => e.level === 'critical' || e.level === 'high');
       const others = picked.filter(e => e.level !== 'critical' && e.level !== 'high');
-      if (priority.length) root.append(section('Priority', priority));
-      if (others.length) root.append(section(priority.length ? 'Also worth knowing' : 'Stories', others));
+      if (priority.length) root.append(section(T.priority, priority));
+      if (others.length) root.append(section(priority.length ? T.alsoWorth : T.stories, others));
       if (rest.length) {
         const more = el('details', 'more');
         const restCount = rest.reduce((n, unit) => n + unit.entries.length, 0);
-        more.append(el('summary', '', 'More stories (' + restCount + ')'));
+        more.append(el('summary', '', fill(T.moreStories, { n: restCount })));
         rest.forEach(unit => more.append(unitNode(unit)));
         root.append(more);
       }
@@ -1045,7 +1217,7 @@ const PAGE_SCRIPT = String.raw`
     shown.forEach(e => { counts[e.story.dimensionLabel] = (counts[e.story.dimensionLabel] || 0) + 1; });
     const mix = document.getElementById('mix');
     mix.replaceChildren(...Object.entries(counts).sort((a, b) => b[1] - a[1]).map(([label, n]) => el('span', 'chip', label + ' ' + n)));
-    document.getElementById('count').textContent = shown.length + ' of ' + data.storyCount;
+    document.getElementById('count').textContent = fill(T.of, { a: shown.length, b: data.storyCount });
     for (const k of KEYS) {
       document.getElementById('w-' + k).value = String(weights[k]);
       document.getElementById('v-' + k).textContent = String(weights[k]);
@@ -1054,7 +1226,7 @@ const PAGE_SCRIPT = String.raw`
       button.classList.toggle('on', sameWeights(weights, data.presets[Number(button.dataset.i)].weights));
     });
     const preset = data.presets.find(p => sameWeights(weights, p.weights));
-    document.getElementById('eq-current').textContent = preset ? preset.name : 'Custom';
+    document.getElementById('eq-current').textContent = preset ? preset.name : T.custom;
   }
 
   // The criteria side panel and the floating buttons work from anywhere on the page.
@@ -1090,7 +1262,7 @@ const PAGE_SCRIPT = String.raw`
     input.max = '5';
     input.step = '0.5';
     input.id = 'w-' + c.key;
-    input.setAttribute('aria-label', c.label + ' importance');
+    input.setAttribute('aria-label', fill(T.bandAria, { label: c.label }));
     input.addEventListener('input', () => {
       weights = Object.assign({}, weights, { [c.key]: Number(input.value) });
       save();
@@ -1120,18 +1292,18 @@ function shortSource(source: string): string {
   return String(source || '').split(/\s+[–—|-]\s+/)[0].trim();
 }
 
-function pageStory(entry: RatedStory) {
+function pageStory(entry: RatedStory, language: BriefingLanguage) {
   const { story, rating } = entry;
   return {
     title: story.title,
     link: safeUrl(story.link),
     source: shortSource(story.source || ''),
-    time: formatTime(story.publishedMs),
+    time: formatTime(story.publishedMs, language),
     publishedMs: story.publishedMs,
     summary: story.summary || '',
     coverUrl: safeUrl(story.coverUrl),
     dimension: rating.dimension,
-    dimensionLabel: DIMENSION_LABELS[rating.dimension],
+    dimensionLabel: UI[language].dimensions[rating.dimension],
     scores: rating.scores,
     notes: rating.notes,
     impacts: rating.impacts,
@@ -1142,13 +1314,15 @@ function pageStory(entry: RatedStory) {
     duplicateWhy: entry.duplicateWhy || '',
     related: entry.related
       .sort((a, b) => a.publishedMs - b.publishedMs)
-      .map(other => ({ title: other.title, source: shortSource(other.source || ''), time: formatTime(other.publishedMs), link: safeUrl(other.link) }))
+      .map(other => ({ title: other.title, source: shortSource(other.source || ''), time: formatTime(other.publishedMs, language), link: safeUrl(other.link) }))
   };
 }
 
 export function renderBriefingHtml(
-  title: string, stories: RatedStory[], limit: number, storyCount: number, generatedAtMs: number, aiRan = false, digest: DigestBullet[] = []
+  title: string, stories: RatedStory[], limit: number, storyCount: number, generatedAtMs: number, aiRan = false, digest: DigestBullet[] = [],
+  language: BriefingLanguage = 'en'
 ): string {
+  const t = UI[language];
   const ratedByAi = stories.some(entry => entry.rating.ratedBy === 'ai');
   // A bullet may name a report that was folded under another story; it points to that story.
   const indexById = new Map<string, number>();
@@ -1156,7 +1330,7 @@ export function renderBriefingHtml(
     for (const other of [entry.story, ...entry.related]) if (!indexById.has(other.id)) indexById.set(other.id, index);
   });
   const data = {
-    stories: stories.map(pageStory),
+    stories: stories.map(entry => pageStory(entry, language)),
     digest: digest.map(bullet => ({
       kind: bullet.kind,
       text: bullet.text,
@@ -1169,16 +1343,18 @@ export function renderBriefingHtml(
     aiRan,
     uncheckedCap: UNCHECKED_SCORE_CAP,
     thresholds: LEVEL_THRESHOLDS,
-    presets: PRESETS,
-    levelLabels: LEVEL_LABELS,
-    criteria: CRITERIA.map(key => ({ key, label: CRITERIA_LABELS[key], text: CRITERIA_TEXT[key] })),
-    angles: IMPACT_ANGLES.map(key => ({ key, label: `${key.charAt(0).toUpperCase()}${key.slice(1)}` }))
+    presets: PRESETS.map((preset, index) => ({ ...preset, name: t.presets[index] || preset.name })),
+    levelLabels: t.levels,
+    criteria: CRITERIA.map(key => ({ key, label: t.criteria[key], text: t.criteriaText[key] })),
+    angles: IMPACT_ANGLES.map(key => ({ key, label: t.angles[key] })),
+    text: t.page
   };
   const legend = CRITERIA
-    .map(key => `<li><strong>${CRITERIA_LABELS[key]}</strong>: ${escapeHtml(CRITERIA_TEXT[key])}</li>`)
+    .map(key => `<li><strong>${escapeHtml(t.criteria[key])}</strong>: ${escapeHtml(t.criteriaText[key])}</li>`)
     .join('');
+  const count = t.page.of.replace('{a}', String(Math.min(limit, stories.length))).replace('{b}', String(storyCount));
   return `<!doctype html>
-<html lang="en">
+<html lang="${language}">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -1256,9 +1432,10 @@ export function renderBriefingHtml(
   .angle-social { color: var(--social); }
   .angle-security { color: var(--security); }
   .rated { margin-top: 10px; padding-top: 8px; border-top: 1px dashed var(--border); font-size: 13px; color: var(--muted); }
-  .rated-head { margin: 0 0 4px; font-weight: 600; }
+  .rated-head { font-weight: 600; cursor: pointer; width: fit-content; }
+  .rated[open] .rated-head { margin-bottom: 4px; }
   .rated ul { list-style: none; margin: 0; padding: 0; }
-  .rated li { display: grid; grid-template-columns: 74px 34px 34px 1fr; gap: 6px; align-items: baseline; }
+  .rated li { display: grid; grid-template-columns: 88px 34px 34px 1fr; gap: 6px; align-items: baseline; }
   .cname { color: var(--text); white-space: nowrap; overflow-wrap: normal; }
   .dots { letter-spacing: 1px; color: var(--accent); font-size: 11px; white-space: nowrap; }
   .pts { font-variant-numeric: tabular-nums; color: var(--text); }
@@ -1309,7 +1486,7 @@ export function renderBriefingHtml(
     .storyline > article { margin: 8px 6px 0; }
     article { flex-direction: column; padding: 12px; }
     .cover { width: 100%; height: 160px; }
-    .rated li { grid-template-columns: 66px 36px 28px minmax(0, 1fr); gap: 4px; }
+    .rated li { grid-template-columns: 80px 36px 28px minmax(0, 1fr); gap: 4px; }
     .dots { letter-spacing: 0; }
     .dupe-meta { display: block; min-width: 0; }
   }
@@ -1319,41 +1496,29 @@ export function renderBriefingHtml(
 <main>
   <header>
     <h1>${escapeHtml(title)}</h1>
-    <p><span id="count">${Math.min(limit, stories.length)} of ${storyCount}</span> stories · generated ${escapeHtml(new Date(generatedAtMs).toLocaleString())}</p>
+    <p>${t.countLine(`<span id="count">${count}</span>`, escapeHtml(new Date(generatedAtMs).toLocaleString(t.locale)))}</p>
     <div class="mix" id="mix"></div>
   </header>
   <div id="stories"></div>
   <footer>
-    <p><strong>How stories are rated.</strong> Each story gets 0–3 on six criteria, each with the fact behind it.
-    The sliders set how much each criterion counts compared with the others (they are remembered for every briefing).
-    The score is 0–100: one strong criterion is enough to lift a story, and each further one lifts it more, so a deadly attack
-    does not also need to be surprising to rank high. The +numbers show each criterion's share of the score.
-    Critical is ${LEVEL_THRESHOLDS.critical}+, High ${LEVEL_THRESHOLDS.high}+, Notable ${LEVEL_THRESHOLDS.notable}+, Routine below.
-    ${ratedByAi
-      ? 'The AI reads the stories together to merge reports of the same event under one story (open "more reports" to see them and why),'
-        + ' to group different stories about one ongoing situation into a storyline, and to write the summary at the top.'
-      : 'Reports with near-identical headlines are merged under one story (open "more reports" to see them).'}
-    No single area takes more than about a third of the list.
-    ${ratedByAi
-      ? 'Severity, scale, urgency, interest and the economic, political, social and security impact are judged by AI; coverage and relevance come from your sources and topics.'
-      : 'AI was off, so keyword rules did the rating and there is no impact write-up; turn AI on for both.'}</p>
+    <p>${t.footer(ratedByAi)}</p>
     <ul>${legend}</ul>
   </footer>
 </main>
 <div class="eq-backdrop" id="eq-backdrop"></div>
-<aside class="eq" id="eq" aria-label="Importance of each criterion" aria-hidden="true">
+<aside class="eq" id="eq" aria-label="${t.importanceAria}" aria-hidden="true">
   <div class="eq-head">
-    <span class="eq-title">Importance</span>
-    <button type="button" class="eq-close" id="eq-close" aria-label="Close">✕</button>
+    <span class="eq-title">${t.importance}</span>
+    <button type="button" class="eq-close" id="eq-close" aria-label="${t.close}">✕</button>
   </div>
-  <p class="eq-hint">How much each criterion counts. The stories re-rank as you slide.</p>
+  <p class="eq-hint">${t.importanceHint}</p>
   <div id="eq-presets"></div>
   <div id="eq-bands"></div>
 </aside>
 <div class="fabs">
-  <button type="button" class="fab fab-eq" id="eq-toggle" aria-controls="eq" aria-expanded="false">Importance · <span id="eq-current"></span></button>
-  <button type="button" class="fab" id="go-top" aria-label="Go to top">↑</button>
-  <button type="button" class="fab" id="go-bottom" aria-label="Go to bottom">↓</button>
+  <button type="button" class="fab fab-eq" id="eq-toggle" aria-controls="eq" aria-expanded="false">${t.importance} · <span id="eq-current"></span></button>
+  <button type="button" class="fab" id="go-top" aria-label="${t.goTop}">↑</button>
+  <button type="button" class="fab" id="go-bottom" aria-label="${t.goBottom}">↓</button>
 </div>
 <script id="briefing-data" type="application/json">${scriptJson(data)}</script>
 <script>${PAGE_SCRIPT}</script>
@@ -1377,6 +1542,8 @@ export type BriefingOptions = {
   groupWithAi?: (items: GroupingItem[]) => Promise<StoryGrouping>;
   /** Writes the summary at the top; omitted or failing shows the top stories' own summaries. */
   digestWithAi?: (items: DigestItem[]) => Promise<DigestBullet[]>;
+  /** Language of the page and its notes; the AI prompts should use the same one. */
+  language?: BriefingLanguage;
   generatedAtMs?: number;
 };
 
@@ -1399,7 +1566,8 @@ export async function buildBriefing(stories: BriefingStory[], options: BriefingO
   const generatedAtMs = options.generatedAtMs ?? Date.now();
   const limit = period === 'day' ? 20 : 12;
   const inWindow = stories.filter(story => story.publishedMs >= window.startMs && story.publishedMs < window.endMs);
-  const context = { localTerms: options.localTerms, trackedTerms: options.trackedTerms, region: options.region };
+  const language = options.language || 'en';
+  const context = { localTerms: options.localTerms, trackedTerms: options.trackedTerms, region: options.region, language };
   // With the AI grouping the briefing, only near-identical titles are merged up front; looser
   // matches go to it as hints so it decides from what the stories say.
   let rated: RatedStory[] = clusterStories(inWindow, !options.groupWithAi).map(({ story, related }) => {
@@ -1469,10 +1637,10 @@ export async function buildBriefing(stories: BriefingStory[], options: BriefingO
           ...(maybeSameAs?.length ? { maybeSameAs } : {})
         };
       }));
-      merged = applyGrouping(merged, groups, aiRan);
+      merged = applyGrouping(merged, groups, aiRan, language);
     } catch {
       // No AI answer: fall back to the title rule's guesses, without storylines.
-      merged = applyGrouping(merged, { duplicates: hints, storylines: new Map() }, aiRan);
+      merged = applyGrouping(merged, { duplicates: hints, storylines: new Map() }, aiRan, language);
     }
   }
   const picked = pickVaried(merged, limit);
@@ -1485,7 +1653,7 @@ export async function buildBriefing(stories: BriefingStory[], options: BriefingO
         summary: String(entry.story.summary || '').slice(0, 300),
         level: entry.level,
         score: entry.score,
-        area: DIMENSION_LABELS[entry.rating.dimension],
+        area: UI[language].dimensions[entry.rating.dimension],
         storyline: entry.storyline || '',
         sources: distinctSources([entry.story, ...entry.related]).length,
         impacts: entry.rating.impacts
@@ -1494,7 +1662,7 @@ export async function buildBriefing(stories: BriefingStory[], options: BriefingO
       // The page builds its own list from the top stories.
     }
   }
-  const title = briefingTitle(period, scope, window.startMs, window.endMs);
+  const title = briefingTitle(period, scope, window.startMs, window.endMs, language);
   return {
     // Random part keeps the URL unguessable: the HTML page is served without a login.
     id: `${window.startMs}-${crypto.randomBytes(9).toString('hex')}`,
@@ -1506,7 +1674,7 @@ export async function buildBriefing(stories: BriefingStory[], options: BriefingO
     windowEndMs: window.endMs,
     generatedAtMs,
     itemCount: picked.length,
-    html: renderBriefingHtml(title, merged, limit, inWindow.length, generatedAtMs, aiRan, digest)
+    html: renderBriefingHtml(title, merged, limit, inWindow.length, generatedAtMs, aiRan, digest, language)
   };
 }
 
