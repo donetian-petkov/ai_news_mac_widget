@@ -76,7 +76,9 @@ describe('scores and levels', () => {
     const none = { severity: 0, scale: 0, urgency: 0, interest: 0, coverage: 0, relevance: 0 };
     expect(scoreOf({ ...none, severity: 3 })).toBe(65);
     expect(levelOf(scoreOf({ ...none, severity: 3 }))).toBe('high');
-    expect(scoreOf({ ...none, severity: 3, scale: 3 })).toBeGreaterThan(80);
+    expect(scoreOf({ ...none, severity: 3, scale: 3, urgency: 3 })).toBeGreaterThan(80);
+    // Without anything happening now it stays just below Critical.
+    expect(scoreOf({ ...none, severity: 3, scale: 3 })).toBe(69);
     expect(scoreOf(none)).toBe(0);
   });
 
@@ -405,5 +407,20 @@ describe('prompts', () => {
     expect(buildAiRatingPrompt([], 'bg', 'България')).toContain(LITERAL_FACTS_RULE);
     expect(buildStorylinePrompt([], 'bg')).toContain(LITERAL_FACTS_RULE);
     expect(buildDigestPrompt([], 'bg', 'България')).toContain(LITERAL_FACTS_RULE);
+  });
+});
+
+describe('critical', () => {
+  const scores = (severity: number, scale: number, urgency: number) => ({ severity, scale, urgency, interest: 2, coverage: 2, relevance: 0 });
+  it('lets a severe local event happening now be critical, but not a grim background feature', async () => {
+    const { criticalCap } = await import('./briefing.js');
+    // A body found and a suspect held today, in one town.
+    expect(criticalCap(scores(3, 1, 3))).toBeUndefined();
+    expect(levelOf(scoreOf(scores(3, 1, 3)))).toBe('critical');
+    // Child marriages in one far province, a long-running situation.
+    expect(criticalCap(scores(3, 1, 1))).toBe('notNow');
+    expect(levelOf(scoreOf({ ...scores(3, 3, 1), interest: 3 }))).not.toBe('critical');
+    // Happening now but minor and local.
+    expect(criticalCap(scores(2, 1, 3))).toBe('minor');
   });
 });

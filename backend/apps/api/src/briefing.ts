@@ -181,8 +181,8 @@ const UI = {
       whyItMatters: 'Why it matters',
       impact: 'Impact',
       why: 'Why {level} · {score}/100',
-      cappedLocal: 'Kept below Critical: it affects one place only.',
-      cappedNotNow: 'Kept below Critical: nothing urgent and no severe harm.',
+      cappedNotNow: 'Kept below Critical: nothing is happening right now (a background or slow-moving story).',
+      cappedMinor: 'Kept below Critical: local and without severe harm.',
       moreOne: '1 more report of this',
       moreMany: '{n} more reports of this',
       storyline: 'Storyline',
@@ -264,8 +264,8 @@ const UI = {
       whyItMatters: 'Защо е важно',
       impact: 'Въздействие',
       why: 'Защо „{level}“ · {score}/100',
-      cappedLocal: 'Под „Критично“: засяга само едно място.',
-      cappedNotNow: 'Под „Критично“: нищо спешно и без тежки последици.',
+      cappedNotNow: 'Под „Критично“: нищо не се случва в момента (фонова или бавно развиваща се тема).',
+      cappedMinor: 'Под „Критично“: местна новина без тежки последици.',
       moreOne: 'още 1 източник за същото',
       moreMany: 'още {n} източника за същото',
       storyline: 'Сюжет',
@@ -374,13 +374,14 @@ export function scoreOf(scores: CriteriaScores, weights: CriteriaScores = DEFAUL
 }
 
 /**
- * Critical is kept for what reaches far and is either severe or happening now. A local
- * crime or a background feature about one distant province can be High at most, however
- * grim. The briefing page runs the same rule.
+ * Critical is kept for what is happening now (or due within days) and is either severe or
+ * reaches a whole country. A killing under investigation today qualifies even when local;
+ * a background feature about a long-running situation, however grim, is High at most.
+ * The briefing page runs the same rule.
  */
-export function criticalCap(scores: CriteriaScores): 'local' | 'notNow' | undefined {
-  if (clamp(scores.scale) < 2) return 'local';
-  if (clamp(scores.severity) < 3 && clamp(scores.urgency) < 2) return 'notNow';
+export function criticalCap(scores: CriteriaScores): 'notNow' | 'minor' | undefined {
+  if (clamp(scores.urgency) < 2) return 'notNow';
+  if (clamp(scores.severity) < 3 && clamp(scores.scale) < 2) return 'minor';
   return undefined;
 }
 
@@ -1003,10 +1004,10 @@ const PAGE_SCRIPT = String.raw`
   function rawScoreOf(scores) {
     return Math.round((1 - lifts(scores).reduce((rest, lift) => rest * (1 - lift), 1)) * 100);
   }
-  // Mirrors criticalCap: Critical needs wide reach and severe harm or urgency.
+  // Mirrors criticalCap: Critical needs urgency, and severe harm or country-wide reach.
   function capOf(scores) {
-    if (scores.scale < 2) return 'local';
-    if (scores.severity < 3 && scores.urgency < 2) return 'notNow';
+    if (scores.urgency < 2) return 'notNow';
+    if (scores.severity < 3 && scores.scale < 2) return 'minor';
     return '';
   }
   function scoreOf(scores) {
@@ -1113,7 +1114,7 @@ const PAGE_SCRIPT = String.raw`
     rated.append(el('summary', 'rated-head', fill(T.why, { level: data.levelLabels[level], score })));
     const cap = capOf(story.scores);
     if (cap && rawScoreOf(story.scores) >= data.thresholds.critical) {
-      rated.append(el('p', 'rated-cap', cap === 'local' ? T.cappedLocal : T.cappedNotNow));
+      rated.append(el('p', 'rated-cap', cap === 'minor' ? T.cappedMinor : T.cappedNotNow));
     }
     const list = el('ul');
     // Each criterion's share of the score, in proportion to how hard it pushed.
