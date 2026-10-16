@@ -8,12 +8,10 @@ import {
   createBriefingStore,
   levelOf,
   applyGrouping,
-  msUntilNextRun,
   parseAiRatings,
   parseDigest,
   parseStorylines,
   pickVaried,
-  previousHourWindow,
   ruleRating,
   scoreOf,
   type BriefingStory,
@@ -26,13 +24,6 @@ const hour = { startMs: at(13), endMs: at(14) };
 function story(overrides: Partial<BriefingStory>): BriefingStory {
   return { id: 'x', title: 'Story', feedUrl: 'feed-a', publishedMs: at(13, 30), ...overrides };
 }
-
-describe('windows', () => {
-  it('covers the last full clock hour and waits until a minute past the next', () => {
-    expect(previousHourWindow(at(14, 5))).toEqual(hour);
-    expect(msUntilNextRun(at(14, 5))).toBe(at(15, 1) - at(14, 5));
-  });
-});
 
 describe('ruleRating', () => {
   it('rates a deadly disaster above a sports story and quotes the words behind each score', () => {
@@ -382,7 +373,6 @@ describe('createBriefingStore', () => {
 
     const reloaded = createBriefingStore(dir, 2);
     expect(reloaded.list().map(r => [r.windowStartMs, r.scheduled])).toEqual([[at(11), false], [at(11), true]]);
-    expect(reloaded.hasScheduledWindow(at(11))).toBe(true);
     expect(reloaded.readHtml(redo.id)).toContain('<!doctype html>');
     expect(reloaded.readHtml(first.id)).toBeNull();
     expect(reloaded.readHtml('../index')).toBeNull();

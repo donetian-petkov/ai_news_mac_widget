@@ -1525,7 +1525,7 @@ private struct FloatingWidgetView: View {
                 briefingChoice("Hourly briefing", detail: displayCategoryName, systemImage: "clock", period: .hour)
                 briefingChoice("Daily briefing", detail: displayCategoryName, systemImage: "calendar", period: .day)
                 Divider().padding(.vertical, 4)
-                briefingChoice("Latest briefing", detail: "All columns", systemImage: "doc.richtext", period: nil)
+                briefingChoice("Hourly briefing", detail: "All columns", systemImage: "square.stack", period: nil)
             }
             .padding(8)
             .frame(width: 240)
@@ -1557,7 +1557,7 @@ private struct FloatingWidgetView: View {
         .pointingHandCursor()
     }
 
-    /// Writes a briefing for this widget's feeds (or opens the newest all-columns one when
+    /// Writes a briefing now for this widget's feeds (or an hourly one for every column when
     /// `period` is nil) and opens it in the browser.
     private func openBriefing(_ period: APIClient.BriefingPeriod?) async {
         guard let api = try? state.authorizedAPIClient() else { return }

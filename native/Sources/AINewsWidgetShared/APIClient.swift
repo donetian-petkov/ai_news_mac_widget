@@ -405,7 +405,7 @@ public struct APIClient: Sendable {
         return item
     }
 
-    /// Newest saved briefing; the backend writes one for the last hour if none exists yet.
+    /// Writes an hourly briefing for every column now.
     public func fetchLatestBriefing() async throws -> Briefing {
         let response: BriefingResponse = try await send(path: "/api/briefings/latest")
         guard let item = response.item else { throw APIClientError.invalidResponse }

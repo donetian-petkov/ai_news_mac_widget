@@ -715,23 +715,9 @@ export function pickVaried(rated: RatedStory[], limit: number): RatedStory[] {
 
 // ---- windows and titles ----
 
-/** The last full clock hour before `nowMs`, e.g. 13:00–14:00 when it is 14:05. */
-export function previousHourWindow(nowMs: number): { startMs: number; endMs: number } {
-  const now = new Date(nowMs);
-  const endMs = new Date(now.getFullYear(), now.getMonth(), now.getDate(), now.getHours()).getTime();
-  return { startMs: endMs - HOUR_MS, endMs };
-}
-
 /** The hour or day that ends now. */
 export function rollingWindow(period: BriefingPeriod, nowMs: number): { startMs: number; endMs: number } {
   return { startMs: nowMs - (period === 'day' ? 24 * HOUR_MS : HOUR_MS), endMs: nowMs };
-}
-
-/** Delay until a minute past the next clock hour, so stories fetched at :00 make it in. */
-export function msUntilNextRun(nowMs: number, graceMs = 60_000): number {
-  const { endMs } = previousHourWindow(nowMs);
-  const next = endMs + HOUR_MS + graceMs;
-  return Math.max(1_000, next - nowMs);
 }
 
 function formatTime(ms: number): string {
@@ -1535,9 +1521,6 @@ export function createBriefingStore(dir: string, keep = 96) {
     },
     latest(): BriefingRecord | null {
       return records[0] || null;
-    },
-    hasScheduledWindow(startMs: number): boolean {
-      return records.some(record => record.scheduled && record.windowStartMs === startMs);
     },
     readHtml(id: string): string | null {
       if (!ID_PATTERN.test(id) || !records.some(record => record.id === id)) return null;
