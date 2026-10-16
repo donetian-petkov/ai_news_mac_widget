@@ -819,7 +819,19 @@ public struct RuntimeConfigResponse: Codable, Sendable {
     public var researchLang: String
     public var titleDisplayLanguage: String
     public var aiDefaults: GlobalAiDefaults?
+    /// Models each provider offers now, newest first, with prices. Older backends omit it.
+    public var modelCatalog: [String: [ModelCatalogEntry]]?
     public var feeds: [RuntimeFeed]
+}
+
+public struct ModelCatalogEntry: Codable, Equatable, Sendable {
+    public var id: String
+    public var createdMs: Double
+    public var inputPerM: Double?
+    public var outputPerM: Double?
+    public var costTier: Int?
+    /// e.g. "$ · $0.10 in / $0.50 out per 1M tokens".
+    public var costLabel: String
 }
 
 public struct GlobalAiDefaults: Codable, Equatable, Sendable {

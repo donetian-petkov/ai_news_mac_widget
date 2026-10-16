@@ -2779,36 +2779,20 @@ private struct SettingsView: View {
 
     static let providerOptions = ["openai", "claude", "openrouter", "local"]
 
-    // Curated model suggestions per provider, mirroring the backend defaults in
-    // server.ts (modelOptionsByProvider). Free text is still allowed via the field.
-    private struct ModelSuggestions {
-        var summary: [String]
-        var research: [String]
-        var ask: [String]
-    }
-
-    private static let modelOptionsByProvider: [String: ModelSuggestions] = [
-        "openai": ModelSuggestions(
-            summary: ["gpt-4.1-nano", "gpt-4.1-mini", "gpt-4o-mini", "gpt-4.1"],
-            research: ["gpt-4.1-mini", "gpt-4.1", "gpt-4o-mini"],
-            ask: ["gpt-4.1-nano", "gpt-4.1-mini", "gpt-4o-mini"]
-        ),
-        "claude": ModelSuggestions(
-            summary: ["claude-3-5-haiku-latest", "claude-3-7-sonnet-latest"],
-            research: ["claude-3-7-sonnet-latest", "claude-3-5-haiku-latest"],
-            ask: ["claude-3-5-haiku-latest", "claude-3-7-sonnet-latest"]
-        ),
-        "openrouter": ModelSuggestions(
-            summary: ["openai/gpt-4.1-mini", "openai/gpt-4.1", "anthropic/claude-3.5-haiku"],
-            research: ["openai/gpt-4.1", "openai/gpt-4.1-mini", "anthropic/claude-3.7-sonnet"],
-            ask: ["openai/gpt-4.1-mini", "openai/gpt-4.1-nano", "anthropic/claude-3.5-haiku"]
-        )
-    ]
-
-    private func modelSuggestions(for kind: KeyPath<ModelSuggestions, [String]>) -> [String] {
+    // The models the provider offers right now, read by the backend from the provider
+    // itself, with their prices. Nothing is hard-coded here; free text still works.
+    private var modelCatalog: [ModelCatalogEntry] {
         let provider = (state.accountSettings.aiProvider ?? state.runtimeConfig?.aiProvider ?? "openai")
             .lowercased()
-        return SettingsView.modelOptionsByProvider[provider]?[keyPath: kind] ?? []
+        return state.runtimeConfig?.modelCatalog?[provider] ?? []
+    }
+
+    private var modelSuggestions: [String] {
+        modelCatalog.map(\.id)
+    }
+
+    private func modelCost(_ id: String) -> String? {
+        modelCatalog.first(where: { $0.id == id })?.costLabel
     }
 
     private func globalBudgetValue(for feeds: [RuntimeFeed]) -> String {
@@ -2973,7 +2957,8 @@ private struct SettingsView: View {
                         get: { state.accountSettings.summaryModel ?? "" },
                         set: { state.accountSettings.summaryModel = $0.isEmpty ? nil : $0 }
                     ),
-                    suggestions: modelSuggestions(for: \.summary)
+                    suggestions: modelSuggestions,
+                    detail: modelCost
                 )
 
                 EditableComboField(
@@ -2982,7 +2967,8 @@ private struct SettingsView: View {
                         get: { state.accountSettings.researchModel ?? "" },
                         set: { state.accountSettings.researchModel = $0.isEmpty ? nil : $0 }
                     ),
-                    suggestions: modelSuggestions(for: \.research)
+                    suggestions: modelSuggestions,
+                    detail: modelCost
                 )
 
                 EditableComboField(
@@ -2991,7 +2977,8 @@ private struct SettingsView: View {
                         get: { state.accountSettings.askModel ?? "" },
                         set: { state.accountSettings.askModel = $0.isEmpty ? nil : $0 }
                     ),
-                    suggestions: modelSuggestions(for: \.ask)
+                    suggestions: modelSuggestions,
+                    detail: modelCost
                 )
 
                 Toggle("Show cover thumbnails on stories", isOn: $showThumbnails)
@@ -3348,11 +3335,21 @@ private struct EditableComboField: View {
     let placeholder: String
     @Binding var value: String
     let suggestions: [String]
+    /// Extra text shown beside an option and the current value, e.g. a model's price.
+    var detail: ((String) -> String?)? = nil
 
     var body: some View {
         HStack(spacing: 6) {
             TextField(placeholder, text: $value)
                 .textFieldStyle(.roundedBorder)
+
+            if let note = detail?(value) {
+                Text(note)
+                    .font(.caption)
+                    .foregroundStyle(AINewsTheme.textSecondary)
+                    .lineLimit(1)
+                    .fixedSize()
+            }
 
             if !suggestions.isEmpty {
                 Menu {
@@ -3360,10 +3357,11 @@ private struct EditableComboField: View {
                         Button {
                             value = option
                         } label: {
+                            let text = detail?(option).map { "\(option)   \($0)" } ?? option
                             if option == value {
-                                Label(option, systemImage: "checkmark")
+                                Label(text, systemImage: "checkmark")
                             } else {
-                                Text(option)
+                                Text(text)
                             }
                         }
                     }

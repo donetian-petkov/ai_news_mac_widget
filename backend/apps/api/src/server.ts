@@ -13,6 +13,7 @@ import { z } from 'zod';
 import { registerProductFeatureApi, type ProductFeatureRuntime } from './productFeatures';
 import { chunk, fingerprintRecord, takeChangedRecords } from './newsPersistence';
 import { titleTokens as cachedTitleTokens } from './titleTokens';
+import { fetchModels, fetchPrices, resolveChoice, withPrices, type ModelChoice, type ModelInfo } from './modelCatalog';
 import {
   buildAiRatingPrompt,
   buildBriefing,
@@ -484,6 +485,8 @@ type Config = {
   researchModel: string;
   askModel: string;
   availableModels: ModelOptionsByProvider;
+  /** Every model each provider offers now, with its price. */
+  modelCatalog: Record<AIProvider, ModelInfo[]>;
   aiFeatures: AiInsightFeatureSettings;
   localRegion: string;
   localLlmBaseUrl: string;
@@ -993,7 +996,13 @@ app.get('/api/account/settings', async (req, res) => {
       parsed = {};
     }
     const normalized = normalizeAccountSettings(parsed);
-    res.json({ settings: { ...defaultAccountSettings(), ...normalized } });
+    // Models show what is running now, which may have changed when a model was retired.
+    const running = (normalized.aiProvider || aiProvider) === aiProvider ? currentModelSelection(aiProvider) : null;
+    res.json({ settings: {
+      ...defaultAccountSettings(),
+      ...normalized,
+      ...(running ? { summaryModel: running.summary, researchModel: running.research, askModel: running.ask } : {})
+    } });
   } catch (error) {
     res.status(500).json({ error: (error as Error).message || 'Failed to load account settings.' });
   }
@@ -1014,6 +1023,23 @@ app.put('/api/account/settings', async (req, res) => {
         settingsJson: JSON.stringify(normalized)
       }
     }));
+    // The models picked in the app's settings take effect, not only get stored.
+    const settingsProvider = typeof normalized.aiProvider === 'string' ? normalized.aiProvider : aiProvider;
+    if (settingsProvider === aiProvider) {
+      const fields: Record<AiModelKind, string> = { summary: 'summaryModel', research: 'researchModel', ask: 'askModel' };
+      let applied = false;
+      for (const kind of MODEL_KINDS) {
+        const model = String(normalized[fields[kind]] || '').trim();
+        if (model && model !== modelChoices[aiProvider][kind].model && providerSupportsModel(aiProvider, kind, model)) {
+          modelChoices[aiProvider][kind] = { model, byUser: true };
+          applied = true;
+        }
+      }
+      if (applied) {
+        markDirty();
+        broadcastConfig();
+      }
+    }
     res.json({ saved: true, settings: normalized });
   } catch (error) {
     res.status(500).json({ error: (error as Error).message || 'Failed to save account settings.' });
@@ -1033,6 +1059,7 @@ app.get('/api/runtime/config', async (req, res) => {
       summaryModel: activeSelection.summary,
       researchModel: activeSelection.research,
       askModel: activeSelection.ask,
+      modelCatalog: modelCatalogs,
       summaryLang,
       researchLang,
       titleDisplayLanguage,
@@ -2105,185 +2132,44 @@ const EMBED_MODEL =
   process.env.EMBED_MODEL ||
   'text-embedding-3-small';
 
-const OPENAI_SUMMARY_MODEL =
-  process.env.OPENAI_SUMMARY_MODEL ||
-  process.env.SUMMARY_MODEL ||
-  'gpt-4.1-nano';
-
-const OPENAI_RESEARCH_MODEL =
-  process.env.OPENAI_RESEARCH_MODEL ||
-  process.env.RESEARCH_MODEL ||
-  'gpt-4.1-mini';
-
-const OPENAI_ASK_MODEL =
-  process.env.OPENAI_ASK_MODEL ||
-  process.env.ASK_MODEL ||
-  'gpt-4.1-nano';
-
-const CLAUDE_SUMMARY_MODEL =
-  process.env.CLAUDE_SUMMARY_MODEL ||
-  process.env.SUMMARY_MODEL ||
-  'claude-3-5-haiku-latest';
-
-const CLAUDE_RESEARCH_MODEL =
-  process.env.CLAUDE_RESEARCH_MODEL ||
-  process.env.RESEARCH_MODEL ||
-  'claude-3-7-sonnet-latest';
-
-const CLAUDE_ASK_MODEL =
-  process.env.CLAUDE_ASK_MODEL ||
-  process.env.ASK_MODEL ||
-  'claude-3-5-haiku-latest';
-
-const OPENROUTER_SUMMARY_MODEL =
-  process.env.OPENROUTER_SUMMARY_MODEL ||
-  process.env.SUMMARY_MODEL ||
-  'openai/gpt-4.1-mini';
-
-const OPENROUTER_RESEARCH_MODEL =
-  process.env.OPENROUTER_RESEARCH_MODEL ||
-  process.env.RESEARCH_MODEL ||
-  'openai/gpt-4.1';
-
-const OPENROUTER_ASK_MODEL =
-  process.env.OPENROUTER_ASK_MODEL ||
-  process.env.ASK_MODEL ||
-  'openai/gpt-4.1-mini';
-
-const LOCAL_SUMMARY_MODEL =
-  process.env.LOCAL_SUMMARY_MODEL ||
-  process.env.SUMMARY_MODEL ||
-  'llama3.1';
-
-const LOCAL_RESEARCH_MODEL =
-  process.env.LOCAL_RESEARCH_MODEL ||
-  process.env.RESEARCH_MODEL ||
-  LOCAL_SUMMARY_MODEL;
-
-const LOCAL_ASK_MODEL =
-  process.env.LOCAL_ASK_MODEL ||
-  process.env.ASK_MODEL ||
-  LOCAL_SUMMARY_MODEL;
-
 const LOCAL_EMBED_MODEL =
   process.env.LOCAL_EMBED_MODEL ||
   process.env.EMBED_MODEL ||
   'nomic-embed-text';
 
-function parseModelCsv(raw: string | undefined): string[] {
-  if (!raw) return [];
-  return raw
-    .split(',')
-    .map(x => x.trim())
-    .filter(Boolean);
+// Generation models are not named in code. Each provider's own model list is read at
+// startup, when a key changes and every few hours (modelCatalog.ts); defaults are picked
+// from it by price and age, and a chosen model that disappears is replaced. An env
+// variable such as OPENAI_SUMMARY_MODEL or SUMMARY_MODEL still pins a model.
+const MODEL_KINDS: AiModelKind[] = ['summary', 'research', 'ask'];
+const AI_PROVIDERS: AIProvider[] = ['openai', 'claude', 'openrouter', 'local'];
+const ENV_MODEL_PREFIX: Record<AIProvider, string> = { openai: 'OPENAI', claude: 'CLAUDE', openrouter: 'OPENROUTER', local: 'LOCAL' };
+const MODEL_CATALOG_REFRESH_MS = 6 * 60 * 60 * 1000;
+
+function envModel(provider: AIProvider, kind: AiModelKind): string {
+  const upper = kind.toUpperCase();
+  return String(process.env[`${ENV_MODEL_PREFIX[provider]}_${upper}_MODEL`] || process.env[`${upper}_MODEL`] || '').trim();
 }
 
-function uniqueModels(models: string[]): string[] {
-  const out: string[] = [];
-  const seen = new Set<string>();
-  for (const model of models) {
-    const id = String(model || '').trim();
-    if (!id || seen.has(id)) continue;
-    seen.add(id);
-    out.push(id);
-  }
-  return out;
+const modelCatalogs: Record<AIProvider, ModelInfo[]> = { openai: [], claude: [], openrouter: [], local: [] };
+const modelChoices = Object.fromEntries(AI_PROVIDERS.map(provider => [
+  provider,
+  Object.fromEntries(MODEL_KINDS.map(kind => {
+    const pinned = envModel(provider, kind);
+    return [kind, { model: pinned, byUser: !!pinned }];
+  }))
+])) as Record<AIProvider, Record<AiModelKind, ModelChoice>>;
+
+/** Model ids per provider and kind for the settings menus (the same list for every kind). */
+function modelOptionsSnapshot(): ModelOptionsByProvider {
+  return Object.fromEntries(AI_PROVIDERS.map(provider => {
+    const ids = modelCatalogs[provider].map(model => model.id);
+    return [provider, Object.fromEntries(MODEL_KINDS.map(kind => {
+      const current = modelChoices[provider][kind].model;
+      return [kind, current && !ids.includes(current) ? [current, ...ids] : ids];
+    }))];
+  })) as ModelOptionsByProvider;
 }
-
-function buildModelOptions(primary: string, fallback: string[]): string[] {
-  return uniqueModels([primary, ...fallback]);
-}
-
-const modelOptionsByProvider: ModelOptionsByProvider = {
-  openai: {
-    summary: buildModelOptions(
-      OPENAI_SUMMARY_MODEL,
-      parseModelCsv(process.env.OPENAI_SUMMARY_MODEL_OPTIONS)
-        .concat(['gpt-4.1-nano', 'gpt-4.1-mini', 'gpt-4o-mini', 'gpt-4.1'])
-    ),
-    research: buildModelOptions(
-      OPENAI_RESEARCH_MODEL,
-      parseModelCsv(process.env.OPENAI_RESEARCH_MODEL_OPTIONS)
-        .concat(['gpt-4.1-mini', 'gpt-4.1', 'gpt-4o-mini'])
-    ),
-    ask: buildModelOptions(
-      OPENAI_ASK_MODEL,
-      parseModelCsv(process.env.OPENAI_ASK_MODEL_OPTIONS)
-        .concat(['gpt-4.1-nano', 'gpt-4.1-mini', 'gpt-4o-mini'])
-    )
-  },
-  claude: {
-    summary: buildModelOptions(
-      CLAUDE_SUMMARY_MODEL,
-      parseModelCsv(process.env.CLAUDE_SUMMARY_MODEL_OPTIONS)
-        .concat(['claude-3-5-haiku-latest', 'claude-3-7-sonnet-latest'])
-    ),
-    research: buildModelOptions(
-      CLAUDE_RESEARCH_MODEL,
-      parseModelCsv(process.env.CLAUDE_RESEARCH_MODEL_OPTIONS)
-        .concat(['claude-3-7-sonnet-latest', 'claude-3-5-haiku-latest'])
-    ),
-    ask: buildModelOptions(
-      CLAUDE_ASK_MODEL,
-      parseModelCsv(process.env.CLAUDE_ASK_MODEL_OPTIONS)
-        .concat(['claude-3-5-haiku-latest', 'claude-3-7-sonnet-latest'])
-    )
-  },
-  openrouter: {
-    summary: buildModelOptions(
-      OPENROUTER_SUMMARY_MODEL,
-      parseModelCsv(process.env.OPENROUTER_SUMMARY_MODEL_OPTIONS)
-        .concat(['openai/gpt-4.1-mini', 'openai/gpt-4.1', 'anthropic/claude-3.5-haiku'])
-    ),
-    research: buildModelOptions(
-      OPENROUTER_RESEARCH_MODEL,
-      parseModelCsv(process.env.OPENROUTER_RESEARCH_MODEL_OPTIONS)
-        .concat(['openai/gpt-4.1', 'openai/gpt-4.1-mini', 'anthropic/claude-3.7-sonnet'])
-    ),
-    ask: buildModelOptions(
-      OPENROUTER_ASK_MODEL,
-      parseModelCsv(process.env.OPENROUTER_ASK_MODEL_OPTIONS)
-        .concat(['openai/gpt-4.1-mini', 'openai/gpt-4.1-nano', 'anthropic/claude-3.5-haiku'])
-    )
-  },
-  local: {
-    summary: buildModelOptions(
-      LOCAL_SUMMARY_MODEL,
-      parseModelCsv(process.env.LOCAL_SUMMARY_MODEL_OPTIONS).concat([LOCAL_SUMMARY_MODEL])
-    ),
-    research: buildModelOptions(
-      LOCAL_RESEARCH_MODEL,
-      parseModelCsv(process.env.LOCAL_RESEARCH_MODEL_OPTIONS).concat([LOCAL_RESEARCH_MODEL])
-    ),
-    ask: buildModelOptions(
-      LOCAL_ASK_MODEL,
-      parseModelCsv(process.env.LOCAL_ASK_MODEL_OPTIONS).concat([LOCAL_ASK_MODEL])
-    )
-  }
-};
-
-const selectedModelsByProvider: Record<AIProvider, AiModelSelection> = {
-  openai: {
-    summary: modelOptionsByProvider.openai.summary[0] || OPENAI_SUMMARY_MODEL,
-    research: modelOptionsByProvider.openai.research[0] || OPENAI_RESEARCH_MODEL,
-    ask: modelOptionsByProvider.openai.ask[0] || OPENAI_ASK_MODEL
-  },
-  claude: {
-    summary: modelOptionsByProvider.claude.summary[0] || CLAUDE_SUMMARY_MODEL,
-    research: modelOptionsByProvider.claude.research[0] || CLAUDE_RESEARCH_MODEL,
-    ask: modelOptionsByProvider.claude.ask[0] || CLAUDE_ASK_MODEL
-  },
-  openrouter: {
-    summary: modelOptionsByProvider.openrouter.summary[0] || OPENROUTER_SUMMARY_MODEL,
-    research: modelOptionsByProvider.openrouter.research[0] || OPENROUTER_RESEARCH_MODEL,
-    ask: modelOptionsByProvider.openrouter.ask[0] || OPENROUTER_ASK_MODEL
-  },
-  local: {
-    summary: modelOptionsByProvider.local.summary[0] || LOCAL_SUMMARY_MODEL,
-    research: modelOptionsByProvider.local.research[0] || LOCAL_RESEARCH_MODEL,
-    ask: modelOptionsByProvider.local.ask[0] || LOCAL_ASK_MODEL
-  }
-};
 
 const ASK_AGENT_MAX_QUESTIONS = 5;
 const ASK_AGENT_MAX_CHARS = 400;
@@ -2321,16 +2207,72 @@ let localLlmBaseUrl = DEFAULT_LOCAL_LLM_BASE_URL;
 let aiAvailable: boolean = false;
 
 function activeModel(kind: AiModelKind): string {
-  return selectedModelsByProvider[aiProvider][kind] || 'none';
+  return modelChoices[aiProvider][kind].model || 'none';
 }
 
-function providerSupportsModel(provider: AIProvider, kind: AiModelKind, model: string): boolean {
-  if (provider === 'local') return !!String(model || '').trim();
-  return modelOptionsByProvider[provider][kind].includes(model);
+/** A model the provider lists right now; anything goes while its list is unknown. */
+function providerSupportsModel(provider: AIProvider, _kind: AiModelKind, model: string): boolean {
+  const id = String(model || '').trim();
+  if (!id) return false;
+  if (provider === 'local' || !modelCatalogs[provider].length) return true;
+  return modelCatalogs[provider].some(entry => entry.id === id);
 }
 
 function currentModelSelection(provider: AIProvider): AiModelSelection {
-  return { ...selectedModelsByProvider[provider] };
+  return Object.fromEntries(MODEL_KINDS.map(kind => [kind, modelChoices[provider][kind].model])) as AiModelSelection;
+}
+
+function modelCatalogPath(): string {
+  return path.join(DATA_DIR, 'model-catalog.json');
+}
+
+/** The last lists that loaded, so a restart without network still knows the models. */
+function loadModelCatalogCache() {
+  const cached = safeReadJson<Partial<Record<AIProvider, ModelInfo[]>>>(modelCatalogPath());
+  for (const provider of AI_PROVIDERS) {
+    const list = cached?.[provider];
+    if (Array.isArray(list) && list.every(model => typeof model?.id === 'string')) modelCatalogs[provider] = list;
+  }
+}
+
+const modelCatalogInFlight = new Map<AIProvider, Promise<void>>();
+
+/** Reads the provider's model list and prices, then re-checks the chosen models against it. */
+function refreshModelCatalog(provider: AIProvider): Promise<void> {
+  const running = modelCatalogInFlight.get(provider);
+  if (running) return running;
+  const job = (async () => {
+    const apiKey = providerApiKeys[provider];
+    if ((provider === 'openai' || provider === 'claude') && !apiKey) return;
+    try {
+      const [models, prices] = await Promise.all([
+        fetchModels(provider, { apiKey, localBaseUrl: localLlmBaseUrl }),
+        fetchPrices().catch(() => new Map<string, { inputPerM: number; outputPerM: number }>())
+      ]);
+      if (!models.length) return;
+      modelCatalogs[provider] = withPrices(provider, models, prices);
+      const notices: string[] = [];
+      for (const kind of MODEL_KINDS) {
+        const next = resolveChoice(kind, modelChoices[provider][kind], modelCatalogs[provider]);
+        if (next.replaced) notices.push(`${kind} model ${next.replaced} is no longer offered by ${provider}; switched to ${next.model}`);
+        modelChoices[provider][kind] = { model: next.model, byUser: next.byUser };
+      }
+      try {
+        ensureDataDir();
+        fs.writeFileSync(modelCatalogPath(), JSON.stringify(modelCatalogs), 'utf8');
+      } catch {}
+      markDirty();
+      broadcastConfig();
+      for (const notice of notices) {
+        console.warn(notice);
+        broadcastNotice(notice);
+      }
+    } catch (error) {
+      console.warn(`Could not read the ${provider} model list:`, (error as Error).message);
+    }
+  })().finally(() => modelCatalogInFlight.delete(provider));
+  modelCatalogInFlight.set(provider, job);
+  return job;
 }
 
 function activeOpenAiLikeClient(): OpenAI | null {
@@ -2385,8 +2327,11 @@ function refreshAiClients() {
 
 function setAiProviderKey(provider: AIProvider, apiKey?: string) {
   const next = String(apiKey || '').trim();
+  const changed = !!next && next !== providerApiKeys[provider];
   if (next) providerApiKeys[provider] = next;
   refreshAiClients();
+  // A new key can see other models.
+  if (changed || !modelCatalogs[provider].length) void refreshModelCatalog(provider);
 }
 
 async function resolveSavedProviderKey(authTokenRaw: string, provider: AIProvider): Promise<string | null> {
@@ -2621,6 +2566,7 @@ type PersistedState = {
   hiddenIds: string[];
   feedRuntime: Record<string, FeedRuntime>;
   recent?: NewsInternal[];
+  modelChoices?: Partial<Record<AIProvider, Partial<Record<AiModelKind, ModelChoice>>>>;
 };
 
 type PersistedNewsRow = Prisma.NewsItemRecordGetPayload<Record<string, never>>;
@@ -3119,7 +3065,8 @@ function saveStateNow() {
     globalAiDefaults,
     customizedFeedUrls: Array.from(customizedFeedUrls),
     hiddenIds: Array.from(hiddenIds),
-    feedRuntime: feedRuntimeObj()
+    feedRuntime: feedRuntimeObj(),
+    modelChoices
   };
 
   try {
@@ -6003,6 +5950,40 @@ async function fetchArticleText(link: string, maxChars: number): Promise<string>
 // ------------------------------------------------------------------
 
 // ---------------- AI calls ----------------
+// Newer reasoning models reject `temperature` and spend part of the output budget on
+// thinking. Rather than keep a list of which model is which, a model that rejects a
+// parameter is remembered and asked again without it, with room for its reasoning.
+const modelsWithoutTemperature = new Set<string>();
+const modelsWithoutReasoningEffort = new Set<string>();
+
+async function createAdaptiveResponse(client: OpenAI, model: string, input: string, maxOutputTokens: number, temperature: number): Promise<any> {
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const reasoning = modelsWithoutTemperature.has(model);
+    const params: Record<string, unknown> = {
+      model,
+      input,
+      max_output_tokens: reasoning ? Math.round(maxOutputTokens * 1.5) + 400 : maxOutputTokens
+    };
+    if (!reasoning) params.temperature = temperature;
+    if (reasoning && !modelsWithoutReasoningEffort.has(model)) params.reasoning = { effort: 'low' };
+    try {
+      return await client.responses.create(params as any);
+    } catch (error) {
+      const message = String((error as Error)?.message || '');
+      if (/unsupported parameter.*temperature|temperature.*not supported/i.test(message) && !modelsWithoutTemperature.has(model)) {
+        modelsWithoutTemperature.add(model);
+        continue;
+      }
+      if (/reasoning/i.test(message) && /unsupported|not supported/i.test(message) && !modelsWithoutReasoningEffort.has(model)) {
+        modelsWithoutReasoningEffort.add(model);
+        continue;
+      }
+      throw error;
+    }
+  }
+  throw new Error(`${model} rejected every request shape`);
+}
+
 async function generateWithOpenAiLike(
   kind: AiModelKind,
   model: string,
@@ -6016,12 +5997,7 @@ async function generateWithOpenAiLike(
   if (!client) return undefined;
   const startedAt = Date.now();
   try {
-    const resp = await client.responses.create({
-      model,
-      input,
-      max_output_tokens: maxOutputTokens,
-      temperature
-    });
+    const resp = await createAdaptiveResponse(client, model, input, maxOutputTokens, temperature);
     trackUsageFromResponse(kind, model, resp, labelRaw);
     const extracted = extractOpenAiLikeText(resp);
     if (kind === 'summary' && debugMeta) {
@@ -6081,7 +6057,7 @@ async function generateWithClaude(
   const startedAt = Date.now();
 
   try {
-    const res = await fetch('https://api.anthropic.com/v1/messages', {
+    const send = () => fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -6091,10 +6067,18 @@ async function generateWithClaude(
       body: JSON.stringify({
         model,
         max_tokens: maxOutputTokens,
-        temperature,
+        ...(modelsWithoutTemperature.has(model) ? {} : { temperature }),
         messages: [{ role: 'user', content: input }]
       })
     });
+    let res = await send();
+    if (res.status === 400 && !modelsWithoutTemperature.has(model)) {
+      const detail = await res.text().catch(() => '');
+      if (/temperature/i.test(detail)) {
+        modelsWithoutTemperature.add(model);
+        res = await send();
+      }
+    }
 
     if (!res.ok) {
       throw new Error(`Claude HTTP ${res.status}`);
@@ -6653,6 +6637,14 @@ async function askAgentAboutItem(
 }
 // -----------------------------------------
 
+/** A one-line message for every connected app, shown like other status messages. */
+function broadcastNotice(message: string) {
+  const payload = JSON.stringify({ type: 'ok', message });
+  wss.clients.forEach((c: WebSocket) => {
+    if (c.readyState === WebSocket.OPEN) c.send(payload);
+  });
+}
+
 function broadcastConfig() {
   const activeSelection = currentModelSelection(aiProvider);
   const cfg: Config = {
@@ -6670,7 +6662,8 @@ function broadcastConfig() {
     summaryModel: activeSelection.summary,
     researchModel: activeSelection.research,
     askModel: activeSelection.ask,
-    availableModels: modelOptionsByProvider,
+    availableModels: modelOptionsSnapshot(),
+    modelCatalog: modelCatalogs,
     aiFeatures,
     localRegion,
     localLlmBaseUrl,
@@ -8716,6 +8709,17 @@ async function applyLoadedState(st: PersistedState | null) {
   if (Array.isArray(st.keywords)) {
     keywords = normalizeKeywordList(st.keywords);
   }
+  if (st.modelChoices && typeof st.modelChoices === 'object') {
+    for (const provider of AI_PROVIDERS) {
+      for (const kind of MODEL_KINDS) {
+        const saved = st.modelChoices[provider]?.[kind];
+        // A model pinned in the environment wins over a saved one.
+        if (typeof saved?.model === 'string' && saved.model && !envModel(provider, kind)) {
+          modelChoices[provider][kind] = { model: saved.model.slice(0, 160), byUser: saved.byUser === true };
+        }
+      }
+    }
+  }
   if (st.aiFeatures) {
     aiFeatures = isLegacyAutoEnabledInsightFeatures(st.aiFeatures)
       ? { ...DEFAULT_AI_INSIGHT_FEATURES }
@@ -8893,7 +8897,8 @@ socketServer.on('connection', (ws: WebSocket) => {
     summaryModel: activeSelection.summary,
     researchModel: activeSelection.research,
     askModel: activeSelection.ask,
-    availableModels: modelOptionsByProvider,
+    availableModels: modelOptionsSnapshot(),
+    modelCatalog: modelCatalogs,
     aiFeatures,
     localRegion,
     localLlmBaseUrl,
@@ -9099,7 +9104,7 @@ socketServer.on('connection', (ws: WebSocket) => {
 
     if (msg.type === 'set_ai_models') {
       const provider = aiProvider;
-      const current = selectedModelsByProvider[provider];
+      const current = modelChoices[provider];
       const updates: Partial<AiModelSelection> = {};
       const rejected: string[] = [];
       if (!msg.summaryModel && !msg.researchModel && !msg.askModel) {
@@ -9140,9 +9145,10 @@ socketServer.on('connection', (ws: WebSocket) => {
         return;
       }
 
-      if (updates.summary) current.summary = updates.summary;
-      if (updates.research) current.research = updates.research;
-      if (updates.ask) current.ask = updates.ask;
+      for (const kind of MODEL_KINDS) {
+        const model = updates[kind];
+        if (model) current[kind] = { model, byUser: true };
+      }
 
       clearAiQueue();
       aiInFlight.clear();
@@ -9223,6 +9229,7 @@ socketServer.on('connection', (ws: WebSocket) => {
       if (typeof msg.localBaseUrl === 'string') {
         localLlmBaseUrl = msg.localBaseUrl.trim().slice(0, 500) || localLlmBaseUrl;
         refreshAiClients();
+        void refreshModelCatalog('local');
         shouldRebuildEmbeddings = true;
       }
       if (Array.isArray(msg.trackedTopics)) {
@@ -10027,6 +10034,15 @@ app.get('/briefings/:id', (req, res) => {
   // Push the hydrated state to already-connected clients so they do not wait
   // for the browser replay to restore keywords and filtered-column state.
   broadcastConfig();
+
+  // Know the current models before the first AI job runs.
+  loadModelCatalogCache();
+  await refreshModelCatalog(aiProvider);
+  setInterval(() => {
+    for (const provider of AI_PROVIDERS) {
+      if (provider === aiProvider || modelCatalogs[provider].length) void refreshModelCatalog(provider);
+    }
+  }, MODEL_CATALOG_REFRESH_MS).unref?.();
 
   // start scheduler
   startScheduler();
