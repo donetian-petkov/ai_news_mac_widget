@@ -488,6 +488,10 @@ export function buildStorylinePrompt(items: GroupingItem[], language: 'en' | 'bg
     '   ministers\' joint call on Radev over national security".',
     '2. "storylines": larger ongoing situations that at least two DIFFERENT happenings belong to, for example a drone',
     '   strike on a ship, a naval command offer and a moratorium proposal that are all about Black Sea security.',
+    '   A storyline is ONE specific situation with the same main actors or place (one war, one crisis, one negotiation),',
+    '   never a broad theme: "military conflicts in the region", "the economy" or "world politics" are not storylines,',
+    '   and strikes in the Persian Gulf and a grain blockade in the Black Sea are two different situations.',
+    '   The label names the situation itself (who or where), e.g. "Iran\'s strikes on US bases".',
     '   Put an item in a storyline only if its subject IS that situation. A sports, celebrity or entertainment item',
     '   never joins a war, politics or economy storyline, even when it uses words like "war", "attack" or "drama".',
     `   Give each a 2-5 word label, a "why" sentence saying how its items connect, and the ids that belong to it.`,
@@ -954,12 +958,23 @@ const PAGE_SCRIPT = String.raw`
     });
     return a;
   }
+  // No level words on the lines: the order already says what leads, and the AI tends to
+  // call everything critical. The dot takes the colour of the strongest story a line
+  // points to, at the current slider weights; only the closing curiosity is marked.
   function glanceLines(picked) {
-    if (data.digest.length) {
-      const tags = { critical: 'Critical', leading: 'Leading', interesting: 'Most interesting' };
-      return data.digest.map(bullet => ({ tag: tags[bullet.kind] || 'Leading', cls: 'kind-' + bullet.kind, text: bullet.text, targets: bullet.targets }));
-    }
     const entries = picked.flatMap(unit => unit.entries).sort((a, b) => b.score - a.score || b.story.publishedMs - a.story.publishedMs);
+    const levelAt = {};
+    entries.forEach(e => { levelAt[e.index] = e.level; });
+    const order = ['critical', 'high', 'notable', 'routine'];
+    const levelOfTargets = targets => order.find(level => targets.some(i => levelAt[i] === level)) || 'routine';
+    if (data.digest.length) {
+      return data.digest.map(bullet => ({
+        cls: 'level-' + levelOfTargets(bullet.targets),
+        tag: bullet.kind === 'interesting' ? 'Also interesting' : '',
+        text: bullet.text,
+        targets: bullet.targets
+      }));
+    }
     const lead = entries.filter(e => e.level === 'critical' || e.level === 'high').slice(0, 5);
     for (const e of entries) {
       if (lead.length >= 3) break;
@@ -968,9 +983,8 @@ const PAGE_SCRIPT = String.raw`
     const curious = entries
       .filter(e => !lead.includes(e) && e.story.scores.interest >= 2)
       .sort((a, b) => b.story.scores.interest - a.story.scores.interest || b.score - a.score)[0];
-    const line = (e, tag, cls) => ({ tag, cls, text: e.story.summary || e.story.title, targets: [e.index] });
-    return lead.map(e => line(e, data.levelLabels[e.level], 'level-' + e.level))
-      .concat(curious ? [line(curious, 'Most interesting', 'kind-interesting')] : []);
+    const line = (e, tag) => ({ tag, cls: 'level-' + e.level, text: e.story.summary || e.story.title, targets: [e.index] });
+    return lead.map(e => line(e, '')).concat(curious ? [line(curious, 'Also interesting')] : []);
   }
   function glance(picked) {
     const lines = glanceLines(picked);
@@ -982,7 +996,7 @@ const PAGE_SCRIPT = String.raw`
     const list = el('ul');
     for (const line of lines) {
       const li = el('li', line.cls);
-      li.append(el('span', 'glance-tag', line.tag));
+      if (line.tag) li.append(el('span', 'glance-tag', line.tag));
       if (line.targets.length === 1) {
         li.append(jumpTo(line.targets[0], line.text));
       } else {
@@ -1172,11 +1186,13 @@ export function renderBriefingHtml(
 <style>
   :root { --bg: #f6f7f9; --card: #ffffff; --text: #16181d; --muted: #616875; --border: #e2e5ea; --accent: #2f6fde;
     --critical: #c62828; --high: #e07a00; --notable: #2f6fde; --routine: #8a919c; --chip: #eef1f5;
-    --economic: #1f8a4c; --political: #6a4cc7; --social: #c2410c; --security: #b42318; }
+    --economic: #1f8a4c; --political: #6a4cc7; --social: #c2410c; --security: #b42318;
+    --storyline: #4b5bbd; --storyline-bg: #eceefb; }
   @media (prefers-color-scheme: dark) {
     :root { --bg: #111317; --card: #1a1d23; --text: #e8eaee; --muted: #9aa1ad; --border: #2a2e36; --accent: #7aa7ff;
       --critical: #ff6b6b; --high: #ffa94d; --notable: #7aa7ff; --routine: #8a919c; --chip: #242830;
-      --economic: #4ade80; --political: #a78bfa; --social: #fb923c; --security: #f87171; }
+      --economic: #4ade80; --political: #a78bfa; --social: #fb923c; --security: #f87171;
+      --storyline: #4652a8; --storyline-bg: #1c1f33; }
   }
   * { box-sizing: border-box; }
   body { margin: 0; background: var(--bg); color: var(--text); font: 15px/1.55 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
@@ -1256,22 +1272,25 @@ export function renderBriefingHtml(
   .glance ul { margin: 0; padding-left: 18px; }
   .glance li { margin: 6px 0; }
   .glance a { color: var(--text); }
-  .glance-tag { font-size: 12.5px; font-weight: 600; color: var(--routine); margin-right: 8px; }
-  .glance .level-high .glance-tag { color: var(--high); }
-  .glance .level-notable .glance-tag { color: var(--notable); }
-  .glance .level-critical .glance-tag, .glance .kind-critical .glance-tag { color: var(--critical); }
-  .glance .kind-leading .glance-tag { color: var(--high); }
-  .glance .kind-interesting .glance-tag { color: var(--political); }
-  .glance li > a:not(:nth-child(2)) { font-size: 12.5px; white-space: nowrap; color: var(--accent); }
+  .glance li::marker { color: var(--routine); font-size: 1.15em; }
+  .glance li.level-critical::marker { color: var(--critical); }
+  .glance li.level-high::marker { color: var(--high); }
+  .glance li.level-notable::marker { color: var(--notable); }
+  .glance-tag { font-size: 12.5px; font-weight: 600; color: var(--political); margin-right: 8px; }
+  .glance-text ~ a { font-size: 12.5px; white-space: nowrap; color: var(--accent); }
   .glance-by { margin-left: 8px; font-size: 11.5px; font-weight: 400; letter-spacing: 0; text-transform: none; }
-  .storyline-why { margin: -2px 6px 10px; font-size: 13px; color: var(--muted); }
   .dupe-why { font-style: italic; }
-  .storyline { border: 1px solid var(--border); border-radius: 14px; padding: 10px 10px 2px; margin: 18px 0; background: var(--chip); }
-  .storyline-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; padding: 0 6px 8px; }
-  .storyline-kicker { font-size: 11px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
+  /* A storyline is framed in its own colour with a header bar, so it reads as one group
+     and it is obvious where it ends and the next, unrelated story begins. */
+  .storyline { border: 2px solid var(--storyline); border-radius: 14px; margin: 26px 0; background: var(--storyline-bg); overflow: hidden; }
+  .storyline-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; padding: 10px 16px; background: var(--storyline); color: #fff; }
+  .storyline-kicker { font-size: 11px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; opacity: .85; }
+  .storyline-count { opacity: .85; }
+  .storyline-why { margin: 10px 16px 0; font-size: 13px; color: var(--muted); }
+  .storyline > article { margin: 10px 10px 0; }
+  .storyline > article:last-child { margin-bottom: 10px; }
   .storyline-label { font-weight: 700; font-size: 15px; }
-  .storyline-count { font-size: 12.5px; color: var(--muted); }
-  .storyline article { margin-bottom: 8px; }
+  .storyline-count { font-size: 12.5px; }
   .dupes { margin-top: 8px; font-size: 13px; color: var(--muted); }
   .dupes summary { cursor: pointer; }
   .dupes ul { list-style: none; margin: 6px 0 0; padding: 0 0 0 14px; border-left: 2px solid var(--border); }
@@ -1287,7 +1306,7 @@ export function renderBriefingHtml(
     main { padding: 20px 12px 48px; }
     header h1 { font-size: 20px; }
     .fabs { right: 12px; bottom: 12px; }
-    .storyline { padding: 8px 6px 2px; }
+    .storyline > article { margin: 8px 6px 0; }
     article { flex-direction: column; padding: 12px; }
     .cover { width: 100%; height: 160px; }
     .rated li { grid-template-columns: 66px 36px 28px minmax(0, 1fr); gap: 4px; }
