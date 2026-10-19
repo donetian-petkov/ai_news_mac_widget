@@ -835,6 +835,7 @@ private struct FloatingWidgetView: View {
     /// Position on the custom-period slider (see `customBriefingHours`).
     @State private var customBriefingStop = 7.0
     @State private var copiedStoryKey: String?
+    @State private var clippedStoryKey: String?
     @State private var draggedStoryKey: String?
     @State private var layoutMode: FloatingWidgetLayoutMode
     @State private var seenStoryKeys: Set<String>
@@ -2379,6 +2380,36 @@ private struct FloatingWidgetView: View {
             .buttonStyle(.borderless)
             .foregroundStyle(copiedStoryKey == story.storyKey ? WidgetTheme.accentCyan : WidgetTheme.textMuted)
             .help("Copy a share link for this story")
+            .pointingHandCursor()
+
+            Button {
+                Task {
+                    await StoryCardClip.copy(
+                        title: displayTitle(for: story),
+                        summary: visibleSummary(for: story),
+                        source: story.source ?? story.feedUrl,
+                        date: story.publishedDate,
+                        link: story.link,
+                        coverURL: coversEnabled ? story.coverUrl.flatMap { URL(string: $0) } : nil
+                    )
+                    clippedStoryKey = story.storyKey
+                    try? await Task.sleep(nanoseconds: 1_600_000_000)
+                    if clippedStoryKey == story.storyKey { clippedStoryKey = nil }
+                }
+            } label: {
+                HStack(spacing: 6) {
+                    Image(systemName: clippedStoryKey == story.storyKey ? "checkmark" : "doc.on.clipboard")
+                        .font(widgetCaption(weight: .semibold))
+                    if clippedStoryKey == story.storyKey {
+                        Text("Copied")
+                            .font(widgetCaption2(weight: .semibold))
+                    }
+                }
+                .frame(minWidth: clippedStoryKey == story.storyKey ? 58 : 22, minHeight: 22)
+            }
+            .buttonStyle(.borderless)
+            .foregroundStyle(clippedStoryKey == story.storyKey ? WidgetTheme.accentCyan : WidgetTheme.textMuted)
+            .help("Copy this card as a picture and text, to paste and share")
             .pointingHandCursor()
         }
         .fixedSize()
