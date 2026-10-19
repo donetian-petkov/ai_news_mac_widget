@@ -2199,7 +2199,7 @@ private struct FloatingWidgetView: View {
         story.hasNeutralTitle && !showOriginalTitles
     }
 
-    private func storyRow(_ story: WidgetStory, draggable: Bool = true, minCardHeight: CGFloat? = nil) -> some View {
+    private func storyRow(_ story: WidgetStory, draggable: Bool = true, minCardHeight: CGFloat? = nil, forClip: Bool = false) -> some View {
         HStack(alignment: .top, spacing: 12) {
             if coversEnabled {
                 StoryThumbnail(url: story.coverUrl.flatMap { URL(string: $0) }, size: 66)
@@ -2227,7 +2227,9 @@ private struct FloatingWidgetView: View {
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
 
-                    storyActionButtons(for: story)
+                    if !forClip {
+                        storyActionButtons(for: story)
+                    }
                 }
 
                 storyLabelStrip(for: story)
@@ -2383,15 +2385,18 @@ private struct FloatingWidgetView: View {
             .pointingHandCursor()
 
             Button {
+                // The card itself, without its buttons, on the theme's solid colour: the widget's
+                // glass is see-through and would come out empty once pasted elsewhere.
+                let width = max(280, (windowBox.window?.frame.width ?? 420) - 24)
+                let card = storyRow(story, draggable: false, forClip: true)
+                    .frame(width: width)
+                    .padding(12)
+                    .background(AINewsTheme.background)
+                    .environment(\.colorScheme, ThemeSettings.shared.vibe == .light ? .light : .dark)
+                    .environmentObject(state)
+                    .environmentObject(theme)
+                guard StoryCardClip.copyImage(of: card) else { return }
                 Task {
-                    await StoryCardClip.copy(
-                        title: displayTitle(for: story),
-                        summary: visibleSummary(for: story),
-                        source: story.source ?? story.feedUrl,
-                        date: story.publishedDate,
-                        link: story.link,
-                        coverURL: coversEnabled ? story.coverUrl.flatMap { URL(string: $0) } : nil
-                    )
                     clippedStoryKey = story.storyKey
                     try? await Task.sleep(nanoseconds: 1_600_000_000)
                     if clippedStoryKey == story.storyKey { clippedStoryKey = nil }
@@ -2409,7 +2414,7 @@ private struct FloatingWidgetView: View {
             }
             .buttonStyle(.borderless)
             .foregroundStyle(clippedStoryKey == story.storyKey ? WidgetTheme.accentCyan : WidgetTheme.textMuted)
-            .help("Copy this card as a picture and text, to paste and share")
+            .help("Copy a picture of this card, to paste and share")
             .pointingHandCursor()
         }
         .fixedSize()
