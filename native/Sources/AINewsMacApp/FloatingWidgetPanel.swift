@@ -2199,7 +2199,34 @@ private struct FloatingWidgetView: View {
         story.hasNeutralTitle && !showOriginalTitles
     }
 
-    private func storyRow(_ story: WidgetStory, draggable: Bool = true, minCardHeight: CGFloat? = nil, forClip: Bool = false) -> some View {
+    private func storyRow(_ story: WidgetStory, draggable: Bool = true, minCardHeight: CGFloat? = nil) -> some View {
+        storyCard(story, minCardHeight: minCardHeight)
+        .contentShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .opacity(draggedStoryKey == story.storyKey ? 0.72 : 1)
+        .onTapGesture {
+            markStorySeen(story.storyKey)
+            openStory(story)
+        }
+        .pointingHandCursor()
+        .onDrag {
+            guard draggable else { return NSItemProvider() }
+            draggedStoryKey = story.storyKey
+            return NSItemProvider(object: story.storyKey as NSString)
+        } preview: {
+            dragPreview(story)
+        }
+        .onDrop(of: [UTType.plainText], delegate: StoryDropDelegate(
+            targetStoryKey: story.storyKey,
+            stories: $stories,
+            draggedStoryKey: $draggedStoryKey,
+            onReordered: persistStoryOrder,
+            onStackNeedsClamp: clampStackIndex
+        ))
+    }
+
+    /// The card's look. `forClip` is the copy put on the clipboard: no buttons, no "new" badge,
+    /// no empty sections, and nothing backed by an AppKit view, which an image cannot draw.
+    private func storyCard(_ story: WidgetStory, minCardHeight: CGFloat? = nil, forClip: Bool = false) -> some View {
         HStack(alignment: .top, spacing: 12) {
             if coversEnabled {
                 StoryThumbnail(url: story.coverUrl.flatMap { URL(string: $0) }, size: 66)
@@ -2212,7 +2239,7 @@ private struct FloatingWidgetView: View {
                                 .font(widgetCaption(weight: .semibold))
                                 .foregroundStyle(WidgetTheme.accentCyan)
                                 .lineLimit(1)
-                            if showsNewBadge(for: story) {
+                            if !forClip && showsNewBadge(for: story) {
                                 newBadge
                             }
                             if story.hasNeutralTitle {
@@ -2247,69 +2274,54 @@ private struct FloatingWidgetView: View {
                         .fixedSize(horizontal: false, vertical: true)
                 }
 
-                if !story.shouldOmitSummary(showOriginalTitle: showOriginalTitles) {
+                if !story.shouldOmitSummary(showOriginalTitle: showOriginalTitles), !forClip || !(visibleSummary(for: story) ?? "").isEmpty {
                     block("Summary", visibleSummary(for: story), pending: story.summaryPending, enabled: state.globalAiDefaults.summaryEnabled, accent: WidgetTheme.accentBlue)
                 }
-                block("Research", story.research, pending: story.researchPending, enabled: state.globalAiDefaults.researchEnabled, accent: WidgetTheme.accentCyan)
+                if !forClip || !(story.research ?? "").isEmpty {
+                    block("Research", story.research, pending: story.researchPending, enabled: state.globalAiDefaults.researchEnabled, accent: WidgetTheme.accentCyan)
+                }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
         }
         .padding(12)
         .frame(minHeight: minCardHeight, alignment: .top)
         .floatingCardStyle()
-        .contentShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
-        .opacity(draggedStoryKey == story.storyKey ? 0.72 : 1)
-        .onTapGesture {
-            markStorySeen(story.storyKey)
-            openStory(story)
-        }
-        .pointingHandCursor()
-        .onDrag {
-            guard draggable else { return NSItemProvider() }
-            draggedStoryKey = story.storyKey
-            return NSItemProvider(object: story.storyKey as NSString)
-        } preview: {
-            HStack(alignment: .top, spacing: 10) {
-                if coversEnabled {
-                    StoryThumbnail(url: story.coverUrl.flatMap { URL(string: $0) }, size: 46)
-                }
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(story.source ?? story.feedUrl)
-                        .font(widgetCaption(weight: .semibold))
-                        .foregroundStyle(WidgetTheme.accentCyan)
-                        .lineLimit(1)
-                    Text(displayTitle(for: story))
-                        .font(widgetHeadline(weight: .bold))
-                        .foregroundStyle(WidgetTheme.accentBlue)
-                        .underline(isShowingNeutralTitle(for: story), color: WidgetTheme.accentCyanColor.opacity(0.85))
-                        .lineLimit(3)
-                    if let summary = visibleSummary(for: story), !summary.isEmpty {
-                        Text(summary)
-                            .font(widgetCaption())
-                            .foregroundStyle(WidgetTheme.textSecondary)
-                            .lineLimit(2)
-                    }
+    }
+
+    private func dragPreview(_ story: WidgetStory) -> some View {
+        HStack(alignment: .top, spacing: 10) {
+            if coversEnabled {
+                StoryThumbnail(url: story.coverUrl.flatMap { URL(string: $0) }, size: 46)
+            }
+            VStack(alignment: .leading, spacing: 4) {
+                Text(story.source ?? story.feedUrl)
+                    .font(widgetCaption(weight: .semibold))
+                    .foregroundStyle(WidgetTheme.accentCyan)
+                    .lineLimit(1)
+                Text(displayTitle(for: story))
+                    .font(widgetHeadline(weight: .bold))
+                    .foregroundStyle(WidgetTheme.accentBlue)
+                    .underline(isShowingNeutralTitle(for: story), color: WidgetTheme.accentCyanColor.opacity(0.85))
+                    .lineLimit(3)
+                if let summary = visibleSummary(for: story), !summary.isEmpty {
+                    Text(summary)
+                        .font(widgetCaption())
+                        .foregroundStyle(WidgetTheme.textSecondary)
+                        .lineLimit(2)
                 }
             }
-            .padding(12)
-            .background(
-                RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .fill(WidgetTheme.backgroundAlt.opacity(0.96))
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .stroke(WidgetTheme.panelBorder.opacity(0.8), lineWidth: 1)
-            )
-            .opacity(0.9)
-            .frame(width: 300, alignment: .leading)
         }
-        .onDrop(of: [UTType.plainText], delegate: StoryDropDelegate(
-            targetStoryKey: story.storyKey,
-            stories: $stories,
-            draggedStoryKey: $draggedStoryKey,
-            onReordered: persistStoryOrder,
-            onStackNeedsClamp: clampStackIndex
-        ))
+        .padding(12)
+        .background(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .fill(WidgetTheme.backgroundAlt.opacity(0.96))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .stroke(WidgetTheme.panelBorder.opacity(0.8), lineWidth: 1)
+        )
+        .opacity(0.9)
+        .frame(width: 300, alignment: .leading)
     }
 
     private func openStory(_ story: WidgetStory) {
@@ -2388,7 +2400,7 @@ private struct FloatingWidgetView: View {
                 // The card itself, without its buttons, on the theme's solid colour: the widget's
                 // glass is see-through and would come out empty once pasted elsewhere.
                 let width = max(280, (windowBox.window?.frame.width ?? 420) - 24)
-                let card = storyRow(story, draggable: false, forClip: true)
+                let card = storyCard(story, forClip: true)
                     .frame(width: width)
                     .padding(12)
                     .background(AINewsTheme.background)
