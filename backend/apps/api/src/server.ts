@@ -5311,7 +5311,7 @@ function researchInstruction(lang: ResearchLang): string {
     'Write a concise but detailed research note (1–2 paragraphs, at most 150 words).',
     'Cover: what happened, who is involved, why it matters, what to watch next.',
     'The reader has already seen the one-line summary given below. Do not repeat it: start with what it leaves out.',
-    'When reports from other outlets are given, compare them with the main article: name the outlet for any fact only it reports and for any figure that differs between them.',
+    'When reports from other outlets are given, compare them with the main article: name the outlet for any fact only it reports and for any figure that differs between them. Ignore a report that turns out to be about a different event.',
     'Be explicit when context is insufficient.',
     'End all paragraphs with complete sentences. Do not cut off mid-sentence.',
     'End with: "Confidence: Low/Medium/High".',

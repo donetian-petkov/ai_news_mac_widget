@@ -557,15 +557,17 @@ function titleKeys(title: string): { keys: Set<string>; names: Set<string> } {
 }
 
 /**
- * Whether two headlines report the same event: most of their words in common. Stricter than
- * the briefing's grouping, which can also join titles on shared names.
+ * Whether two headlines probably report the same event, by the briefing's grouping rule: most
+ * of their words in common, or two names plus one more word. It is a guess, so whoever uses
+ * the match should be able to tell an unrelated story apart.
  */
 export function sameEventTitles(a: string, b: string): boolean {
-  const one = titleKeys(a).keys;
-  const two = titleKeys(b).keys;
-  const shared = Array.from(one).filter(key => two.has(key)).length;
-  const union = new Set([...one, ...two]).size || 1;
-  return shared >= 2 && shared / union >= 0.35;
+  const one = titleKeys(a);
+  const two = titleKeys(b);
+  const shared = Array.from(one.keys).filter(key => two.keys.has(key)).length;
+  const union = new Set([...one.keys, ...two.keys]).size || 1;
+  const sharedNames = Array.from(one.names).filter(key => two.names.has(key)).length;
+  return (shared >= 2 && shared / union >= 0.35) || (sharedNames >= 2 && shared >= 3);
 }
 
 /**
