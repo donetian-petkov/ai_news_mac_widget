@@ -557,6 +557,18 @@ function titleKeys(title: string): { keys: Set<string>; names: Set<string> } {
 }
 
 /**
+ * Whether two headlines report the same event: most of their words in common. Stricter than
+ * the briefing's grouping, which can also join titles on shared names.
+ */
+export function sameEventTitles(a: string, b: string): boolean {
+  const one = titleKeys(a).keys;
+  const two = titleKeys(b).keys;
+  const shared = Array.from(one).filter(key => two.has(key)).length;
+  const union = new Set([...one, ...two]).size || 1;
+  return shared >= 2 && shared / union >= 0.35;
+}
+
+/**
  * Groups stories whose titles report the same event; the most informative one leads.
  * `loose` also merges titles that only share names, which is a guess. `exactOnly` merges
  * only the same link or title: when the AI groups the briefing it gets the word matches

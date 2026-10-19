@@ -499,3 +499,11 @@ describe('rating prompt', () => {
     expect(prompt).toContain('a car that flies, not its acceleration');
   });
 });
+
+describe('sameEventTitles', () => {
+  it('matches two outlets on one event but not stories that only share a name', async () => {
+    const { sameEventTitles } = await import('./briefing.js');
+    expect(sameEventTitles('Пороен дъжд наводни Истанбул, трима загинали', 'Трима загинали при наводнения в Истанбул след пороен дъжд')).toBe(true);
+    expect(sameEventTitles('Зеленски обсъди войната с европейските лидери', 'Зеленски посети болница в Лвов')).toBe(false);
+  });
+});

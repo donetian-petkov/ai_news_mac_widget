@@ -13,7 +13,7 @@ import { z } from 'zod';
 import { registerProductFeatureApi, type ProductFeatureRuntime } from './productFeatures';
 import { chunk, fingerprintRecord, takeChangedRecords } from './newsPersistence';
 import { titleTokens as cachedTitleTokens } from './titleTokens';
-import { cleanSummary } from './summaryText';
+import { cleanSummary, wholeSentences } from './summaryText';
 import { DEFAULT_MODEL_POLICY, fetchModels, fetchPrices, pickDefault, resolveChoice, withPrices, type ModelChoice, type ModelInfo, type ModelPolicy } from './modelCatalog';
 import {
   buildAiRatingPrompt,
@@ -22,6 +22,7 @@ import {
   LITERAL_FACTS_RULE,
   buildStorylinePrompt,
   createBriefingStore,
+  sameEventTitles,
   parseAiRatings,
   parseDigest,
   parseStorylines,
@@ -5307,8 +5308,10 @@ function summaryRepeatsHeadline(title: string, summary: string): boolean {
 // ---------------- Better Research Prompt ----------------
 function researchInstruction(lang: ResearchLang): string {
   const common = [
-    'Write a concise but detailed research note (1–2 paragraphs).',
+    'Write a concise but detailed research note (1–2 paragraphs, at most 150 words).',
     'Cover: what happened, who is involved, why it matters, what to watch next.',
+    'The reader has already seen the one-line summary given below. Do not repeat it: start with what it leaves out.',
+    'When reports from other outlets are given, compare them with the main article: name the outlet for any fact only it reports and for any figure that differs between them.',
     'Be explicit when context is insufficient.',
     'End all paragraphs with complete sentences. Do not cut off mid-sentence.',
     'End with: "Confidence: Low/Medium/High".',
@@ -6561,17 +6564,56 @@ async function oneItemResearch(
   link: string,
   context: string,
   linkText: string,
-  budget: BudgetMode
+  budget: BudgetMode,
+  summary = '',
+  otherReports: OtherReport[] = []
 ): Promise<string | undefined> {
   const input =
     `${researchInstruction(researchLang)}\n` +
     `Source: ${source}\n` +
     `Headline: ${title}\n` +
     `Link: ${link}\n` +
+    (summary ? `Summary the reader has seen: ${summary}\n` : '') +
     (context ? `RSS context: ${context}\n` : '') +
-    (linkText ? `Article text (may be partial): ${linkText}\n` : '');
+    (linkText ? `Article text (may be partial): ${linkText}\n` : '') +
+    otherReports.map(report => `Report from ${report.source}: ${report.title}\n${report.text}\n`).join('');
 
-  return generateAiText('research', input, budgetToTokensResearch(budget), 0.25, `Research: ${source} - ${title}`);
+  const text = await generateAiText('research', input, budgetToTokensResearch(budget), 0.25, `Research: ${source} - ${title}`);
+  return cleanResearch(text);
+}
+
+type OtherReport = { source: string; title: string; text: string };
+
+/** Research notes keep whole sentences only, like summaries: a note cut off by the length limit loses its last half-sentence. */
+function cleanResearch(text: string | undefined): string | undefined {
+  if (!text) return text;
+  const paragraphs = text.split(/\n\s*\n/).map(part => wholeSentences(part)).filter(Boolean);
+  return paragraphs.join('\n\n') || undefined;
+}
+
+// How many other outlets' versions of a story research reads, and how much of each.
+const AI_RESEARCH_OTHER_REPORTS = 3;
+const AI_RESEARCH_OTHER_REPORT_MAX_CHARS = 2500;
+
+/** Other outlets' reports of the same event from the last day and a half, closest in time first. */
+async function otherOutletReports(it: NewsInternal): Promise<OtherReport[]> {
+  const title = it.neutralTitle || it.title;
+  const matches = recent
+    .filter(other => other !== it && other.link && other.link !== it.link && other.source !== it.source)
+    .filter(other => Math.abs(other.publishedMs - it.publishedMs) <= 36 * 3600_000)
+    .filter(other => sameEventTitles(title, other.neutralTitle || other.title))
+    .sort((a, b) => Math.abs(a.publishedMs - it.publishedMs) - Math.abs(b.publishedMs - it.publishedMs));
+  const picked: NewsInternal[] = [];
+  for (const other of matches) {
+    if (picked.length >= AI_RESEARCH_OTHER_REPORTS) break;
+    if (!picked.some(item => item.source === other.source)) picked.push(other);
+  }
+  const texts = await Promise.allSettled(picked.map(other => fetchArticleText(other.link, AI_RESEARCH_OTHER_REPORT_MAX_CHARS)));
+  return picked.flatMap((other, index) => {
+    const result = texts[index];
+    const text = result.status === 'fulfilled' && result.value ? result.value : String(other.summary || other.__ctx || '').slice(0, 600);
+    return text ? [{ source: other.source, title: other.title, text }] : [];
+  });
 }
 
 async function oneItemResearchFallback(
@@ -6590,7 +6632,7 @@ async function oneItemResearchFallback(
     'Note: article body fetch was slow/unavailable. Use available context only.';
 
   const maxTokens = Math.max(220, Math.floor(budgetToTokensResearch(budget) * 0.62));
-  return generateAiText('research', input, maxTokens, 0.2, `Research fallback: ${source} - ${title}`);
+  return cleanResearch(await generateAiText('research', input, maxTokens, 0.2, `Research fallback: ${source} - ${title}`));
 }
 
 async function classifyMoodForItem(
@@ -7049,7 +7091,7 @@ const AI_RESEARCH_TIMEOUT_MANUAL_MS = Math.max(
 );
 const AI_RESEARCH_ARTICLE_MAX_CHARS = Math.max(
   800,
-  parseEnvInt('AI_RESEARCH_ARTICLE_MAX_CHARS', 1600)
+  parseEnvInt('AI_RESEARCH_ARTICLE_MAX_CHARS', 6000)
 );
 const AI_SUMMARY_ARTICLE_MAX_CHARS = Math.max(
   600,
@@ -8090,11 +8132,13 @@ async function runOneJob(job: AiJob) {
         it.__linkText = linkText;
       }
 
+      const otherReports = await otherOutletReports(it).catch(() => []);
+
       const timeoutMs = job.manual ? AI_RESEARCH_TIMEOUT_MANUAL_MS : AI_RESEARCH_TIMEOUT_MS;
       let text: string | undefined;
       try {
         text = await withTimeout(
-          oneItemResearch(it.title, it.source, it.link, ctx, linkText, budget),
+          oneItemResearch(it.title, it.source, it.link, ctx, linkText, budget, it.summary || '', otherReports),
           timeoutMs,
           `research:${it.id}`
         );
@@ -9740,7 +9784,7 @@ socketServer.on('connection', (ws: WebSocket) => {
           const linkText = it.__linkText || '';
           try {
             const refreshedResearch = await withTimeout(
-              oneItemResearch(it.title, it.source, it.link, ctx, linkText, budget),
+              oneItemResearch(it.title, it.source, it.link, ctx, linkText, budget, it.summary || ''),
               ASK_AGENT_RESEARCH_TIMEOUT_MS,
               'ask_agent_research'
             );
