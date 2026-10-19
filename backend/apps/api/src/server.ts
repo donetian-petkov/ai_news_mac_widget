@@ -5319,7 +5319,8 @@ function researchInstruction(lang: ResearchLang): string {
     'Neutral tone. No quotes. No bullet points.'
   ].join(' ');
 
-  if (lang === 'bg') return common + ' Write in Bulgarian.';
+  // The labels follow the note's language, so a Bulgarian note does not end in English.
+  if (lang === 'bg') return common.replace('Confidence: Low/Medium/High', 'Увереност: ниска/средна/висока').replace('If Confidence is Low', 'If it is low').replace('"What to verify:"', '"Какво да се провери:"') + ' Write in Bulgarian.';
   return common + ' Write in English.';
 }
 
