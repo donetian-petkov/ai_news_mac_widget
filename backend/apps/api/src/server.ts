@@ -6449,7 +6449,8 @@ async function localSummary(feedUrl: string, title: string, source: string, text
   if (!facts.length) return undefined;
 
   let sentence = facts[0];
-  if (facts.length > 1) {
+  // Joining two facts gave richer sentences but credited the wrong person or place; on by LOCAL_SUMMARY_MERGE=1.
+  if (facts.length > 1 && process.env.LOCAL_SUMMARY_MERGE === '1') {
     const answer = await generateAiText('summary', [
       `Write ONE news summary sentence of at most 22 words, in ${lang}, for a reader who has already seen the headline.`,
       'Use the one or two most important of these facts; tell what the headline leaves out. Keep every name and number exactly,',
@@ -6473,10 +6474,16 @@ async function localSummary(feedUrl: string, title: string, source: string, text
   const wantEn = summaryLang === 'en' || summaryLang === 'bilingual';
   if (!isTranslationEnabledForFeed(feedUrl)) return sentence;
   const translate = async (to: 'Bulgarian' | 'English') => {
-    const answer = await generateAiText('summary', `Translate this news sentence into natural ${to}. Keep names and numbers exact; add nothing.\nSentence: ${sentence}`,
+    const ask = () => generateAiText('summary', `Translate this news sentence into natural ${to}. Keep names and numbers exact; add nothing.\nSentence: ${sentence}`,
       120, 0, `Summary translation: ${source} - ${title}`, undefined, false,
       { schema: { type: 'object', additionalProperties: false, required: ['text'], properties: { text: { type: 'string' } } } });
-    try { return String((JSON.parse(answer || '{}') as { text?: string }).text || '').trim(); } catch { return ''; }
+    const first = await ask();
+    // One retry: a missing translation left bilingual summaries without their second half.
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const answer = attempt === 0 ? first : await ask();
+      try { const t = String((JSON.parse(answer || '{}') as { text?: string }).text || '').trim(); if (t) return t; } catch {}
+    }
+    return '';
   };
   if (bgHeadline) {
     if (!wantEn) return sentence;
@@ -6581,6 +6588,15 @@ async function translateTitleBilingual(
   return { bg, en };
 }
 
+/** A small local model ends rewritten headlines with a full stop, which the headline check rejects. */
+function withoutTitleFullStops(json: string): string {
+  try {
+    const set = JSON.parse(json) as Record<string, unknown>;
+    for (const key of ['original', 'bg', 'en']) if (typeof set[key] === 'string') set[key] = (set[key] as string).trim().replace(/\.+$/, '');
+    return JSON.stringify(set);
+  } catch { return json; }
+}
+
 const NEUTRAL_TITLE_ANSWER_SCHEMA = {
   type: 'object', additionalProperties: false,
   required: ['classification', 'confidence', 'needsRewrite', 'reason', 'original', 'bg', 'en'],
@@ -6640,7 +6656,7 @@ async function neutralizeTitleSet(item: NewsInternal, budget: BudgetMode): Promi
     { schema: NEUTRAL_TITLE_ANSWER_SCHEMA }
   );
   if (!text) return undefined;
-  const parsed = parseNeutralizedTitles(text);
+  const parsed = parseNeutralizedTitles(aiProvider === 'local' ? withoutTitleFullStops(text) : text);
   if (parsed) return parsed;
 
   const fallbackTitle = trimNeutralTitle(text);
