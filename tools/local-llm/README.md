@@ -1,0 +1,84 @@
+# Local model test kit
+
+Tests whether a small model running on the Mac can do the app's AI work as well as the cloud model,
+without loading the Mac. Nothing here is wired into the app yet.
+
+## Model and server
+
+- **Model:** Qwen 3.5 4B, `q4_K_M` GGUF, about 3.3 GB on disk, pulled with Ollama: `ollama pull qwen3.5:4b-q4_K_M`.
+- **Server:** `start-server.sh` runs the llama-server that ships inside Ollama, with 3 slots and a 512 MB prompt cache.
+  - Ollama itself forces Qwen 3.5 to one request at a time.
+  - The default llama-server prompt cache grew the server to 8.3 GB in testing.
+- **Ruled out:**
+  - Qwen 3.6 27B froze the Mac.
+  - Qwen 3.5 9B and Gemma 4 12B made the fans blare.
+  - Gemini Nano has no Bulgarian.
+  - Apple Foundation Models has no Bulgarian.
+  - The Apple Neural Engine is about 5 times slower and has no JSON output.
+
+## Summary pipeline (`lean.mjs`)
+
+1. **Read the whole article.** The model reads the fetched article, up to 6,000 characters, not just the feed snippet. The snippet is a median of 245 characters.
+2. **List facts.** The model lists up to 3 facts in the headline's language.
+   - Straight quotes in the article are swapped for „ “, because a straight quote ends the JSON string mid-fact.
+   - Caution words such as "може да", "alleged" and "trying to" must stay (`guides/facts.md`).
+3. **Check the facts in code.** A fact is dropped if:
+   - it has 5 words or fewer, or more than 22;
+   - it is cut off;
+   - it is a remark about the text itself;
+   - it has unbalanced quotes;
+   - it names people or numbers that are not in the article. For English articles only the numbers are checked, because names come back transliterated.
+   - A fact must also be at least half new beyond the headline, or 60% for question headlines, which also may not come back as a claim.
+4. **Second try.** If no fact survives, the model is asked once more, for facts the headline leaves out.
+5. **Write the summary.** One call writes one sentence from the best facts.
+   - It is kept only if it passes the same checks and keeps every caution word.
+   - Otherwise the best single fact is the summary.
+   - Bulgarian stories get a Bulgarian summary and English stories an English one, as the app does in bilingual mode.
+
+## Limits that hold however much news arrives (`pool()` in `lean.mjs`)
+
+- At most `PAR` stories in work at once (default 3; tested at 2).
+- The model may be busy at most `BUSY_SHARE` of any minute (default 0.6; tested at 0.4). Above that, new stories wait.
+- At most `QUEUE_MAX` stories wait (60). Beyond that the oldest are skipped and keep the cloud summary or none.
+- A story that waited longer than `STORY_DEADLINE_MS` (20 minutes) is skipped.
+- Every call has a 45-second limit, and the server's health is checked before each story.
+- New work pauses while:
+  - macOS reports serious heat;
+  - free memory is under 6 GB;
+  - or swap has grown by 1 GB since the start.
+
+`guard.sh` is a second safety net. It stops the run and the server if free memory falls under 6 GB, swap grows by 1.5 GB, or free disk falls under 15 GB. Fans are not a trigger.
+
+## Running it
+
+```
+bash build-tools.sh                       # bin/thermal, bin/fans (read-only helpers)
+./start-server.sh &                       # model server on 127.0.0.1:8081
+./build-pool.py 40 12                     # data/pool.json + data/cloud.json from the app's database
+POOL=pool.json ARTS=articles.json node fetch-articles.mjs
+bash guard.sh >> data/guard.log &
+LLAMA_URL=http://127.0.0.1:8081 PAR=2 BUSY_SHARE=0.4 ARTICLE=1 ONLY_IDS=data/pool-ids.txt node lean.mjs data/run.json
+OPENAI_API_KEY=... EXPECT=40 node judge.mjs data/run.json.live.jsonl data/judge.json   # judges each story as it lands
+```
+
+`judge.mjs` shows the cloud model the article, the headline and the two summaries in random order, without saying which is which.
+
+## Results so far
+
+All runs used 40 stories from the last 12 hours, from 11 sources, 15 of them in English. The cloud reference is the summary the app actually showed.
+
+| Run | Local better | Tie | Cloud better | Accurate, local vs cloud | Time per story |
+|---|---|---|---|---|---|
+| Feed snippet only (earlier pool) | 6 | 1 | 32 | 34 vs 34 | ~12 s |
+| Full article, all fixes, 3 at once, rests after each group | 21 | 4 | 15 | 29 vs 31 | 22 s |
+| Full article, continuous pool, 2 at once, 40% busy cap | 20 | 5 | 15 | 29 vs 30 | 10 s |
+
+- The local model's remaining mistakes are mostly stating hedged claims more firmly than the article does ("may have" becoming "did"), plus a few misattributions.
+- Not yet tested locally:
+  - title translation
+  - neutral titles
+  - research
+  - mood, type and topic labels
+  - ask agent
+  - alert rules
+  - briefing ratings, grouping and digest
