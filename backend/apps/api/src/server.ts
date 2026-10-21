@@ -7170,6 +7170,14 @@ const AI_QUEUE_MAX = Math.max(200, parseInt(process.env.AI_QUEUE_MAX || '600', 1
 const AI_BULK_QUEUE_MAX = Math.max(25, parseEnvInt('AI_BULK_QUEUE_MAX', 160));
 const AI_BULK_MAX_CONCURRENCY = Math.max(1, parseEnvInt('AI_BULK_MAX_CONCURRENCY', 1));
 const AI_JOB_TTL_MS = Math.max(15_000, parseEnvInt('AI_JOB_TTL_MS', 180_000));
+// A local model works through the queue at a few jobs a minute inside its load limits, so its jobs wait
+// longer before they count as stale, and its calls get more time than the cloud's 22-60 s.
+const LOCAL_AI_JOB_TTL_MS = Math.max(AI_JOB_TTL_MS, parseEnvInt('LOCAL_AI_JOB_TTL_MS', 2 * 60 * 60_000));
+const LOCAL_AI_CALL_TIMEOUT_MS = Math.max(30_000, parseEnvInt('LOCAL_AI_CALL_TIMEOUT_MS', 10 * 60_000));
+/** The time limit for an AI call: the cloud value, or the longer local one when a local model answers. */
+function aiCallTimeout(cloudMs: number, localMs = LOCAL_AI_CALL_TIMEOUT_MS): number {
+  return aiProvider === 'local' ? Math.max(cloudMs, localMs) : cloudMs;
+}
 const AI_DEAD_LETTER_MAX = Math.max(50, parseEnvInt('AI_DEAD_LETTER_MAX', 400));
 const AI_JOB_LOG_MAX = Math.max(100, parseEnvInt('AI_JOB_LOG_MAX', 1200));
 const AI_JOB_LOG_VERBOSE = String(process.env.AI_JOB_LOG_VERBOSE || '').trim().toLowerCase() === 'true';
@@ -7389,7 +7397,7 @@ function summaryItemKey(id: string, feedUrl: string): string {
 }
 
 function isJobExpired(job: AiJob, nowMs = Date.now()): boolean {
-  return nowMs - job.enqueuedAtMs > AI_JOB_TTL_MS;
+  return nowMs - job.enqueuedAtMs > (aiProvider === 'local' ? LOCAL_AI_JOB_TTL_MS : AI_JOB_TTL_MS);
 }
 
 function pushDeadLetter(job: AiJob, reason: string) {
@@ -7949,7 +7957,7 @@ async function runOneJob(job: AiJob) {
       });
       const text = await withTimeout(
         oneLineSummary(it.id, it.feedUrl, it.title, it.source, ctx, linkText, budget),
-        AI_SUMMARY_TIMEOUT_MS,
+        aiCallTimeout(AI_SUMMARY_TIMEOUT_MS),
         `summary:${it.id}`
       );
       if (text) {
@@ -7993,7 +8001,7 @@ async function runOneJob(job: AiJob) {
 
       const translated = await withTimeout(
         translateTitleBilingual(it.title, it.source, budget),
-        AI_TITLE_TRANSLATE_TIMEOUT_MS,
+        aiCallTimeout(AI_TITLE_TRANSLATE_TIMEOUT_MS),
         `title_translate:${it.id}`
       );
       if (translated) {
@@ -8037,7 +8045,7 @@ async function runOneJob(job: AiJob) {
 
       const neutralized = await withTimeout(
         neutralizeTitleSet(it, budget),
-        AI_TITLE_NEUTRALIZE_TIMEOUT_MS,
+        aiCallTimeout(AI_TITLE_NEUTRALIZE_TIMEOUT_MS),
         `title_neutralize:${it.id}`
       );
       if (neutralized) {
@@ -8165,7 +8173,7 @@ async function runOneJob(job: AiJob) {
           it.research || '',
           budget
         ),
-        AI_CLASSIFY_TIMEOUT_MS,
+        aiCallTimeout(AI_CLASSIFY_TIMEOUT_MS),
         `mood:${it.id}`
       );
       if (mood) {
@@ -8202,7 +8210,7 @@ async function runOneJob(job: AiJob) {
           it.research || '',
           budget
         ),
-        AI_CLASSIFY_TIMEOUT_MS,
+        aiCallTimeout(AI_CLASSIFY_TIMEOUT_MS),
         `news_type:${it.id}`
       );
       if (newsType) {
@@ -8243,7 +8251,7 @@ async function runOneJob(job: AiJob) {
           it.research || '',
           budget
         ),
-        AI_CLASSIFY_TIMEOUT_MS,
+        aiCallTimeout(AI_CLASSIFY_TIMEOUT_MS),
         `topic_labels:${it.id}`
       );
       if (labels.length) {
@@ -8293,7 +8301,7 @@ async function runOneJob(job: AiJob) {
 
       const otherReports = await otherOutletReports(it).catch(() => []);
 
-      const timeoutMs = job.manual ? AI_RESEARCH_TIMEOUT_MANUAL_MS : AI_RESEARCH_TIMEOUT_MS;
+      const timeoutMs = aiCallTimeout(job.manual ? AI_RESEARCH_TIMEOUT_MANUAL_MS : AI_RESEARCH_TIMEOUT_MS);
       let text: string | undefined;
       try {
         text = await withTimeout(
@@ -9948,7 +9956,7 @@ socketServer.on('connection', (ws: WebSocket) => {
           try {
             const refreshedResearch = await withTimeout(
               oneItemResearch(it.title, it.source, it.link, ctx, linkText, budget, it.summary || ''),
-              ASK_AGENT_RESEARCH_TIMEOUT_MS,
+              aiCallTimeout(ASK_AGENT_RESEARCH_TIMEOUT_MS, 30_000),
               'ask_agent_research'
             );
             if (refreshedResearch) {
@@ -9962,7 +9970,7 @@ socketServer.on('connection', (ws: WebSocket) => {
 
         const answer = await withTimeout(
           askAgentAboutItem(question, it, budget, chatResearch),
-          ASK_AGENT_ANSWER_TIMEOUT_MS,
+          aiCallTimeout(ASK_AGENT_ANSWER_TIMEOUT_MS, 120_000),
           'ask_agent_answer'
         );
         const ok: AskAgentReply = {
