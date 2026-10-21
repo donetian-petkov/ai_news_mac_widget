@@ -5733,6 +5733,23 @@ async function markNeutralTitleRewriteFailed(
   scheduleDiscordPost(it);
 }
 
+/** Either one of a fixed set of labels ("unclear" is always allowed) or a full JSON schema. */
+type AnswerShape = { labels?: string[]; schema?: Record<string, unknown> };
+function answerSchema(answer: AnswerShape | undefined): Record<string, unknown> | undefined {
+  if (answer?.schema) return answer.schema;
+  if (answer?.labels?.length) return { type: 'object', additionalProperties: false, required: ['label'], properties: { label: { type: 'string', enum: [...answer.labels, 'unclear'] } } };
+  return undefined;
+}
+
+/** A held-to-labels answer comes back as {"label":"..."}; plain text answers pass through. */
+function labelFromAnswer(text: string): string {
+  try {
+    const parsed = JSON.parse(text) as { label?: unknown };
+    if (typeof parsed?.label === 'string') return parsed.label;
+  } catch { /* plain text */ }
+  return text;
+}
+
 function normalizeMood(raw: string): Mood | undefined {
   const s = String(raw || '')
     .trim()
@@ -6040,6 +6057,26 @@ async function createAdaptiveResponse(client: OpenAI, model: string, input: stri
   throw new Error(`${model} rejected every request shape`);
 }
 
+/** A chat request held to a JSON schema, returned in the Responses API shape the callers read. */
+async function localChatWithSchema(
+  client: OpenAI, model: string, input: string, maxOutputTokens: number, temperature: number,
+  schema: Record<string, unknown>, headers?: Record<string, string>
+): Promise<any> {
+  const chat = await client.chat.completions.create({
+    model,
+    messages: [{ role: 'user', content: input }],
+    max_tokens: maxOutputTokens,
+    temperature,
+    response_format: { type: 'json_schema', json_schema: { name: 'answer', strict: true, schema } }
+  } as any, headers ? { headers } : undefined);
+  const text = String((chat as any)?.choices?.[0]?.message?.content || '');
+  return {
+    output_text: text,
+    output: [{ type: 'message', content: [{ type: 'output_text', text }] }],
+    usage: { input_tokens: (chat as any)?.usage?.prompt_tokens || 0, output_tokens: (chat as any)?.usage?.completion_tokens || 0 }
+  };
+}
+
 async function generateWithOpenAiLike(
   kind: AiModelKind,
   model: string,
@@ -6047,7 +6084,8 @@ async function generateWithOpenAiLike(
   maxOutputTokens: number,
   temperature: number,
   labelRaw?: unknown,
-  debugMeta?: SummaryDebugMeta
+  debugMeta?: SummaryDebugMeta,
+  answer?: AnswerShape
 ): Promise<string | undefined> {
   const client = activeOpenAiLikeClient();
   if (!client) return undefined;
@@ -6056,7 +6094,14 @@ async function generateWithOpenAiLike(
     // A local model server is shared by every job. The task name (the label's first part, e.g. "Research",
     // "Ask agent", "Mood classification") lets a gate in front of it serve what the user clicked first.
     const task = String(labelRaw || kind).split(':')[0].trim().slice(0, 60);
-    const resp = await createAdaptiveResponse(client, model, input, maxOutputTokens, temperature, aiProvider === 'local' ? { 'x-ai-task': task } : undefined);
+    // A small local model drifts from a required answer shape (other words, Bulgarian labels, broken JSON),
+    // so the local server is made to produce exactly that shape. It enforces a JSON schema only on chat
+    // requests, not on the Responses API, so those calls go as chat and come back in the Responses shape.
+    const schema = aiProvider === 'local' ? answerSchema(answer) : undefined;
+    const headers = aiProvider === 'local' ? { 'x-ai-task': task } : undefined;
+    const resp = schema
+      ? await localChatWithSchema(client, model, input, maxOutputTokens, temperature, schema, headers)
+      : await createAdaptiveResponse(client, model, input, maxOutputTokens, temperature, headers);
     trackUsageFromResponse(kind, model, resp, labelRaw);
     const extracted = extractOpenAiLikeText(resp);
     if (kind === 'summary' && debugMeta) {
@@ -6206,7 +6251,9 @@ async function generateAiText(
   labelRaw?: unknown,
   debugMeta?: SummaryDebugMeta,
   /** Run even with the AI toggle off, as long as a provider key is set (briefings). */
-  ignoreToggle = false
+  ignoreToggle = false,
+  /** The answer's required shape; a local model is held to it, the cloud gets the prompt alone. */
+  answer?: AnswerShape
 ): Promise<string | undefined> {
   if ((!aiEnabled && !ignoreToggle) || !aiAvailable) return undefined;
   const model = activeModel(kind);
@@ -6217,7 +6264,7 @@ async function generateAiText(
   if (aiProvider === 'claude') {
     return generateWithClaude(kind, model, prompt, maxOutputTokens, temperature, labelRaw, debugMeta);
   }
-  return generateWithOpenAiLike(kind, model, prompt, maxOutputTokens, temperature, labelRaw, debugMeta);
+  return generateWithOpenAiLike(kind, model, prompt, maxOutputTokens, temperature, labelRaw, debugMeta, answer);
 }
 
 type AlertCriteriaMatchResult = {
@@ -6446,6 +6493,16 @@ async function translateTitleBilingual(
   return { bg, en };
 }
 
+const NEUTRAL_TITLE_ANSWER_SCHEMA = {
+  type: 'object', additionalProperties: false,
+  required: ['classification', 'confidence', 'needsRewrite', 'reason', 'original', 'bg', 'en'],
+  properties: {
+    classification: { type: 'string', enum: ['neutral', 'clickbait', 'rage_bait', 'emotional_framing', 'vague_teaser', 'sensational', 'fact_stating_but_emotional_event'] },
+    confidence: { type: 'number' }, needsRewrite: { type: 'boolean' }, reason: { type: 'string' },
+    original: { type: 'string' }, bg: { type: 'string' }, en: { type: 'string' }
+  }
+};
+
 async function neutralizeTitleSet(item: NewsInternal, budget: BudgetMode): Promise<NeutralizedTitleSet | undefined> {
   const originalTitle = normalizeTitleValue(item.title);
   if (!originalTitle) return undefined;
@@ -6490,7 +6547,9 @@ async function neutralizeTitleSet(item: NewsInternal, budget: BudgetMode): Promi
     maxTokens,
     0,
     `Neutral title: ${item.source} - ${originalTitle}`,
-    { itemId: item.id, feedUrl: item.feedUrl, source: item.source, title: originalTitle }
+    { itemId: item.id, feedUrl: item.feedUrl, source: item.source, title: originalTitle },
+    false,
+    { schema: NEUTRAL_TITLE_ANSWER_SCHEMA }
   );
   if (!text) return undefined;
   const parsed = parseNeutralizedTitles(text);
@@ -6585,8 +6644,85 @@ async function oneItemResearch(
     (linkText ? `Article text (may be partial): ${linkText}\n` : '') +
     otherReports.map(report => `Report from ${report.source}: ${report.title}\n${report.text}\n`).join('');
 
+  if (aiProvider === 'local') return localResearch(title, outletName(source, link), linkText || context, summary, otherReports, budget);
   const text = await generateAiText('research', input, budgetToTokensResearch(budget), 0.25, `Research: ${source} - ${title}`);
   return cleanResearch(text);
+}
+
+// On a local model research is built in steps, like the local summary pipeline: the model lists facts from
+// the article and the other outlets' reports, code drops any fact whose names or numbers are not in that
+// text, and the note is written from the remaining facts only. Background, "why it matters" and outside
+// knowledge are left out, because a small model invents them; the confidence line is set by code.
+async function localResearch(
+  title: string, source: string, articleText: string, summary: string, otherReports: OtherReport[], budget: BudgetMode
+): Promise<string | undefined> {
+  const bg = researchLang === 'bg';
+  const sources = [{ name: source, text: articleText }, ...otherReports.map(r => ({ name: outletName(r.source, ''), text: `${r.title}\n${r.text}` }))]
+    .filter(x => x.text.trim());
+  if (!sources.length) return undefined;
+  const sourceText = sources.map(x => `[${x.name}]\n${x.text.slice(0, 5000)}`).join('\n\n').slice(0, 9000);
+  const factsAnswer = await generateAiText('research', [
+    'List up to 6 facts from these texts that the summary below does not already say.',
+    'Each fact is one short complete sentence, with the outlet whose text states it.',
+    'Prefer names, numbers, dates, decisions, causes and results. Copy names and numbers exactly.',
+    `Write the facts in ${bg ? 'Bulgarian' : 'English'}.`,
+    `Headline: ${title}`,
+    summary ? `Summary the reader has seen: ${summary}` : '',
+    sourceText
+  ].filter(Boolean).join('\n'), 520, 0, `Research facts: ${source} - ${title}`, undefined, false, { schema: {
+    type: 'object', additionalProperties: false, required: ['facts'],
+    properties: { facts: { type: 'array', maxItems: 6, items: { type: 'object', additionalProperties: false, required: ['fact', 'outlet'], properties: { fact: { type: 'string' }, outlet: { type: 'string', enum: sources.map(x => x.name) } } } } }
+  } });
+  let facts: Array<{ fact: string; outlet: string }> = [];
+  try { facts = (JSON.parse(factsAnswer || '{}') as { facts?: typeof facts }).facts || []; } catch { return undefined; }
+  const outletNames = sources.map(x => x.name.toLowerCase());
+  const checked = facts
+    .map(f => ({ fact: String(f.fact || '').trim(), outlet: String(f.outlet || '').trim() }))
+    .filter(f => f.fact.split(/\s+/).length >= 5 && outletNames.includes(f.outlet.toLowerCase()) && factIsGrounded(f.fact, sourceText))
+    .filter(f => !summary || !sameFact(f.fact, summary));
+  if (!checked.length) return undefined;
+  const note = await generateAiText('research', [
+    `Write a research note of at most 150 words in ${bg ? 'Bulgarian' : 'English'} using only these facts.`,
+    'Start with what matters most. Name the outlet when only one outlet reports a fact or when outlets give different figures.',
+    'Add nothing that is not in the facts. Complete sentences, one or two paragraphs, no bullet points, no quotes.',
+    `Headline: ${title}`,
+    'Facts:',
+    ...checked.map(f => `- ${f.fact} (${f.outlet})`)
+  ].join('\n'), budgetToTokensResearch(budget), 0.2, `Research: ${source} - ${title}`);
+  const body = cleanResearch(note);
+  if (!body) return undefined;
+  const outlets = new Set(checked.map(f => f.outlet.toLowerCase())).size;
+  const level = outlets >= 2 && checked.length >= 4 ? 'high' : checked.length >= 3 ? 'medium' : 'low';
+  const line = bg
+    ? `Увереност: ${{ high: 'висока', medium: 'средна', low: 'ниска' }[level]}${level === 'low' ? '. Какво да се провери: други източници за същото събитие.' : ''}`
+    : `Confidence: ${level[0].toUpperCase()}${level.slice(1)}${level === 'low' ? '. What to verify: other outlets reporting the same event.' : ''}`;
+  return `${body}\n\n${line}`;
+}
+
+/** A short outlet name for notes: a feed's long title ("Актуални новини от България и света.") becomes its site. */
+function outletName(source: string, link: string): string {
+  const name = String(source || '').trim().replace(/[.\s]+$/, '');
+  if (name && name.length <= 24) return name;
+  try { return new URL(link).hostname.replace(/^www\./, ''); } catch { return name.slice(0, 24); }
+}
+
+/** Every number, and every name written in the source's own script, must appear in the source text. */
+function factIsGrounded(fact: string, source: string): boolean {
+  const src = source.toLowerCase();
+  const cyr = (t: string) => /[а-яА-Я]/.test(t);
+  return (fact.match(/\d+(?:[.,]\d+)?|[A-ZА-Я][a-zа-я]{2,}/g) || []).slice(1).every(tok => {
+    if (/^\d/.test(tok)) return src.includes(tok) || src.includes(tok.replace(',', '.')) || src.includes(tok.replace('.', ','));
+    if (cyr(tok) !== cyr(source)) return true;
+    return src.includes(tok.toLowerCase().slice(0, Math.max(4, tok.length - 2)));
+  });
+}
+
+/** True when a fact mostly repeats the summary (four-letter word stems). */
+function sameFact(fact: string, summary: string): boolean {
+  const stems = (t: string) => new Set((t.toLowerCase().match(/[\p{L}\p{N}]{4,}/gu) || []).map(w => w.slice(0, 5)));
+  const f = stems(fact), sum = stems(summary);
+  if (!f.size) return true;
+  return [...f].filter(w => sum.has(w)).length / f.size > 0.6;
 }
 
 type OtherReport = { source: string; title: string; text: string };
@@ -6657,9 +6793,9 @@ async function classifyMoodForItem(
     (context ? `Context: ${context}\n` : '') +
     (summary ? `Summary: ${summary}\n` : '') +
     (research ? `Research: ${research}\n` : '');
-  const text = await generateAiText('research', input, Math.max(12, Math.min(28, budgetToTokensSummary(budget))), 0, `Mood classification: ${source} - ${title}`);
+  const text = await generateAiText('research', input, Math.max(12, Math.min(28, budgetToTokensSummary(budget))), 0, `Mood classification: ${source} - ${title}`, undefined, false, { labels: Object.values(MoodValue) });
   if (!text) return undefined;
-  return normalizeMood(text);
+  return normalizeMood(labelFromAnswer(text));
 }
 
 async function classifyNewsTypeForItem(
@@ -6677,9 +6813,12 @@ async function classifyNewsTypeForItem(
     (context ? `Context: ${context}\n` : '') +
     (summary ? `Summary: ${summary}\n` : '') +
     (research ? `Research: ${research}\n` : '');
-  const text = await generateAiText('research', input, Math.max(16, Math.min(34, budgetToTokensSummary(budget))), 0, `Type classification: ${source} - ${title}`);
+  const text = await generateAiText('research', input, Math.max(16, Math.min(34, budgetToTokensSummary(budget))), 0, `Type classification: ${source} - ${title}`, undefined, false, { labels: Object.values(NewsTypeValue) });
   if (!text) return undefined;
-  return normalizeNewsType(text) || 'other';
+  const label = labelFromAnswer(text);
+  // "unclear" means the model could not decide: no type rather than a guessed one.
+  if (label === 'unclear') return undefined;
+  return normalizeNewsType(label) || 'other';
 }
 
 async function classifyTopicLabelsForItem(
