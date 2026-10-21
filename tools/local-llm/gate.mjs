@@ -1,6 +1,6 @@
 // Load gate in front of the local model server, so any client (the app's own AI calls included) stays inside
 // the same limits as lean.mjs however much news arrives:
-// - at most MAX_PAR requests reach the model at once;
+// - at most MAX_PAR requests reach the model at once, and background work leaves one slot free for clicks;
 // - the model is busy at most BUSY_SHARE of any minute; above that, requests wait;
 // - at most QUEUE_MAX requests wait; more are refused with 503 (the app records the job as failed and moves on);
 // - a request that waited longer than WAIT_MS is refused, and one that runs longer than RUN_MS is cut off.
@@ -62,9 +62,17 @@ const busyShare = () => {
 const start = () => { if (running++ === 0) busySince = Date.now(); };
 const end = () => { if (--running === 0) busyLog.push([busySince, Date.now()]); };
 
+// What the user clicked (research, Ask) goes first and is not held by the busy limit; background work
+// (summaries, translations, labels) waits for its turn. The app names the task in the x-ai-task header.
+const PRIORITY = /^(Research|Ask agent)/i;
+const urgent = job => PRIORITY.test(String(job.req.headers['x-ai-task'] || ''));
 function pump() {
-  while (queue.length && running < MAX_PAR && busyShare() <= BUSY_SHARE) {
-    const job = queue.shift();
+  for (;;) {
+    if (!queue.length || running >= MAX_PAR) return;
+    const i = queue.findIndex(urgent);
+    // Background work never takes the last slot, so a click always finds one free.
+    if (i < 0 && (busyShare() > BUSY_SHARE || running >= MAX_PAR - 1)) return;
+    const job = queue.splice(i >= 0 ? i : 0, 1)[0];
     if (Date.now() - job.at > WAIT_MS) { stats.refusedLate++; job.res.writeHead(503).end('{"error":"waited too long"}'); continue; }
     forward(job);
   }
@@ -77,7 +85,8 @@ function forward({ req, body: raw, res }) {
   let done = false;
   const finish = () => { if (!done) { done = true; end(); pump(); } };
   const up = http.request({ host: MODEL_URL.hostname, port: MODEL_URL.port, path: req.url, method: req.method,
-    headers: { ...req.headers, host: MODEL_URL.host } }, upRes => {
+    // The body may have grown (rules added), so its length is set again.
+    headers: { ...req.headers, host: MODEL_URL.host, 'content-length': String(body.length) } }, upRes => {
     const chunks = [];
     upRes.on('data', c => chunks.push(c));
     upRes.on('end', () => {

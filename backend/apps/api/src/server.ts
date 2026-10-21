@@ -6012,7 +6012,7 @@ async function fetchArticleText(link: string, maxChars: number): Promise<string>
 const modelsWithoutTemperature = new Set<string>();
 const modelsWithoutReasoningEffort = new Set<string>();
 
-async function createAdaptiveResponse(client: OpenAI, model: string, input: string, maxOutputTokens: number, temperature: number): Promise<any> {
+async function createAdaptiveResponse(client: OpenAI, model: string, input: string, maxOutputTokens: number, temperature: number, headers?: Record<string, string>): Promise<any> {
   for (let attempt = 0; attempt < 3; attempt += 1) {
     const reasoning = modelsWithoutTemperature.has(model);
     const params: Record<string, unknown> = {
@@ -6023,7 +6023,7 @@ async function createAdaptiveResponse(client: OpenAI, model: string, input: stri
     if (!reasoning) params.temperature = temperature;
     if (reasoning && !modelsWithoutReasoningEffort.has(model)) params.reasoning = { effort: 'low' };
     try {
-      return await client.responses.create(params as any);
+      return await client.responses.create(params as any, headers ? { headers } : undefined);
     } catch (error) {
       const message = String((error as Error)?.message || '');
       if (/unsupported parameter.*temperature|temperature.*not supported/i.test(message) && !modelsWithoutTemperature.has(model)) {
@@ -6053,7 +6053,10 @@ async function generateWithOpenAiLike(
   if (!client) return undefined;
   const startedAt = Date.now();
   try {
-    const resp = await createAdaptiveResponse(client, model, input, maxOutputTokens, temperature);
+    // A local model server is shared by every job. The task name (the label's first part, e.g. "Research",
+    // "Ask agent", "Mood classification") lets a gate in front of it serve what the user clicked first.
+    const task = String(labelRaw || kind).split(':')[0].trim().slice(0, 60);
+    const resp = await createAdaptiveResponse(client, model, input, maxOutputTokens, temperature, aiProvider === 'local' ? { 'x-ai-task': task } : undefined);
     trackUsageFromResponse(kind, model, resp, labelRaw);
     const extracted = extractOpenAiLikeText(resp);
     if (kind === 'summary' && debugMeta) {
@@ -7404,7 +7407,8 @@ function jobPriority(j: AiJob): number {
   if (j.manual) {
     if (j.kind === 'title_translate') return 3;
     if (j.kind === 'title_neutralize') return 3;
-    if (j.kind === 'research') return 4;
+    // On a local model background summaries take seconds each, so research the user clicked goes ahead of them.
+    if (j.kind === 'research') return aiProvider === 'local' ? 1 : 4;
     if (j.kind === 'mood') return 6;
     if (j.kind === 'news_type') return 7;
     return 7; // topic_labels
@@ -7489,6 +7493,16 @@ function enqueueJob(job: AiJobInput) {
     return;
   }
   if (isJobKeyQueued(k)) {
+    // A click on work that is already waiting in the background moves that job up to click priority;
+    // dropping the click left it behind the whole background queue.
+    const waiting = nextJob.manual && !nextJob.bulk ? aiQueue.find(j => jobKey(j) === k && (j.bulk || !j.manual)) : undefined;
+    if (waiting) {
+      waiting.manual = true;
+      waiting.bulk = false;
+      waiting.enqueuedAtMs = nextJob.enqueuedAtMs;
+      recordAiJobEvent(waiting, 'enqueue', { reason: 'promoted_by_click' });
+      return;
+    }
     recordAiJobEvent(nextJob, 'skip', { reason: 'duplicate_queue' });
     return;
   }
@@ -8233,7 +8247,11 @@ async function tickAiQueue() {
   purgeExpiredQueuedJobs();
   if (!aiQueue.length) return;
 
-  while (aiInFlight.size < AI_MAX_CONCURRENCY && aiQueue.length) {
+  // A local model runs two jobs at once and keeps the second for what the user clicked: background work
+  // waits behind the model's own load limits, and a click must not wait behind it.
+  const limit = aiProvider === 'local' ? Math.max(2, AI_MAX_CONCURRENCY) : AI_MAX_CONCURRENCY;
+  while (aiInFlight.size < limit && aiQueue.length) {
+    if (aiProvider === 'local' && aiInFlight.size >= limit - 1 && !aiQueue.some(j => j.manual && !j.bulk && !isAiJobPaused(j))) break;
     const job = dequeueNextJob();
     if (!job) break;
     const k = jobKey(job);

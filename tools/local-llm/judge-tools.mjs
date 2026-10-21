@@ -10,12 +10,16 @@ const ids = fs.readFileSync(idsFile, 'utf8').split('\n').filter(Boolean);
 const dir = new URL('.', import.meta.url).pathname;
 const arts = fs.existsSync(dir + 'data/articles-tools.json') ? JSON.parse(fs.readFileSync(dir + 'data/articles-tools.json', 'utf8')) : {};
 
-const COLS = ['key', 'title', 'source', 'contextText', 'linkText', 'summary', 'titleBg', 'titleEn', 'neutralTitle', 'neutralTitleBg', 'neutralTitleEn', 'research', 'mood', 'newsType', 'topicLabelsJson'];
+const COLS = ['key', 'itemId', 'title', 'source', 'contextText', 'linkText', 'summary', 'titleBg', 'titleEn', 'neutralTitle', 'neutralTitleBg', 'neutralTitleEn', 'research', 'mood', 'newsType', 'topicLabelsJson'];
 const rows = db => {
   const q = `SELECT ${COLS.map(c => `"${c}"`).join(',')} FROM NewsItemRecord WHERE key IN (${ids.map(i => `'${i.replace(/'/g, "''")}'`).join(',')})`;
   return Object.fromEntries(JSON.parse(execFileSync('sqlite3', ['-readonly', '-json', db, q], { maxBuffer: 64e6 }).toString() || '[]').map(r => [r.key, r]));
 };
 const L = rows(localDb), C = rows(cloudDb);
+// Ask-agent answers are not stored by the app; ws-tools.mjs saved them by item id.
+const askOf = file => file && fs.existsSync(file) ? JSON.parse(fs.readFileSync(file, 'utf8')).replies || {} : {};
+const askL = askOf(process.env.ASK_LOCAL), askC = askOf(process.env.ASK_CLOUD);
+for (const [m, a] of [[L, askL], [C, askC]]) for (const r of Object.values(m)) r.ask = a[r.itemId]?.answer || '';
 
 // What a good output looks like for each tool; every output is scored 1-5 on each criterion.
 const TOOLS = {
@@ -26,6 +30,7 @@ const TOOLS = {
   research: { get: r => r.research, good: 'a short detailed briefing (about 150 words) that goes beyond the summary, compares what outlets report, and states nothing the article does not support' },
   mood: { get: r => r.mood, good: 'the correct overall mood of the story' },
   newsType: { get: r => r.newsType, good: 'the correct type of news story' },
+  ask: { get: r => r.ask, good: 'a direct answer to "what is the most important point of this story and why does it matter", based only on the article, saying so when the article does not tell' },
   topics: { get: r => (r.topicLabelsJson && r.topicLabelsJson !== '[]') ? r.topicLabelsJson : '', good: 'a short list of topic labels that fit the story' },
 };
 const CRITERIA = ['faithful', 'hedging', 'informative', 'specific', 'clarity', 'format'];
