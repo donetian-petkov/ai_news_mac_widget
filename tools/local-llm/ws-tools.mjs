@@ -22,12 +22,12 @@ ws.on('message', raw => {
 ws.on('open', async () => {
   for (const it of items) {
     if (!process.env.ASK_ONLY) ws.send(JSON.stringify({ type: 'run_item_auto', id: it.id, feedUrl: it.feedUrl, mood: true, newsType: true, topicLabels: true }));
-    ws.send(JSON.stringify({ type: 'ask_agent_item', id: it.id, feedUrl: it.feedUrl, question: question(it.title) }));
+    if (!process.env.NO_ASK) ws.send(JSON.stringify({ type: 'ask_agent_item', id: it.id, feedUrl: it.feedUrl, question: question(it.title) }));
     // Spaced out so the questions queue in the app, not all at once in front of the model.
     await new Promise(r => setTimeout(r, Number(process.env.GAP_MS || 200)));
   }
   // Ask replies arrive as the model gets to them; wait until all are in or WAIT_MIN passes.
-  const until = Date.now() + Number(process.env.WAIT_MIN || 60) * 60e3;
+  const until = process.env.NO_ASK ? 0 : Date.now() + Number(process.env.WAIT_MIN || 60) * 60e3;
   while (Object.keys(replies).length < items.length && Date.now() < until) {
     await new Promise(r => setTimeout(r, 5000));
     fs.writeFileSync(outFile, JSON.stringify({ items, replies }, null, 1));

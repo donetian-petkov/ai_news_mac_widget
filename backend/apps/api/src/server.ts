@@ -6681,15 +6681,15 @@ async function localResearch(
     .filter(f => f.fact.split(/\s+/).length >= 5 && outletNames.includes(f.outlet.toLowerCase()) && factIsGrounded(f.fact, sourceText))
     .filter(f => !summary || !sameFact(f.fact, summary));
   if (!checked.length) return undefined;
-  const note = await generateAiText('research', [
-    `Write a research note of at most 150 words in ${bg ? 'Bulgarian' : 'English'} using only these facts.`,
-    'Start with what matters most. Name the outlet when only one outlet reports a fact or when outlets give different figures.',
-    'Add nothing that is not in the facts. Complete sentences, one or two paragraphs, no bullet points, no quotes.',
-    `Headline: ${title}`,
-    'Facts:',
-    ...checked.map(f => `- ${f.fact} (${f.outlet})`)
-  ].join('\n'), budgetToTokensResearch(budget), 0.2, `Research: ${source} - ${title}`);
-  const body = cleanResearch(note);
+  // The note is the checked facts themselves, in the model's order of importance. A separate writing step
+  // mixed facts up (credited a scan to the wrong agency, confused dates); facts written once stay as checked.
+  // The outlet is named only when more than one outlet's report is used.
+  const manyOutlets = new Set(checked.map(f => f.outlet.toLowerCase())).size > 1;
+  const sentences = checked.map(f => {
+    const fact = /[.!?]$/.test(f.fact) ? f.fact : `${f.fact}.`;
+    return manyOutlets ? fact.replace(/[.!?]$/, m => ` (${f.outlet})${m}`) : fact;
+  });
+  const body = cleanResearch(sentences.join(' '));
   if (!body) return undefined;
   const outlets = new Set(checked.map(f => f.outlet.toLowerCase())).size;
   const level = outlets >= 2 && checked.length >= 4 ? 'high' : checked.length >= 3 ? 'medium' : 'low';
@@ -6712,7 +6712,9 @@ function factIsGrounded(fact: string, source: string): boolean {
   const cyr = (t: string) => /[а-яА-Я]/.test(t);
   return (fact.match(/\d+(?:[.,]\d+)?|[A-ZА-Я][a-zа-я]{2,}/g) || []).slice(1).every(tok => {
     if (/^\d/.test(tok)) return src.includes(tok) || src.includes(tok.replace(',', '.')) || src.includes(tok.replace('.', ','));
-    if (cyr(tok) !== cyr(source)) return true;
+    // A Cyrillic name in an English text is a transliteration and cannot be matched; every other name
+    // (Latin names in Bulgarian text included: "Facebook", "NASA") must be in the text.
+    if (cyr(tok) && !cyr(source)) return true;
     return src.includes(tok.toLowerCase().slice(0, Math.max(4, tok.length - 2)));
   });
 }
