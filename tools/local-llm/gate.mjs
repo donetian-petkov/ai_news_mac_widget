@@ -4,11 +4,43 @@
 // - the model is busy at most BUSY_SHARE of any minute; above that, requests wait;
 // - at most QUEUE_MAX requests wait; more are refused with 503 (the app records the job as failed and moves on);
 // - a request that waited longer than WAIT_MS is refused, and one that runs longer than RUN_MS is cut off.
-// Usage: node gate.mjs   (listens on GATE_PORT, default 8082, forwards to MODEL_URL, default http://127.0.0.1:8081)
+// Usage: node gate.mjs   (listens on GATE_PORT, default 18082, forwards to MODEL_URL, default http://127.0.0.1:8081)
 import http from 'http';
+import { AI_RULES } from '../../backend/apps/api/dist/aiRules.js';
+
+// The no-invention rules go to the model with every request, whichever tool sent it. Answers are then checked:
+// a sentence with a number, or a name in the source's own script, that the request text does not contain is
+// removed, so an invented figure, person or outlet cannot reach the app.
+const RULES = AI_RULES;
+const cyr = t => /[а-яА-Я]/.test(t);
+const tokensOf = t => (t.match(/\d+(?:[.,]\d+)?|[A-ZА-Я][a-zа-я]{2,}/g) || []);
+const supported = (sentence, source) => {
+  const src = source.toLowerCase();
+  return tokensOf(sentence).every(tok => {
+    if (/^\d/.test(tok)) return src.includes(tok.replace(',', '.')) || src.includes(tok.replace('.', ','));
+    if (cyr(tok) !== cyr(source)) return true; // another script: a translation or transliteration, not checkable here
+    return src.includes(tok.toLowerCase().slice(0, Math.max(4, tok.length - 2)));
+  });
+};
+function withRules(body, path) {
+  try {
+    const j = JSON.parse(body.toString());
+    if (path.startsWith('/v1/responses')) j.instructions = [RULES, j.instructions].filter(Boolean).join('\n\n');
+    else if (path.startsWith('/v1/chat/completions') && Array.isArray(j.messages)) j.messages = [{ role: 'system', content: RULES }, ...j.messages];
+    else return { body, source: '' };
+    const source = JSON.stringify(j.input ?? j.messages ?? '');
+    return { body: Buffer.from(JSON.stringify(j)), source };
+  } catch { return { body, source: '' }; }
+}
+function checkAnswer(text, source) {
+  if (!source || /^\s*[\[{]/.test(text)) return { text, removed: 0 }; // JSON answers are checked by their caller
+  const sentences = text.match(/[^.!?\n]+[.!?]*\s*/g) || [text];
+  const kept = sentences.filter(x => supported(x, source));
+  return { text: kept.join('').trim() || text, removed: sentences.length - kept.length };
+}
 
 const MODEL_URL = new URL(process.env.MODEL_URL || 'http://127.0.0.1:8081');
-const GATE_PORT = Number(process.env.GATE_PORT || 8082);
+const GATE_PORT = Number(process.env.GATE_PORT || 18082);
 const MAX_PAR = Number(process.env.MAX_PAR || 2);
 const BUSY_SHARE = Number(process.env.BUSY_SHARE || 0.4);
 const QUEUE_MAX = Number(process.env.QUEUE_MAX || 60);
@@ -39,15 +71,28 @@ function pump() {
 }
 setInterval(pump, 500);
 
-function forward({ req, body, res }) {
+function forward({ req, body: raw, res }) {
+  const { body, source } = req.method === 'POST' ? withRules(raw, req.url) : { body: raw, source: '' };
   start();
   let done = false;
   const finish = () => { if (!done) { done = true; end(); pump(); } };
   const up = http.request({ host: MODEL_URL.hostname, port: MODEL_URL.port, path: req.url, method: req.method,
     headers: { ...req.headers, host: MODEL_URL.host } }, upRes => {
-    res.writeHead(upRes.statusCode || 502, upRes.headers);
-    upRes.pipe(res);
-    upRes.on('end', () => { stats.served++; finish(); });
+    const chunks = [];
+    upRes.on('data', c => chunks.push(c));
+    upRes.on('end', () => {
+      let out = Buffer.concat(chunks);
+      try {
+        const j = JSON.parse(out.toString());
+        const fix = t => { const r = checkAnswer(t, source); stats.sentencesRemoved = (stats.sentencesRemoved || 0) + r.removed; return r.text; };
+        for (const o of j.output || []) for (const c of o.content || []) if (typeof c.text === 'string') c.text = fix(c.text);
+        for (const ch of j.choices || []) if (typeof ch.message?.content === 'string') ch.message.content = fix(ch.message.content);
+        out = Buffer.from(JSON.stringify(j));
+      } catch {}
+      const headers = { ...upRes.headers, 'content-length': String(out.length) }; delete headers['transfer-encoding'];
+      res.writeHead(upRes.statusCode || 502, headers).end(out);
+      stats.served++; finish();
+    });
     upRes.on('error', finish);
   });
   up.setTimeout(RUN_MS, () => { stats.cutOff++; up.destroy(); if (!res.headersSent) res.writeHead(504).end('{"error":"model took too long"}'); finish(); });

@@ -14,6 +14,7 @@ import { registerProductFeatureApi, type ProductFeatureRuntime } from './product
 import { chunk, fingerprintRecord, takeChangedRecords } from './newsPersistence';
 import { titleTokens as cachedTitleTokens } from './titleTokens';
 import { cleanSummary, wholeSentences } from './summaryText';
+import { withAiRules } from './aiRules';
 import { DEFAULT_MODEL_POLICY, fetchModels, fetchPrices, pickDefault, resolveChoice, withPrices, type ModelChoice, type ModelInfo, type ModelPolicy } from './modelCatalog';
 import {
   buildAiRatingPrompt,
@@ -6208,10 +6209,12 @@ async function generateAiText(
   const model = activeModel(kind);
   if (!model || model === 'none') return undefined;
 
+  // Local models get the no-invention rules first in every prompt, whichever local model is loaded.
+  const prompt = aiProvider === 'local' ? withAiRules(input) : input;
   if (aiProvider === 'claude') {
-    return generateWithClaude(kind, model, input, maxOutputTokens, temperature, labelRaw, debugMeta);
+    return generateWithClaude(kind, model, prompt, maxOutputTokens, temperature, labelRaw, debugMeta);
   }
-  return generateWithOpenAiLike(kind, model, input, maxOutputTokens, temperature, labelRaw, debugMeta);
+  return generateWithOpenAiLike(kind, model, prompt, maxOutputTokens, temperature, labelRaw, debugMeta);
 }
 
 type AlertCriteriaMatchResult = {

@@ -4,10 +4,12 @@ import fs from 'fs';
 import { execSync } from 'node:child_process';
 import { buildAiRatingPrompt, parseAiRatings, sameEventTitles } from '../../backend/apps/api/dist/briefing.js';
 import { cleanSummary } from '../../backend/apps/api/dist/summaryText.js';
+import { AI_RULES } from '../../backend/apps/api/dist/aiRules.js';
 const [,, outFile] = process.argv;
 const dir = new URL('.', import.meta.url).pathname;
 const data = dir + 'data/';
-const guide = name => fs.readFileSync(dir + 'guides/' + name + '.md', 'utf8');
+// Every prompt starts with the app's own no-invention rules (the same text every provider gets).
+const guide = name => AI_RULES + '\n\n' + fs.readFileSync(dir + 'guides/' + name + '.md', 'utf8');
 const all = JSON.parse(fs.readFileSync(data + (process.env.POOL || 'pool.json'), 'utf8'));
 const MODEL = process.env.LOCAL_MODEL;
 const SUM_N = Number(process.env.SUM_N || 40);
