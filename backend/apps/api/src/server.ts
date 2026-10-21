@@ -6379,6 +6379,12 @@ async function oneLineSummary(
   const usefulContext = hasUsefulSummaryContext(title, context) ? context : '';
   const usefulArticle = hasUsefulSummaryContext(title, articleText) ? articleText : '';
   if (!usefulContext && !usefulArticle) return undefined;
+  if (aiProvider === 'local') {
+    const local = await localSummary(feedUrl, title, source, usefulArticle || usefulContext);
+    if (!local) return undefined;
+    const summary = cleanSummary(local);
+    return summary && !summaryRepeatsHeadline(title, summary) ? summary : undefined;
+  }
 
   const input =
     `${summaryInstructionForFeed(feedUrl, title)} No quotes.\n` +
@@ -6400,6 +6406,88 @@ async function oneLineSummary(
   if (!summary) return undefined;
   if (summaryRepeatsHeadline(title, summary)) return undefined;
   return summary;
+}
+
+// On a local model the one-line summary is built in steps, as tested in tools/local-llm: the model lists
+// up to 3 facts from the article, code keeps only facts that are grounded in the text, complete and new
+// beyond the headline, one call writes the sentence from them (kept only if it passes the same checks and
+// keeps every caution word), and the sentence is translated when the summary language asks for it.
+const SUMMARY_HEDGES = /може да|твърди|според|предполага|вероятно|alleged|accused|trying to|may |reportedly/gi;
+async function localSummary(feedUrl: string, title: string, source: string, text: string): Promise<string | undefined> {
+  const bgHeadline = /[а-яА-Я]/.test(title);
+  const lang = bgHeadline ? 'Bulgarian' : 'English';
+  // Straight quotes copied from the text end the JSON string mid-fact; Bulgarian quotes are copied safely.
+  const body = text.replace(/"([^"\n]{1,80})"/g, '„$1“').replace(/"/g, '“').slice(0, 6000);
+  const asks = /\?|\bли\b/i.test(title);
+  const stems = (t: string) => (t.toLowerCase().match(/[\p{L}\p{N}]{4,}/gu) || []).map(w => w.slice(0, 5));
+  const headStems = new Set(stems(title));
+  const novelty = (t: string) => { const w = stems(t); return w.length ? w.filter(x => !headStems.has(x)).length / w.length : 0; };
+  const words = (t: string) => t.split(/\s+/).filter(Boolean).length;
+  const keep = (list: string[]) => list
+    .map(x => String(x || '').trim())
+    .filter(x => !/текст|статия|не съдържа|информация/i.test(x) && words(x) >= 5 && words(x) <= 22 && !/\.\.\.|…/.test(x)
+      && factIsGrounded(x, `${title} ${body}`) && (x.match(/„/g) || []).length === (x.match(/“/g) || []).length)
+    .filter(x => novelty(x) >= (asks ? 0.6 : 0.5))
+    // A headline that asks a question must not come back as a claim.
+    .filter(x => !asks || !/може да|вероятно|възможно|ще поеме/i.test(x))
+    .sort((a, b) => novelty(b) - novelty(a));
+  const factsCall = async (extra: string) => {
+    const answer = await generateAiText('summary', [
+      `List at most 3 facts from the text, the most important first, each one short complete ${lang} sentence of at most 15 words.`,
+      'Each fact has something concrete: a person, a number, a place, a date, an amount or a decision. Copy names and numbers exactly.',
+      'Say who actually does each thing, and keep the text\'s caution words ("alleged", "trying to", "може да", "според").',
+      extra,
+      `Headline: ${title}`,
+      `Text: ${body}`
+    ].filter(Boolean).join('\n'), 220, 0, `Summary facts: ${source} - ${title}`, undefined, false, {
+      schema: { type: 'object', additionalProperties: false, required: ['facts'], properties: { facts: { type: 'array', maxItems: 3, items: { type: 'string' } } } }
+    });
+    try { return ((JSON.parse(answer || '{}') as { facts?: string[] }).facts || []); } catch { return []; }
+  };
+  let facts = keep(await factsCall(''));
+  if (!facts.length) facts = keep(await factsCall('The reader already knows the headline: give only facts the headline does NOT say (a cause, a result, a number, a name, a date, a place).'));
+  if (!facts.length) return undefined;
+
+  let sentence = facts[0];
+  if (facts.length > 1) {
+    const answer = await generateAiText('summary', [
+      `Write ONE news summary sentence of at most 22 words, in ${lang}, for a reader who has already seen the headline.`,
+      'Use the one or two most important of these facts; tell what the headline leaves out. Keep every name and number exactly,',
+      'keep each statement with the person who made it, and keep every caution word. Add nothing else.',
+      `Headline: ${title}`,
+      ...facts.slice(0, 3).map((f, i) => `Fact ${i + 1}: ${f}`)
+    ].join('\n'), 120, 0, `Summary: ${source} - ${title}`, undefined, false, {
+      schema: { type: 'object', additionalProperties: false, required: ['sentence'], properties: { sentence: { type: 'string' } } }
+    });
+    let merged = '';
+    try { merged = String((JSON.parse(answer || '{}') as { sentence?: string }).sentence || '').trim(); } catch {}
+    const used = facts.slice(0, 3).filter(f => stems(f).some(w => stems(merged).includes(w)));
+    const hedged = [...new Set((used.join(' ').match(SUMMARY_HEDGES) || []).map(h => h.toLowerCase()))];
+    if (merged && hedged.every(h => merged.toLowerCase().includes(h)) && words(merged) <= 24
+      && factIsGrounded(merged, `${title} ${body}`) && novelty(merged) >= 0.5 && /[а-яА-Я]/.test(merged) === bgHeadline) sentence = merged;
+  }
+  sentence = /[.!?…]$/.test(sentence) ? sentence : `${sentence}.`;
+
+  // The summary language decides whether a translation is added ("BG / EN" in bilingual mode).
+  const wantBg = summaryLang === 'bg' || summaryLang === 'bilingual';
+  const wantEn = summaryLang === 'en' || summaryLang === 'bilingual';
+  if (!isTranslationEnabledForFeed(feedUrl)) return sentence;
+  const translate = async (to: 'Bulgarian' | 'English') => {
+    const answer = await generateAiText('summary', `Translate this news sentence into natural ${to}. Keep names and numbers exact; add nothing.\nSentence: ${sentence}`,
+      120, 0, `Summary translation: ${source} - ${title}`, undefined, false,
+      { schema: { type: 'object', additionalProperties: false, required: ['text'], properties: { text: { type: 'string' } } } });
+    try { return String((JSON.parse(answer || '{}') as { text?: string }).text || '').trim(); } catch { return ''; }
+  };
+  if (bgHeadline) {
+    if (!wantEn) return sentence;
+    const en = await translate('English');
+    if (!wantBg) return en || undefined;
+    return en ? `${sentence} / ${en}` : sentence;
+  }
+  if (!wantBg) return sentence;
+  const bg = await translate('Bulgarian');
+  if (!wantEn) return bg || undefined;
+  return bg ? `${bg} / ${sentence}` : sentence;
 }
 
 async function translateTitleBilingual(
