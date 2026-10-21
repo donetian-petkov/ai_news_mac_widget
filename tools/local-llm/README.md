@@ -63,6 +63,24 @@ OPENAI_API_KEY=... EXPECT=40 node judge.mjs data/run.json.live.jsonl data/judge.
 
 `judge.mjs` shows the cloud model the article, the headline and the two summaries in random order, without saying which is which.
 
+## Running the app's own AI tools on the local model
+
+`gate.mjs` sits between any client and the model server and enforces the same limits for the app's own calls:
+2 requests at once, busy at most 40% of a minute, at most 60 waiting (more are refused with 503), and a time
+limit per request; requests whose client gave up are dropped. A copy of the backend (`dist-local`, its own
+database copy and port) with `AI_PROVIDER=local` and `LOCAL_LLM_BASE_URL=http://127.0.0.1:8082/v1` runs every
+AI tool through the gate; a second copy on the cloud model gives the reference. `ws-tools.mjs` triggers the
+on-demand tools (mood, news type, topic labels, Ask) over the app's socket; `judge-tools.mjs` grades every
+tool's two outputs blind on six criteria (faithful, hedging, informative, specific, clarity, format, 1-5 each)
+plus the worst error (none/minor/major).
+
+Found so far:
+- The app drops an AI job that waits more than 3 minutes in its queue (`AI_JOB_TTL_MS`, default 180 s) and
+  times calls out after 22-45 s. At local speed nearly every job expired; a local provider needs far longer.
+- Through the Responses API the model "thinks out loud" and the app saved that text as the summary. The server
+  must run with its own chat template and thinking off (`--jinja --reasoning off`, in `start-server.sh`).
+- The app's keyword matching needs an embeddings model, which the local server does not provide.
+
 ## Results so far
 
 All runs used 40 stories from the last 12 hours, from 11 sources, 15 of them in English. The cloud reference is the summary the app actually showed.
