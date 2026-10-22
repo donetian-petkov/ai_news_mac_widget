@@ -6493,11 +6493,21 @@ async function localSummary(feedUrl: string, title: string, source: string, text
   const headStems = new Set(stems(title));
   const novelty = (t: string) => { const w = stems(t); return w.length ? w.filter(x => !headStems.has(x)).length / w.length : 0; };
   const words = (t: string) => t.split(/\s+/).filter(Boolean).length;
+  const NEGATION = /(?:^|[^\p{L}])(?:не|няма|никога|нито|not|no|never|won't|cannot|can't)(?=$|[^\p{L}])/iu;
+  const ONLY_WORD = /(?:^|[^\p{L}])(?:само|единствено|only|just|merely)(?=$|[^\p{L}])/iu;
+  const bodySentences = `${title}. ${body}`.split(/(?<=[.!?])\s+/);
+  const overlapShare = (a: string, b: string) => { const x = new Set(stems(a)), y = new Set(stems(b)); return x.size ? [...x].filter(w => y.has(w)).length / x.size : 0; };
   const keep = (list: string[]) => list
     .map(x => String(x || '').trim())
     .filter(x => !/текст|статия|не съдържа|не посочва|не (?:е|са|се) (?:посочен|посочена|посочени|уточн|ясн|извест)|неизвестн|не (?:е|са) дадени?|не се дава|информация|\b(?:the )?(?:text|article)\b|does not (?:say|state|mention|specify|give)|not (?:stated|specified|known|clear|confirmed|given|provided)|\bno [\w\s]{0,30}(?:is|are) given|unspecified|unknown|unclear/i.test(x) && words(x) >= 5 && words(x) <= 22 && !/\.\.\.|…/.test(x)
       && factIsGrounded(x, `${title} ${body}`) && (x.match(/„/g) || []).length === (x.match(/“/g) || []).length)
     .filter(x => novelty(x) >= (asks ? 0.6 : 0.5))
+    // A "not" the text does not have flips the news ("the match will not take place" when it will): a fact
+    // with a negation is kept only if a sentence of the text about the same thing has one too.
+    // "Not only" read without "only" also flips it ("not only a clash on the pitch" became "the clash will not
+    // take place"): the matching sentence's "only" must stay.
+    .filter(x => !NEGATION.test(x) || bodySentences.some(b => NEGATION.test(b) && overlapShare(x, b) >= 0.5
+      && (!ONLY_WORD.test(b) || ONLY_WORD.test(x))))
     // A headline that asks a question must not come back as a claim.
     .filter(x => !asks || !/може да|вероятно|възможно|ще поеме/i.test(x))
     .sort((a, b) => novelty(b) - novelty(a));
@@ -6609,7 +6619,9 @@ async function localSummary(feedUrl: string, title: string, source: string, text
         const t = String((JSON.parse(answer || '{}') as { text?: string }).text || '').trim();
         // The translation must be in the language asked for: an English sentence came back as the "Bulgarian" half.
         // Bulgarian also means Bulgarian letters only: a "Bulgarian" half came back in Serbian (ћ, ј, њ).
-        const rightScript = /[а-яА-Я]/.test(t) === (to === 'Bulgarian') && (to !== 'Bulgarian' || !/[ђјљњћџѓќѕыэёЂЈЉЊЋЏЃЌЅЫЭЁ]/.test(t));
+        const rightScript = /[а-яА-Я]/.test(t) === (to === 'Bulgarian') && (to !== 'Bulgarian' || !/[ђјљњћџѓќѕыэёЂЈЉЊЋЏЃЌЅЫЭЁ]/.test(t))
+          // A word half in Cyrillic and half in Latin letters ("Бouches") is a broken transliteration.
+          && !/[а-яА-Я][a-zA-Z]|[a-zA-Z][а-яА-Я]/.test(t);
         // A translation cut short ("compared to...") or much longer or shorter than the sentence added or lost something.
         const ratio = words(t) / Math.max(1, words(sentence));
         if (process.env.LOCAL_SUMMARY_DEBUG === '1') console.log('[translation debug]', JSON.stringify({ to, sentence, t, rightScript, ratio }));
