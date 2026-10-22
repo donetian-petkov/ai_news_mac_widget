@@ -110,3 +110,21 @@ trying anything, so nothing that already failed is tried again.
 | Ask | 3 / 0 / 12 | 7 vs 6 | informative 2.7 vs 4.4 |
 | Briefing | digest accuracy 5 vs 5, usefulness 2 vs 5, ranking 1 vs 4 | 0 vs 0 | ratings reused from 12:43; ranking is the weak part |
 
+## 40-story run, 10-22 14:31 (code with the rules fix, judged with the articles except where noted)
+
+| Tool | Local / tie / cloud | Major errors local vs cloud | Morning run (12:25) |
+|---|---|---|---|
+| Summary | 5 / 5 / 30 (regraded with articles) | 11 vs 9 | 3 / 2 / 29, 7 vs 1 (no articles) |
+| Title BG | 0 / 25 / 15 | 3 vs 1 | 2 / 19 / 19, 10 vs 0 |
+| Title EN | 2 / 20 / 18 | 5 vs 1 | 1 / 26 / 13, 6 vs 0 |
+| Neutral title | 9 / 17 / 14 | 7 vs 12 | 8 / 20 / 12, 2 vs 11 |
+| Research | 5 / 0 / 10 | 7 vs 4 | 5 / 0 / 9, 9 vs 5 |
+| Mood | 9 / 13 / 18 | 11 vs 10 | 5 / 23 / 12, 8 vs 2 |
+| News type | 3 / 31 / 6 | 9 vs 3 | 0 / 31 / 9, 8 vs 0 |
+| Ask | 6 / 0 / 9 | 3 vs 8 | 3 / 0 / 12, 7 vs 6 |
+| Briefing | digest accuracy 5 vs 5, usefulness 3 vs 5, ranking 3 vs 4 | 0 vs 0 | usefulness 2, ranking 1 |
+
+Per-story tools took 2,921 s local vs 1,073 s cloud; briefing 553 s vs 114 s. The final grading was run by hand:
+battery.sh was edited while it ran, and bash read the shifted file ("line 70: n: command not found").
+Never edit a script that is running.
+
