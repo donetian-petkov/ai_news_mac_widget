@@ -6490,7 +6490,22 @@ async function localSummary(feedUrl: string, title: string, source: string, text
     if (merged && hedged.every(h => merged.toLowerCase().includes(h)) && words(merged) <= 24
       && factIsGrounded(merged, `${title} ${body}`) && novelty(merged) >= 0.5 && /[а-яА-Я]/.test(merged) === bgHeadline) sentence = merged;
   }
-  sentence = /[.!?…]$/.test(sentence) ? sentence : `${sentence}.`;
+  // Self-check: the model is asked whether the text fully supports the sentence (same who, what, when and
+  // certainty). A sentence that fails is replaced by the next fact that passes, or there is no summary.
+  const supported = async (candidate: string) => {
+    const verdict = await generateAiText('summary', [
+      'Does the text fully support this sentence: the same people, numbers, places, dates, who said or did what,',
+      'and the same certainty (a claim or a possibility is not a fact)? Answer yes, no, or unclear.',
+      `Sentence: ${candidate}`,
+      `Text: ${body}`
+    ].join('\n'), 20, 0, `Summary check: ${source} - ${title}`, undefined, false, { labels: ['yes', 'no'] });
+    return labelFromAnswer(verdict || '') === 'yes';
+  };
+  const candidates = [sentence, ...facts.filter(f => f !== sentence)].slice(0, 3);
+  let checked: string | undefined;
+  for (const candidate of candidates) if (await supported(candidate)) { checked = candidate; break; }
+  if (!checked) return undefined;
+  sentence = /[.!?…]$/.test(checked) ? checked : `${checked}.`;
 
   // The summary language decides whether a translation is added ("BG / EN" in bilingual mode).
   const wantBg = summaryLang === 'bg' || summaryLang === 'bilingual';
