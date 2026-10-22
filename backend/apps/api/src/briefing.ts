@@ -1771,6 +1771,8 @@ export type BriefingOptions = {
   region?: string;
   /** Rates candidates with AI; omitted or failing falls back to rules. */
   rateWithAi?: (candidates: AiRatingCandidate[]) => Promise<AiStoryRating[]>;
+  /** How many top stories go to the AI for rating (default: every story that can reach the page, plus 10). */
+  aiCandidateLimit?: number;
   /** Finds duplicates and storylines from the headlines; omitted or failing falls back to title rules. */
   groupWithAi?: (items: GroupingItem[]) => Promise<StoryGrouping>;
   /** Writes the summary at the top; omitted or failing shows the top stories' own summaries. */
@@ -1826,7 +1828,7 @@ export async function buildBriefing(stories: BriefingStory[], options: BriefingO
   if (options.rateWithAi && rated.length) {
     // Every story that can reach the page goes to the AI (a few spare, since merging the
     // same event shrinks the list), so keyword guesses never decide what leads.
-    const candidates = [...rated].sort((a, b) => b.score - a.score).slice(0, pageSize + 10);
+    const candidates = [...rated].sort((a, b) => b.score - a.score).slice(0, options.aiCandidateLimit ?? pageSize + 10);
     const rateWithAi = options.rateWithAi;
     const toCandidate = (entry: RatedStory): AiRatingCandidate => ({
       id: entry.story.id,

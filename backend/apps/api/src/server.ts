@@ -6512,14 +6512,18 @@ async function localSummary(feedUrl: string, title: string, source: string, text
   const wantEn = summaryLang === 'en' || summaryLang === 'bilingual';
   if (!isTranslationEnabledForFeed(feedUrl)) return sentence;
   const translate = async (to: 'Bulgarian' | 'English') => {
-    const ask = () => generateAiText('summary', `Translate this news sentence into natural ${to}. Keep names and numbers exact; add nothing.\nSentence: ${sentence}`,
+    const ask = () => generateAiText('summary', `Translate this news sentence into natural ${to}. Keep names and numbers exact; add nothing. Use the standard ${to} name for awards, competitions, institutions and titles ("Златната топка" is the Ballon d'Or, not the Golden Globe).\nSentence: ${sentence}`,
       120, 0, `Summary translation: ${source} - ${title}`, undefined, false,
       { schema: { type: 'object', additionalProperties: false, required: ['text'], properties: { text: { type: 'string' } } } });
     const first = await ask();
     // One retry: a missing translation left bilingual summaries without their second half.
+    // Each translation is checked against the original (same people, roles and facts) before it is used.
+    const faithful = async (t: string) => labelFromAnswer(await generateAiText('summary',
+      `Do these two sentences say exactly the same thing (same people, roles, places, numbers and facts)? Answer yes or no.\nA: ${sentence}\nB: ${t}`,
+      20, 0, `Summary translation check: ${source} - ${title}`, undefined, false, { labels: ['yes', 'no'] }) || '') === 'yes';
     for (let attempt = 0; attempt < 2; attempt++) {
       const answer = attempt === 0 ? first : await ask();
-      try { const t = String((JSON.parse(answer || '{}') as { text?: string }).text || '').trim(); if (t) return t; } catch {}
+      try { const t = String((JSON.parse(answer || '{}') as { text?: string }).text || '').trim(); if (t && await faithful(t)) return t; } catch {}
     }
     return '';
   };
@@ -6941,6 +6945,8 @@ async function classifyMoodForItem(
 ): Promise<Mood | undefined> {
   const input =
     `${moodInstruction()}\n` +
+    // A local model picked "uncertainty" for plain reports; the label is for stories about an open question.
+    (aiProvider === 'local' ? 'Choose "uncertainty" only when the story itself is about an unresolved question or risk; a plain report of an event is "neutral" or "realistic".\n' : '') +
     `Source: ${source}\n` +
     `Headline: ${title}\n` +
     (context ? `Context: ${context}\n` : '') +
@@ -10452,7 +10458,10 @@ async function localBriefingGrouping(items: GroupingItem[]): Promise<StoryGroupi
     if (sameEventTitles(a.title, b.title) || shared >= 2 || a.maybeSameAs?.includes(b.id) || b.maybeSameAs?.includes(a.id)) pairs.push([a, b]);
   }
   const labelled: Array<{ a: string; b: string; relation: string }> = [];
-  for (const [a, b] of pairs.slice(0, 60)) {
+  // Headlines that clearly report one event (the app's own same-event rule) are duplicates without asking:
+  // the model called no pair "same" at all.
+  for (const [a, b] of pairs) if (sameEventTitles(a.title, b.title)) labelled.push({ a: a.id, b: b.id, relation: 'same' });
+  for (const [a, b] of pairs.filter(([a, b]) => !sameEventTitles(a.title, b.title)).slice(0, 60)) {
     const answer = await generateAiText('research', [
       'Do these two news items report the SAME happening (one event, statement or decision covered by different outlets),',
       'RELATED happenings (different events in one ongoing situation), or are they UNRELATED (only a name or topic in common)?',
@@ -10475,6 +10484,8 @@ async function localBriefingGrouping(items: GroupingItem[]): Promise<StoryGroupi
   const storylineWhy = new Map<string, string>();
   for (const ids of groups(['same', 'related'])) {
     if (duplicates.some(d => d.length === ids.length && d.every(x => ids.includes(x)))) continue;
+    // Two stories linked once were often unrelated (a diesel story with a satellite one); a storyline needs three.
+    if (ids.length < 3) continue;
     const answer = await generateAiText('research', [
       `Name the ongoing situation these news items belong to in at most 6 words, in ${briefingLanguage() === 'en' ? 'English' : 'Bulgarian'}. Use only what the headlines say.`,
       ...ids.map(id => `- ${byId.get(id)?.title || ''}`)
@@ -10501,7 +10512,7 @@ function localBriefingDigest(items: DigestItem[]): DigestBullet[] {
     return summary.trim() ? `${it.title.trim().replace(/[.!?]?$/, ':')} ${summary.trim()}` : it.title.trim();
   };
   const critical = ranked.filter(it => it.level === 'critical').slice(0, 3);
-  const leading = ranked.filter(it => !critical.includes(it) && it.level !== 'routine').slice(0, Math.max(0, 5 - critical.length));
+  const leading = ranked.filter(it => !critical.includes(it) && it.level !== 'routine').slice(0, Math.max(0, 6 - critical.length));
   const bullets: DigestBullet[] = [
     ...critical.map(it => ({ kind: 'critical' as const, text: text(it), ids: [it.id] })),
     ...leading.map(it => ({ kind: 'leading' as const, text: text(it), ids: [it.id] }))
@@ -10569,6 +10580,9 @@ async function generateBriefing(period: BriefingPeriod, window: { startMs: numbe
     region,
     language: briefingLanguage(),
     rateWithAi: aiAvailable ? candidates => rateBriefingStoriesWithAi(candidates, feedUrlById) : undefined,
+    // A local model rates the top 20 by keyword score: rating every candidate made the first briefing take
+    // about 11 minutes; the rest keep their rule ratings.
+    aiCandidateLimit: aiProvider === 'local' ? 20 : undefined,
     groupWithAi: aiAvailable ? groupBriefingStorylinesWithAi : undefined,
     digestWithAi: aiAvailable ? writeBriefingDigestWithAi : undefined
   });
