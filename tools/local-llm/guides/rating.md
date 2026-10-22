@@ -8,4 +8,4 @@ Score each story 0 to 3 on four things, and give each score a reason of at most 
 - interest: how surprising or new the main claim is (a first, a record, a twist). Routine statements and scheduled events score 0–1.
 
 Never copy these examples; write a reason about THIS story.
-Example reason: "Трима загинали при наводнения в Истанбул след 272 литра на квадратен метър."
+Example reason (invented): "Двама ранени при катастрофа на главен път край Примерово"

@@ -10,7 +10,7 @@ const ids = fs.readFileSync(idsFile, 'utf8').split('\n').filter(Boolean);
 const dir = new URL('.', import.meta.url).pathname;
 const arts = fs.existsSync(dir + 'data/articles-tools.json') ? JSON.parse(fs.readFileSync(dir + 'data/articles-tools.json', 'utf8')) : {};
 
-const COLS = ['key', 'itemId', 'title', 'source', 'contextText', 'linkText', 'summary', 'titleBg', 'titleEn', 'neutralTitle', 'neutralTitleBg', 'neutralTitleEn', 'research', 'mood', 'newsType', 'topicLabelsJson'];
+const COLS = ['key', 'itemId', 'neutralTitleStatus', 'title', 'source', 'contextText', 'linkText', 'summary', 'titleBg', 'titleEn', 'neutralTitle', 'neutralTitleBg', 'neutralTitleEn', 'research', 'mood', 'newsType', 'topicLabelsJson'];
 const rows = db => {
   const q = `SELECT ${COLS.map(c => `"${c}"`).join(',')} FROM NewsItemRecord WHERE key IN (${ids.map(i => `'${i.replace(/'/g, "''")}'`).join(',')})`;
   return Object.fromEntries(JSON.parse(execFileSync('sqlite3', ['-readonly', '-json', db, q], { maxBuffer: 64e6 }).toString() || '[]').map(r => [r.key, r]));
@@ -26,7 +26,10 @@ const TOOLS = {
   summary: { get: r => r.summary, good: 'one short sentence for a reader who has seen the headline, adding the most important thing the headline leaves out. The app runs in bilingual mode, so "Bulgarian sentence / English sentence" is the correct shape' },
   titleBg: { get: r => r.titleBg, good: 'a faithful, natural Bulgarian translation of the headline' },
   titleEn: { get: r => r.titleEn, good: 'a faithful, natural English translation of the headline' },
-  neutralTitle: { get: r => [r.neutralTitle, r.neutralTitleBg, r.neutralTitleEn].filter(Boolean).join(' | '), good: 'a calm, factual rewrite of the headline with no clickbait, exaggeration or emotional words, keeping the real news' },
+  // Keeping a headline that is already calm is a valid answer, so "unchanged" is shown as the kept headline
+  // rather than as a missing output.
+  neutralTitle: { get: r => [r.neutralTitle, r.neutralTitleBg, r.neutralTitleEn].filter(Boolean).join(' | ') || (r.neutralTitleStatus === 'unchanged' ? `(kept the original headline) ${r.title}` : ''),
+    good: 'a calm, factual headline with no clickbait, exaggeration or emotional words, keeping the real news; keeping the original headline is right when it is already calm and factual' },
   research: { get: r => r.research, good: 'a short detailed briefing (about 150 words) that goes beyond the summary, compares what outlets report, and states nothing the article does not support' },
   mood: { get: r => r.mood, good: 'the correct overall mood of the story' },
   newsType: { get: r => r.newsType, good: 'the correct type of news story' },

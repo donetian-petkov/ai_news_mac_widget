@@ -8,10 +8,10 @@ You get two news headlines with a line of text each. Decide how they relate:
 Sports and entertainment stories are never related to war, politics or the economy.
 Answer with JSON: {"relation":"same|related|unrelated"}
 
-Examples
-A: Съдът остави в ареста момчето, задържано за убийството на майка си / B: Пращал снимки на мъртвата си майка: шокиращи подробности за убийството в Пловдив
+Examples (invented)
+A: Пожар изпепели склад край Примерово / B: Огнеборци гасиха цяла нощ склад в Примерово
 Answer: {"relation":"same"}
-A: В Барселона отхвърлили оферта от 250 милиона евро за Ламин Ямал / B: Босът на Барселона каза истината за Ямал
+A: Министърът обяви нов закон за пътищата / B: Опозицията критикува промените в пътния закон
 Answer: {"relation":"related"}
-A: Тръмп с тежко предупреждение към Париж / B: Тръмп унижи публично Мелания
+A: Министърът посети болница в Примерово / B: Министърът обяви нов закон за пътищата
 Answer: {"relation":"unrelated"}

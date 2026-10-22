@@ -6448,7 +6448,7 @@ async function localSummary(feedUrl: string, title: string, source: string, text
   const words = (t: string) => t.split(/\s+/).filter(Boolean).length;
   const keep = (list: string[]) => list
     .map(x => String(x || '').trim())
-    .filter(x => !/текст|статия|не съдържа|информация/i.test(x) && words(x) >= 5 && words(x) <= 22 && !/\.\.\.|…/.test(x)
+    .filter(x => !/текст|статия|не съдържа|не посочва|информация|\b(?:the )?(?:text|article)\b|does not (?:say|state|mention|specify)|not stated|not specified/i.test(x) && words(x) >= 5 && words(x) <= 22 && !/\.\.\.|…/.test(x)
       && factIsGrounded(x, `${title} ${body}`) && (x.match(/„/g) || []).length === (x.match(/“/g) || []).length)
     .filter(x => novelty(x) >= (asks ? 0.6 : 0.5))
     // A headline that asks a question must not come back as a claim.
@@ -6512,7 +6512,7 @@ async function localSummary(feedUrl: string, title: string, source: string, text
   const wantEn = summaryLang === 'en' || summaryLang === 'bilingual';
   if (!isTranslationEnabledForFeed(feedUrl)) return sentence;
   const translate = async (to: 'Bulgarian' | 'English') => {
-    const ask = () => generateAiText('summary', `Translate this news sentence into natural ${to}. Keep names and numbers exact; add nothing. Use the standard ${to} name for awards, competitions, institutions and titles ("Златната топка" is the Ballon d'Or, not the Golden Globe).\nSentence: ${sentence}`,
+    const ask = () => generateAiText('summary', `Translate this news sentence into natural ${to}. Keep names and numbers exact; add nothing. Use the established ${to} name for awards, competitions, institutions and titles, not a word-for-word translation.\nSentence: ${sentence}`,
       120, 0, `Summary translation: ${source} - ${title}`, undefined, false,
       { schema: { type: 'object', additionalProperties: false, required: ['text'], properties: { text: { type: 'string' } } } });
     const first = await ask();
@@ -6854,7 +6854,7 @@ async function localResearch(
   return `${body}\n\n${line}`;
 }
 
-/** A short outlet name for notes: a feed's long title ("Актуални новини от България и света.") becomes its site. */
+/** A short outlet name for notes: a feed whose title is a long tagline is named by its site instead. */
 function outletName(source: string, link: string): string {
   const name = String(source || '').trim().replace(/[.\s]+$/, '');
   if (name && name.length <= 24) return name;
@@ -6868,7 +6868,7 @@ function factIsGrounded(fact: string, source: string): boolean {
   return (fact.match(/\d+(?:[.,]\d+)?|[A-ZА-Я][a-zа-я]{2,}/g) || []).slice(1).every(tok => {
     if (/^\d/.test(tok)) return src.includes(tok) || src.includes(tok.replace(',', '.')) || src.includes(tok.replace('.', ','));
     // A Cyrillic name in an English text is a transliteration and cannot be matched; every other name
-    // (Latin names in Bulgarian text included: "Facebook", "NASA") must be in the text.
+    // (names in Latin script inside a Bulgarian text included) must be in the text.
     if (cyr(tok) && !cyr(source)) return true;
     return src.includes(tok.toLowerCase().slice(0, Math.max(4, tok.length - 2)));
   });
@@ -10484,7 +10484,7 @@ async function localBriefingGrouping(items: GroupingItem[]): Promise<StoryGroupi
   const storylineWhy = new Map<string, string>();
   for (const ids of groups(['same', 'related'])) {
     if (duplicates.some(d => d.length === ids.length && d.every(x => ids.includes(x)))) continue;
-    // Two stories linked once were often unrelated (a diesel story with a satellite one); a storyline needs three.
+    // Two stories linked by a single pair label were often unrelated; a storyline needs three.
     if (ids.length < 3) continue;
     const answer = await generateAiText('research', [
       `Name the ongoing situation these news items belong to in at most 6 words, in ${briefingLanguage() === 'en' ? 'English' : 'Bulgarian'}. Use only what the headlines say.`,
