@@ -5735,10 +5735,15 @@ async function markNeutralTitleRewriteFailed(
 }
 
 /** Either one of a fixed set of labels ("unclear" is always allowed) or a full JSON schema. */
-type AnswerShape = { labels?: string[]; schema?: Record<string, unknown> };
+/** With `about`, the model first says in a few words what the story is about, then picks the label. */
+type AnswerShape = { labels?: string[]; about?: boolean; schema?: Record<string, unknown> };
 function answerSchema(answer: AnswerShape | undefined): Record<string, unknown> | undefined {
   if (answer?.schema) return answer.schema;
-  if (answer?.labels?.length) return { type: 'object', additionalProperties: false, required: ['label'], properties: { label: { type: 'string', enum: [...answer.labels, 'unclear'] } } };
+  const label = { type: 'string', enum: [...(answer?.labels || []), 'unclear'] };
+  // A small model picking a label straight away matched on surface words (a concert became "movies", a court
+  // report "uncertainty"); naming the subject first, in its own words, steers the label.
+  if (answer?.labels?.length && answer.about) return { type: 'object', additionalProperties: false, required: ['about', 'label'], properties: { about: { type: 'string', maxLength: 100 }, label } };
+  if (answer?.labels?.length) return { type: 'object', additionalProperties: false, required: ['label'], properties: { label } };
   return undefined;
 }
 
@@ -5789,9 +5794,26 @@ function moodInstruction(): string {
     'Classify the overall mood of this news into exactly one label.',
     'Allowed labels only:',
     `${Object.values(MoodValue).join(', ')}.`,
-    'Return exactly one label with no extra words or punctuation.'
-  ].join(' ');
+    // A small local model guessed between near labels; each gets its meaning (applies to local models only).
+    aiProvider === 'local' ? `What each label means: ${MOOD_LABEL_MEANINGS}. First write in "about" what the story is about and how it is told, in a few words; then pick the label that fits that.` : '',
+    // Local answers are held to a JSON shape with the subject first, so this line would contradict it.
+    aiProvider === 'local' ? '' : 'Return exactly one label with no extra words or punctuation.'
+  ].filter(Boolean).join(' ');
 }
+const MOOD_LABEL_MEANINGS = [
+  'neutral = a plain factual report with no clear emotional direction; an announcement, a plan, a court case, a trial, an arrest or a release reported plainly is neutral',
+  'realistic = sober news about a difficult or mixed situation, told matter-of-factly',
+  'optimistic = the story stresses progress, success, help, recovery or a good outcome that has happened',
+  'pesimistic = worsening, failure, decline or a bad outlook',
+  'sadness = death, loss, grief or suffering of people',
+  'rage = outrage, scandal, abuse or anger at someone\'s conduct',
+  'uncertainty = the story itself stresses doubt, fear or a risk nobody can yet judge; a pending decision or next step alone is not uncertainty',
+  'happiness = celebration, joy or entertainment',
+  'melancholy = nostalgia, remembrance or a wistful look back',
+  'curios = a surprising, odd or curious fact',
+  // The plain-report rule above flattened reviews and features to neutral (applies to local models only).
+  'a review or feature takes the mood of its verdict: praise or delight is optimistic or happiness, a harsh verdict is pesimistic'
+].join('; ');
 
 function normalizeNewsType(raw: string): NewsType | undefined {
   const s = String(raw || '')
@@ -5836,9 +5858,26 @@ function newsTypeInstruction(): string {
     'Classify the news topic into exactly one label.',
     'Allowed labels only:',
     `${Object.values(NewsTypeValue).join(', ')}.`,
-    'Return exactly one label with no extra words or punctuation.'
-  ].join(' ');
+    // A small local model fell back on "other" or "business" when a fitting label existed (applies to local only).
+    aiProvider === 'local' ? `What each label means: ${NEWS_TYPE_LABEL_MEANINGS}. Use "other" only when none of these fits. First write in "about" what the story is mainly about, in a few words; then pick the label that fits that.` : '',
+    // Local answers are held to a JSON shape with the subject first, so this line would contradict it.
+    aiProvider === 'local' ? '' : 'Return exactly one label with no extra words or punctuation.'
+  ].filter(Boolean).join(' ');
 }
+const NEWS_TYPE_LABEL_MEANINGS = [
+  'politics = government, parliament, elections, parties, laws, public policy, diplomacy',
+  'world = events abroad that are not mainly about one of the other topics',
+  'business = companies, markets, money, jobs, prices, trade',
+  'technology = tech products, software, internet, AI, telecoms',
+  'science = research, discoveries, space',
+  'health = medicine, hospitals, illness, public health',
+  'environment = nature, animals, climate, weather, pollution',
+  'crime = crimes, police, courts, arrests',
+  'sports = sport, athletes, matches, competitions',
+  'culture = music, arts, books, theatre, heritage, concerts, celebrities',
+  'movies = films, cinema, series, actors, directors',
+  'education = schools, universities, students, teachers'
+].join('; ');
 
 const GENERIC_TOPIC_LABELS = new Set([
   'breaking',
@@ -6448,22 +6487,26 @@ async function localSummary(feedUrl: string, title: string, source: string, text
   const words = (t: string) => t.split(/\s+/).filter(Boolean).length;
   const keep = (list: string[]) => list
     .map(x => String(x || '').trim())
-    .filter(x => !/текст|статия|не съдържа|не посочва|информация|\b(?:the )?(?:text|article)\b|does not (?:say|state|mention|specify)|not stated|not specified/i.test(x) && words(x) >= 5 && words(x) <= 22 && !/\.\.\.|…/.test(x)
+    .filter(x => !/текст|статия|не съдържа|не посочва|не (?:е|са|се) (?:посочен|посочена|посочени|уточн|ясн|извест)|неизвестн|информация|\b(?:the )?(?:text|article)\b|does not (?:say|state|mention|specify)|not (?:stated|specified|known|clear|confirmed)|unspecified|unknown|unclear/i.test(x) && words(x) >= 5 && words(x) <= 22 && !/\.\.\.|…/.test(x)
       && factIsGrounded(x, `${title} ${body}`) && (x.match(/„/g) || []).length === (x.match(/“/g) || []).length)
     .filter(x => novelty(x) >= (asks ? 0.6 : 0.5))
     // A headline that asks a question must not come back as a claim.
     .filter(x => !asks || !/може да|вероятно|възможно|ще поеме/i.test(x))
     .sort((a, b) => novelty(b) - novelty(a));
   const factsCall = async (extra: string) => {
+    // The question a summary answers, asked the way the Ask step asks it (which matched the cloud on accuracy):
+    // what does a reader who has only seen the headline most need to know? Answers come from the text only.
     const answer = await generateAiText('summary', [
-      `List at most 3 facts from the text, the most important first, each one short complete ${lang} sentence of at most 15 words.`,
-      'Each fact has something concrete: a person, a number, a place, a date, an amount or a decision. Copy names and numbers exactly.',
+      'A reader has seen only the headline. What are the most important things they would want to know that the headline does NOT say:',
+      'what happened exactly, who did it, the cause, the result, the numbers, what happens next?',
+      `Give up to 5 answers from the text, the most important first, each one short complete ${lang} sentence of at most 18 words.`,
+      'Each answer has something concrete: a person, a number, a place, a date, an amount or a decision. Copy names and numbers exactly.',
       'Say who actually does each thing, and keep the text\'s caution words ("alleged", "trying to", "може да", "според").',
       extra,
       `Headline: ${title}`,
       `Text: ${body}`
-    ].filter(Boolean).join('\n'), 220, 0, `Summary facts: ${source} - ${title}`, undefined, false, {
-      schema: { type: 'object', additionalProperties: false, required: ['facts'], properties: { facts: { type: 'array', maxItems: 3, items: { type: 'string' } } } }
+    ].filter(Boolean).join('\n'), 360, 0, `Summary facts: ${source} - ${title}`, undefined, false, {
+      schema: { type: 'object', additionalProperties: false, required: ['facts'], properties: { facts: { type: 'array', maxItems: 5, items: { type: 'string' } } } }
     });
     try { return ((JSON.parse(answer || '{}') as { facts?: string[] }).facts || []); } catch { return []; }
   };
@@ -6490,20 +6533,38 @@ async function localSummary(feedUrl: string, title: string, source: string, text
     if (merged && hedged.every(h => merged.toLowerCase().includes(h)) && words(merged) <= 24
       && factIsGrounded(merged, `${title} ${body}`) && novelty(merged) >= 0.5 && /[а-яА-Я]/.test(merged) === bgHeadline) sentence = merged;
   }
-  // Self-check: the model is asked whether the text fully supports the sentence (same who, what, when and
-  // certainty). A sentence that fails is replaced by the next fact that passes, or there is no summary.
-  const supported = async (candidate: string) => {
+  // Self-check: one call asks which candidate sentences the text fully supports (same who, what, when and
+  // certainty); the first supported one in order of importance is kept, otherwise there is no summary.
+  // One call for all candidates: a call per candidate re-read the article each time and made summaries slow.
+  // Only names and numbers the headline does not already give count: repeating the headline's names made an
+  // empty sentence ("the court decided the sentence for <headline name>") look specific.
+  const headlineWords = new Set(stems(title));
+  // The sentence's first word is capitalised anyway and is skipped; a number counts only if the headline
+  // lacks it (numbers are too short for the word stems).
+  const headlineNumbers = new Set(title.match(/\d+(?:[.,]\d+)?/g) || []);
+  const concrete = (c: string) => (c.replace(/^\s*\S+/, '').match(/\d+(?:[.,]\d+)?|[A-ZА-Я][a-zа-я]{2,}/g) || [])
+    .filter(w => /^\d/.test(w) ? !headlineNumbers.has(w) : !stems(w).some(x => headlineWords.has(x))).length;
+  const checkAndPick = async (list: string[]) => {
+    const candidates = list.slice(0, 5);
     const verdict = await generateAiText('summary', [
-      'Does the text fully support this sentence: the same people, numbers, places, dates, who said or did what,',
-      'and the same certainty (a claim or a possibility is not a fact)? Answer yes, no, or unclear.',
-      `Sentence: ${candidate}`,
+      'For each numbered sentence: does the text fully support it, with the same people, numbers, places, dates,',
+      'who said or did what, and the same certainty (a claim or a possibility is not a fact)? List the numbers of the supported ones.',
+      ...candidates.map((c, i) => `${i + 1}. ${c}`),
       `Text: ${body}`
-    ].join('\n'), 20, 0, `Summary check: ${source} - ${title}`, undefined, false, { labels: ['yes', 'no'] });
-    return labelFromAnswer(verdict || '') === 'yes';
+    ].join('\n'), 40, 0, `Summary check: ${source} - ${title}`, undefined, false, {
+      schema: { type: 'object', additionalProperties: false, required: ['supported'], properties: { supported: { type: 'array', items: { type: 'integer', minimum: 1, maximum: candidates.length } } } }
+    });
+    let supportedNumbers: number[] = [];
+    try { supportedNumbers = ((JSON.parse(verdict || '{}') as { supported?: number[] }).supported || []); } catch {}
+    if (process.env.LOCAL_SUMMARY_DEBUG === '1') console.log('[summary debug]', JSON.stringify({ title, candidates, supportedNumbers }));
+    // Of the supported candidates, the most specific wins: the safest sentence the check confirms is often
+    // the emptiest one ("councillors are preparing a ban"). Concrete names and numbers and what is new beyond
+    // the headline count.
+    return candidates
+      .filter((_, i) => supportedNumbers.includes(i + 1))
+      .sort((a, b) => (concrete(b) + 2 * novelty(b)) - (concrete(a) + 2 * novelty(a)))[0];
   };
-  const candidates = [sentence, ...facts.filter(f => f !== sentence)].slice(0, 3);
-  let checked: string | undefined;
-  for (const candidate of candidates) if (await supported(candidate)) { checked = candidate; break; }
+  const checked = await checkAndPick([sentence, ...facts.filter(f => f !== sentence)]);
   if (!checked) return undefined;
   sentence = /[.!?…]$/.test(checked) ? checked : `${checked}.`;
 
@@ -6512,18 +6573,37 @@ async function localSummary(feedUrl: string, title: string, source: string, text
   const wantEn = summaryLang === 'en' || summaryLang === 'bilingual';
   if (!isTranslationEnabledForFeed(feedUrl)) return sentence;
   const translate = async (to: 'Bulgarian' | 'English') => {
-    const ask = () => generateAiText('summary', `Translate this news sentence into natural ${to}. Keep names and numbers exact; add nothing. Use the established ${to} name for awards, competitions, institutions and titles, not a word-for-word translation.\nSentence: ${sentence}`,
+    // The sentence is translated with the start of the article in view: alone, a short sentence was translated
+    // word by word into awkward or wrong terms.
+    // The retry goes without the article: with it in view the model sometimes carried on into the article.
+    const ask = (withContext = true) => generateAiText('summary', `Translate this news sentence into natural ${to}. Keep names and numbers exact; add nothing. Use the established ${to} name for awards, competitions, institutions and titles, not a word-for-word translation.${withContext ? ` The article it comes from is given for context only.\nSentence: ${sentence}\nArticle (context): ${body.slice(0, 1500)}` : `\nSentence: ${sentence}`}`,
       120, 0, `Summary translation: ${source} - ${title}`, undefined, false,
       { schema: { type: 'object', additionalProperties: false, required: ['text'], properties: { text: { type: 'string' } } } });
     const first = await ask();
     // One retry: a missing translation left bilingual summaries without their second half.
-    // Each translation is checked against the original (same people, roles and facts) before it is used.
-    const faithful = async (t: string) => labelFromAnswer(await generateAiText('summary',
-      `Do these two sentences say exactly the same thing (same people, roles, places, numbers and facts)? Answer yes or no.\nA: ${sentence}\nB: ${t}`,
-      20, 0, `Summary translation check: ${source} - ${title}`, undefined, false, { labels: ['yes', 'no'] }) || '') === 'yes';
+    // A code check the model cannot talk its way past: the translation is translated back, and at least half
+    // of the original's content words must come back. The model's own yes/no check let mistranslations through.
+    const roundTrips = async (t: string) => {
+      const back = await generateAiText('summary', `Translate this sentence into ${bgHeadline ? 'Bulgarian' : 'English'}. Keep names and numbers exact.\nSentence: ${t}`,
+        120, 0, `Summary translation check: ${source} - ${title}`, undefined, false,
+        { schema: { type: 'object', additionalProperties: false, required: ['text'], properties: { text: { type: 'string' } } } });
+      let backText = '';
+      try { backText = String((JSON.parse(back || '{}') as { text?: string }).text || ''); } catch {}
+      const original = new Set(stems(sentence)), returned = new Set(stems(backText));
+      return original.size > 0 && [...original].filter(w => returned.has(w)).length / original.size >= 0.4;
+    };
     for (let attempt = 0; attempt < 2; attempt++) {
-      const answer = attempt === 0 ? first : await ask();
-      try { const t = String((JSON.parse(answer || '{}') as { text?: string }).text || '').trim(); if (t && await faithful(t)) return t; } catch {}
+      const answer = attempt === 0 ? first : await ask(false);
+      try {
+        const t = String((JSON.parse(answer || '{}') as { text?: string }).text || '').trim();
+        // The translation must be in the language asked for: an English sentence came back as the "Bulgarian" half.
+        const rightScript = /[а-яА-Я]/.test(t) === (to === 'Bulgarian');
+        // A translation cut short ("compared to...") or much longer or shorter than the sentence added or lost something.
+        const ratio = words(t) / Math.max(1, words(sentence));
+        if (/\.\.\.|…/.test(t) || ratio < 0.6 || ratio > 1.7) continue;
+        // The model's own yes/no check rejected good translations as often as bad ones; the code checks decide.
+        if (t && rightScript && await roundTrips(t)) return t;
+      } catch {}
     }
     return '';
   };
@@ -6817,16 +6897,17 @@ async function localResearch(
   if (!sources.length) return undefined;
   const sourceText = sources.map(x => `[${x.name}]\n${x.text.slice(0, 5000)}`).join('\n\n').slice(0, 9000);
   const factsAnswer = await generateAiText('research', [
-    'List up to 6 facts from these texts that the summary below does not already say.',
-    'Each fact is one short complete sentence, with the outlet whose text states it.',
-    'Prefer names, numbers, dates, decisions, causes and results. Copy names and numbers exactly.',
+    'List up to 8 facts from these texts that the summary below does not already say, the most important first.',
+    'Cover what a reader needs beyond the summary: what exactly happened, who is involved and their role, the numbers,',
+    'the cause, the consequences, what each side says (with who says it), and what happens next.',
+    'Each fact is one short complete sentence, with the outlet whose text states it. Copy names and numbers exactly.',
     `Write the facts in ${bg ? 'Bulgarian' : 'English'}.`,
     `Headline: ${title}`,
     summary ? `Summary the reader has seen: ${summary}` : '',
     sourceText
-  ].filter(Boolean).join('\n'), 520, 0, `Research facts: ${source} - ${title}`, undefined, false, { schema: {
+  ].filter(Boolean).join('\n'), 700, 0, `Research facts: ${source} - ${title}`, undefined, false, { schema: {
     type: 'object', additionalProperties: false, required: ['facts'],
-    properties: { facts: { type: 'array', maxItems: 6, items: { type: 'object', additionalProperties: false, required: ['fact', 'outlet'], properties: { fact: { type: 'string' }, outlet: { type: 'string', enum: sources.map(x => x.name) } } } } }
+    properties: { facts: { type: 'array', maxItems: 8, items: { type: 'object', additionalProperties: false, required: ['fact', 'outlet'], properties: { fact: { type: 'string' }, outlet: { type: 'string', enum: sources.map(x => x.name) } } } } }
   } });
   let facts: Array<{ fact: string; outlet: string }> = [];
   try { facts = (JSON.parse(factsAnswer || '{}') as { facts?: typeof facts }).facts || []; } catch { return undefined; }
@@ -6834,7 +6915,11 @@ async function localResearch(
   const checked = facts
     .map(f => ({ fact: String(f.fact || '').trim(), outlet: String(f.outlet || '').trim() }))
     .filter(f => f.fact.split(/\s+/).length >= 5 && outletNames.includes(f.outlet.toLowerCase()) && factIsGrounded(f.fact, sourceText))
-    .filter(f => !summary || !sameFact(f.fact, summary));
+    .filter(f => !summary || !sameFact(f.fact, summary))
+    // A fact copied from a cut-off excerpt ("..."), or cut inside a quotation, is incomplete.
+    .filter(f => !/\.\.\.|…/.test(f.fact) && (f.fact.match(/„/g) || []).length === (f.fact.match(/“/g) || []).length)
+    // The model repeated the same fact up to eight times; a fact that mostly repeats an earlier one is dropped.
+    .filter((f, i, all) => !all.slice(0, i).some(prev => sameFact(f.fact, prev.fact)));
   if (!checked.length) return undefined;
   // The note is the checked facts themselves, in the model's order of importance. A separate writing step
   // mixed facts up (credited a scan to the wrong agency, confused dates); facts written once stay as checked.
@@ -6945,14 +7030,13 @@ async function classifyMoodForItem(
 ): Promise<Mood | undefined> {
   const input =
     `${moodInstruction()}\n` +
-    // A local model picked "uncertainty" for plain reports; the label is for stories about an open question.
-    (aiProvider === 'local' ? 'Choose "uncertainty" only when the story itself is about an unresolved question or risk; a plain report of an event is "neutral" or "realistic".\n' : '') +
+
     `Source: ${source}\n` +
     `Headline: ${title}\n` +
     (context ? `Context: ${context}\n` : '') +
     (summary ? `Summary: ${summary}\n` : '') +
     (research ? `Research: ${research}\n` : '');
-  const text = await generateAiText('research', input, Math.max(12, Math.min(28, budgetToTokensSummary(budget))), 0, `Mood classification: ${source} - ${title}`, undefined, false, { labels: Object.values(MoodValue) });
+  const text = await generateAiText('research', input, aiProvider === 'local' ? 70 : Math.max(12, Math.min(28, budgetToTokensSummary(budget))), 0, `Mood classification: ${source} - ${title}`, undefined, false, { labels: Object.values(MoodValue), about: true });
   if (!text) return undefined;
   return normalizeMood(labelFromAnswer(text));
 }
@@ -6972,7 +7056,7 @@ async function classifyNewsTypeForItem(
     (context ? `Context: ${context}\n` : '') +
     (summary ? `Summary: ${summary}\n` : '') +
     (research ? `Research: ${research}\n` : '');
-  const text = await generateAiText('research', input, Math.max(16, Math.min(34, budgetToTokensSummary(budget))), 0, `Type classification: ${source} - ${title}`, undefined, false, { labels: Object.values(NewsTypeValue) });
+  const text = await generateAiText('research', input, aiProvider === 'local' ? 70 : Math.max(16, Math.min(34, budgetToTokensSummary(budget))), 0, `Type classification: ${source} - ${title}`, undefined, false, { labels: Object.values(NewsTypeValue), about: true });
   if (!text) return undefined;
   const label = labelFromAnswer(text);
   // "unclear" means the model could not decide: no type rather than a guessed one.

@@ -43,6 +43,9 @@ const MODEL_URL = new URL(process.env.MODEL_URL || 'http://127.0.0.1:8081');
 const GATE_PORT = Number(process.env.GATE_PORT || 18082);
 const MAX_PAR = Number(process.env.MAX_PAR || 2);
 const BUSY_SHARE = Number(process.env.BUSY_SHARE || 0.4);
+// Even clicks wait once the model has been busy this share of the last minute: a bulk run of research jobs
+// carries the same task name as a click and kept the model at 97% busy.
+const HARD_SHARE = Number(process.env.HARD_SHARE || 0.75);
 const QUEUE_MAX = Number(process.env.QUEUE_MAX || 60);
 const WAIT_MS = Number(process.env.WAIT_MS || 10 * 60e3);
 // Long enough for a briefing rating batch (about 1,500 words written at a busy model's pace).
@@ -73,6 +76,9 @@ function pump() {
     const i = queue.findIndex(urgent);
     // Background work never takes the last slot, so a click always finds one free.
     if (i < 0 && (busyShare() > BUSY_SHARE || running >= MAX_PAR - 1)) return;
+    if (i >= 0 && busyShare() > HARD_SHARE) return;
+    // Above the normal limit, clicks go one at a time: a run of many research jobs otherwise took both slots.
+    if (i >= 0 && busyShare() > BUSY_SHARE && urgentRunning > 0) return;
     const job = queue.splice(i >= 0 ? i : 0, 1)[0];
     if (Date.now() - job.at > WAIT_MS) { stats.refusedLate++; job.res.writeHead(503).end('{"error":"waited too long"}'); continue; }
     forward(job);
@@ -80,11 +86,13 @@ function pump() {
 }
 setInterval(pump, 500);
 
+let urgentRunning = 0;
 function forward({ req, body: raw, res }) {
   const { body, source } = req.method === 'POST' ? withRules(raw, req.url) : { body: raw, source: '' };
-  start();
+  const isUrgent = PRIORITY.test(String(req.headers['x-ai-task'] || ''));
+  start(); if (isUrgent) urgentRunning++;
   let done = false;
-  const finish = () => { if (!done) { done = true; end(); pump(); } };
+  const finish = () => { if (!done) { done = true; end(); if (isUrgent) urgentRunning--; pump(); } };
   const up = http.request({ host: MODEL_URL.hostname, port: MODEL_URL.port, path: req.url, method: req.method,
     // The body may have grown (rules added), so its length is set again.
     headers: { ...req.headers, host: MODEL_URL.host, 'content-length': String(body.length) } }, upRes => {

@@ -28,6 +28,7 @@ trying anything, so nothing that already failed is tried again.
 | 10-22 | Briefing, all candidates rated | first local briefing took 11 min | Top 20 rated on local |
 | 10-22 | battery.sh sign-in failed in the local copy | every job request refused, the run carried on with nothing | Stop when a sign-in fails |
 | 10-22 | Self-check, one call per candidate | each call re-read the article, ~10 calls a story | One call checks all candidates |
+| 10-22 | Research and Ask skip the busy limit | a bulk research run carries the same task name as a click: model 97% busy, fans 5,400+ | Clicks one at a time above 40%; every request waits above 75% |
 
 ## Quality experiments
 
@@ -39,12 +40,20 @@ trying anything, so nothing that already failed is tried again.
 | 10-22 | summary | + self-check + article fit | 40 | 15/5/20, major errors 14 vs 10 | keep |
 | 10-22 | summary | same, today's pool | 40 | 6/2/32, major errors 17 vs 5; 7 missing; informative 2.1 vs 3.3 | the first step picks side facts; reframe |
 | 10-22 | summary | first step asks the reader's question, 5 answers, one-call self-check | 25 (live) | 3/0/23, major errors 6 vs 1; English stories 12 of 18 losses and 4 of 5 errors; informative 2.9 | fix translation and vagueness |
-| 10-22 | summary | + translation with article context, round-trip word check, right script, most specific confirmed sentence, "unknown"-only sentences dropped | 10 | (running) | |
-| 10-22 | type | + label meanings | 10 | (running) | |
+| 10-22 | summary | + translation with article context, model yes/no check, round-trip word check (50%), right script, most specific confirmed sentence, "unknown"-only sentences dropped | 3 of 10 | 1/0/2; 2 major errors: English half missing (checks rejected good translations) | drop the model's yes/no check |
+| 10-22 | summary | code checks only (round trip 40%, script) | 4 of 10 | English back on 3 of 4; one cut short ("compared to..."); one empty sentence picked because headline names counted as specific | next row |
+| 10-22 | summary | + cut-short or off-length translations rejected, retry without the article, only names not in the headline count as specific | 10 | 1/1/8 (same 10 before: 1/0/9), major errors 1 vs 2 before; English half on all 10 | keep; within noise on wins |
+| 10-22 | summary | + ask again for a concrete new detail when the pick has none | 6 | all 6 word for word as before; the one retry found no fact that passed the checks; the cloud's sentences often carry the same facts and still win | removed; the gap is phrasing, not facts |
+| 10-22 | type | + label meanings | 10 | dropped from the fix run (same code as the 40-story run) | |
+| 10-22 | mood/type | name the subject first, then the label (local) | 4 of the 10 with major errors | moods unchanged (court stories still "uncertainty"); type 1 fixed, 1 worse | mood: stricter meanings instead |
+| 10-22 | mood/type | + plain reports of trials, plans, announcements are neutral; uncertainty only when the story stresses doubt | 10 with major errors + 8 non-neutral that matched | mood matches cloud 15/18 (before 11/18): errors 9/10 (before 3/10), but 2 of 8 reviews/features flattened to neutral; type 15/18 (before 13/18), 4 fixed, 2 broken | keep; add a rule for reviews |
+| 10-22 | mood | + a review or feature takes the mood of its verdict | 5 entertainment stories | the 2 flattened ones back to the cloud's label; Klara review now "curios" (cloud pesimistic) | keep; mood now matches the cloud on 17 of the 18 |
 | 10-21 | research | cloud prompt as-is | 40 | 0/0/40, major errors 37 vs 10 (invented sources) | replaced |
 | 10-21 | research | + no-invention rules | 24 | 1/0/23, major errors 17 vs 5 | not enough |
 | 10-22 | research | facts → checks → write note | 14 | 1/0/13, major errors 8 vs 2 | the writing step mixes facts up |
 | 10-22 | research | the note is the checked facts | 14 | 3/0/11, major errors 5 vs 5 | keep; thin (informative 2.4 vs 4.1) |
+| 10-22 | research | same, today | 14 (live) | 5/0/9, major errors 9 vs 5; one note repeated a half-sentence 8 times, one pasted a cut-off excerpt | drop repeats and cut-off facts |
+| 10-22 | research | + repeated, cut-off ("...") and broken-quote facts dropped | 5 of those with major errors | 2/0/3 (before 3/0/2), major errors 2 (before 5) | keep |
 | 10-21 | mood/type | cloud prompt | 40 | almost all empty or invalid | fixed labels |
 | 10-22 | mood | labels held to the list | 40 | 9/18/13, major errors 11 vs 6 | keep |
 | 10-22 | mood | same, today | 40 | 6/15/19, major errors 15 vs 4 | add label meanings |
