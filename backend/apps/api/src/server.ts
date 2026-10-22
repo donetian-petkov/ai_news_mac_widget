@@ -14,7 +14,7 @@ import { registerProductFeatureApi, type ProductFeatureRuntime } from './product
 import { chunk, fingerprintRecord, takeChangedRecords } from './newsPersistence';
 import { titleTokens as cachedTitleTokens } from './titleTokens';
 import { cleanSummary, wholeSentences } from './summaryText';
-import { withAiRules } from './aiRules';
+import { AI_RULES, withAiRules } from './aiRules';
 import { DEFAULT_MODEL_POLICY, fetchModels, fetchPrices, pickDefault, resolveChoice, withPrices, type ModelChoice, type ModelInfo, type ModelPolicy } from './modelCatalog';
 import {
   buildAiRatingPrompt,
@@ -4055,6 +4055,12 @@ function decodeHtmlEntities(input: string): string {
     .replace(/&gt;/g, '>')
     .replace(/&quot;/g, '"')
     .replace(/&#039;/g, "'")
+    // Typographic quotes and dashes, and numbered entities: summaries that keep the article's own wording
+    // copied "&ldquo;" into the text.
+    .replace(/&ldquo;|&bdquo;/g, '„').replace(/&rdquo;/g, '“').replace(/&lsquo;|&rsquo;/g, "'")
+    .replace(/&ndash;/g, '–').replace(/&mdash;/g, '—').replace(/&hellip;/g, '…')
+    .replace(/&#(\d+);/g, (_, n) => String.fromCodePoint(Number(n)))
+    .replace(/&#x([0-9a-f]+);/gi, (_, n) => String.fromCodePoint(parseInt(n, 16)))
     .trim();
 }
 
@@ -6126,7 +6132,7 @@ async function localChatWithSchema(
 ): Promise<any> {
   const chat = await client.chat.completions.create({
     model,
-    messages: [{ role: 'user', content: input }],
+    messages: [{ role: 'system', content: AI_RULES }, { role: 'user', content: input }],
     max_tokens: maxOutputTokens,
     temperature,
     response_format: { type: 'json_schema', json_schema: { name: 'answer', strict: true, schema } }
@@ -6321,8 +6327,10 @@ async function generateAiText(
   const model = activeModel(kind);
   if (!model || model === 'none') return undefined;
 
-  // Local models get the no-invention rules first in every prompt, whichever local model is loaded.
-  const prompt = aiProvider === 'local' ? withAiRules(input) : input;
+  // Local models get the no-invention rules first in every prompt, whichever local model is loaded. Calls
+  // held to an answer shape get them as a system message instead (localChatWithSchema): written straight
+  // above the task, "use only the text you are given" made the model copy a sentence it was asked to translate.
+  const prompt = aiProvider === 'local' && !answerSchema(answer) ? withAiRules(input) : input;
   if (aiProvider === 'claude') {
     return generateWithClaude(kind, model, prompt, maxOutputTokens, temperature, labelRaw, debugMeta);
   }
@@ -6479,7 +6487,7 @@ async function localSummary(feedUrl: string, title: string, source: string, text
   const bgHeadline = /[а-яА-Я]/.test(title);
   const lang = bgHeadline ? 'Bulgarian' : 'English';
   // Straight quotes copied from the text end the JSON string mid-fact; Bulgarian quotes are copied safely.
-  const body = text.replace(/"([^"\n]{1,80})"/g, '„$1“').replace(/"/g, '“').slice(0, 6000);
+  const body = decodeHtmlEntities(text).replace(/"([^"\n]{1,80})"/g, '„$1“').replace(/"/g, '“').slice(0, 6000);
   const asks = /\?|\bли\b/i.test(title);
   const stems = (t: string) => (t.toLowerCase().match(/[\p{L}\p{N}]{4,}/gu) || []).map(w => w.slice(0, 5));
   const headStems = new Set(stems(title));
@@ -6487,7 +6495,7 @@ async function localSummary(feedUrl: string, title: string, source: string, text
   const words = (t: string) => t.split(/\s+/).filter(Boolean).length;
   const keep = (list: string[]) => list
     .map(x => String(x || '').trim())
-    .filter(x => !/текст|статия|не съдържа|не посочва|не (?:е|са|се) (?:посочен|посочена|посочени|уточн|ясн|извест)|неизвестн|информация|\b(?:the )?(?:text|article)\b|does not (?:say|state|mention|specify)|not (?:stated|specified|known|clear|confirmed)|unspecified|unknown|unclear/i.test(x) && words(x) >= 5 && words(x) <= 22 && !/\.\.\.|…/.test(x)
+    .filter(x => !/текст|статия|не съдържа|не посочва|не (?:е|са|се) (?:посочен|посочена|посочени|уточн|ясн|извест)|неизвестн|не (?:е|са) дадени?|не се дава|информация|\b(?:the )?(?:text|article)\b|does not (?:say|state|mention|specify|give)|not (?:stated|specified|known|clear|confirmed|given|provided)|\bno [\w\s]{0,30}(?:is|are) given|unspecified|unknown|unclear/i.test(x) && words(x) >= 5 && words(x) <= 22 && !/\.\.\.|…/.test(x)
       && factIsGrounded(x, `${title} ${body}`) && (x.match(/„/g) || []).length === (x.match(/“/g) || []).length)
     .filter(x => novelty(x) >= (asks ? 0.6 : 0.5))
     // A headline that asks a question must not come back as a claim.
@@ -6501,6 +6509,8 @@ async function localSummary(feedUrl: string, title: string, source: string, text
       'what happened exactly, who did it, the cause, the result, the numbers, what happens next?',
       `Give up to 5 answers from the text, the most important first, each one short complete ${lang} sentence of at most 18 words.`,
       'Each answer has something concrete: a person, a number, a place, a date, an amount or a decision. Copy names and numbers exactly.',
+      // Local summaries lost mostly on wording (clarity 3.9 vs 4.8): the article's own sentences are fluent.
+      'Where a sentence in the text says it, keep that sentence\'s own wording, shortened if needed, instead of rewording it.',
       'Say who actually does each thing, and keep the text\'s caution words ("alleged", "trying to", "може да", "според").',
       extra,
       `Headline: ${title}`,
@@ -6590,6 +6600,7 @@ async function localSummary(feedUrl: string, title: string, source: string, text
       let backText = '';
       try { backText = String((JSON.parse(back || '{}') as { text?: string }).text || ''); } catch {}
       const original = new Set(stems(sentence)), returned = new Set(stems(backText));
+      if (process.env.LOCAL_SUMMARY_DEBUG === '1') console.log('[translation debug] back', JSON.stringify({ backText, share: original.size ? [...original].filter(w => returned.has(w)).length / original.size : 0 }));
       return original.size > 0 && [...original].filter(w => returned.has(w)).length / original.size >= 0.4;
     };
     for (let attempt = 0; attempt < 2; attempt++) {
@@ -6597,9 +6608,11 @@ async function localSummary(feedUrl: string, title: string, source: string, text
       try {
         const t = String((JSON.parse(answer || '{}') as { text?: string }).text || '').trim();
         // The translation must be in the language asked for: an English sentence came back as the "Bulgarian" half.
-        const rightScript = /[а-яА-Я]/.test(t) === (to === 'Bulgarian');
+        // Bulgarian also means Bulgarian letters only: a "Bulgarian" half came back in Serbian (ћ, ј, њ).
+        const rightScript = /[а-яА-Я]/.test(t) === (to === 'Bulgarian') && (to !== 'Bulgarian' || !/[ђјљњћџѓќѕыэёЂЈЉЊЋЏЃЌЅЫЭЁ]/.test(t));
         // A translation cut short ("compared to...") or much longer or shorter than the sentence added or lost something.
         const ratio = words(t) / Math.max(1, words(sentence));
+        if (process.env.LOCAL_SUMMARY_DEBUG === '1') console.log('[translation debug]', JSON.stringify({ to, sentence, t, rightScript, ratio }));
         if (/\.\.\.|…/.test(t) || ratio < 0.6 || ratio > 1.7) continue;
         // The model's own yes/no check rejected good translations as often as bad ones; the code checks decide.
         if (t && rightScript && await roundTrips(t)) return t;

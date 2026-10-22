@@ -26,7 +26,12 @@ function withRules(body, path) {
   try {
     const j = JSON.parse(body.toString());
     if (path.startsWith('/v1/responses')) j.instructions = [RULES, j.instructions].filter(Boolean).join('\n\n');
-    else if (path.startsWith('/v1/chat/completions') && Array.isArray(j.messages)) j.messages = [{ role: 'system', content: RULES }, ...j.messages];
+    else if (path.startsWith('/v1/chat/completions') && Array.isArray(j.messages)) {
+      // The chat template allows one system message, first: rules join an existing one (once) instead.
+      const first = j.messages[0];
+      if (first?.role === 'system') { if (!String(first.content).includes(RULES)) first.content = `${RULES}\n\n${first.content}`; }
+      else j.messages = [{ role: 'system', content: RULES }, ...j.messages];
+    }
     else return { body, source: '' };
     const source = JSON.stringify(j.input ?? j.messages ?? '');
     return { body: Buffer.from(JSON.stringify(j)), source };
