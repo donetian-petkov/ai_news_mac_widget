@@ -76,3 +76,18 @@ trying anything, so nothing that already failed is tried again.
 - Every number above is one pool and one judge, so differences of ±3 wins are noise. On 5 stories, two
   versions of the judge disagreed on 3 of 5 research errors: small research checks cannot show a gain.
 - Story-specific wording never goes into prompts: fix the error class with a rule or check.
+
+## 40-story run, 10-22 12:25 (today's news, code before the 13:15 commit)
+
+| Tool | Local / tie / cloud | Major errors local vs cloud | Note |
+|---|---|---|---|
+| Summary | 3 / 2 / 29 (34 judged) | 7 vs 1 | English halves missing; facts often the same as the cloud's, wording worse |
+| Title BG | 2 / 19 / 19 | 10 vs 0 | clarity 3.7 vs 4.9 |
+| Title EN | 1 / 26 / 13 | 6 vs 0 | |
+| Neutral title | 8 / 20 / 12 | 2 vs 11 | local ahead on errors |
+| Research | 5 / 0 / 9 (old judge); 3 / 0 / 11 (judge with other outlets' reports) | 9 vs 5; 7 vs 2 | repeated and cut-off facts (fixed since) |
+| Mood | 5 / 23 / 12 | 8 vs 2 | stricter meanings since: 17 of 18 checked match the cloud |
+| News type | 0 / 31 / 9 | 8 vs 0 | subject first since: 15 of 18 match |
+| Ask | 3 / 0 / 12 | 7 vs 6 | informative 2.7 vs 4.4 |
+| Briefing | digest accuracy 5 vs 5, usefulness 2 vs 5, ranking 1 vs 4 | 0 vs 0 | ratings reused from 12:43; ranking is the weak part |
+
