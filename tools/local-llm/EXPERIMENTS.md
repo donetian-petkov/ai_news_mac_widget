@@ -54,6 +54,7 @@ trying anything, so nothing that already failed is tried again.
 | 10-22 | research | the note is the checked facts | 14 | 3/0/11, major errors 5 vs 5 | keep; thin (informative 2.4 vs 4.1) |
 | 10-22 | research | same, today | 14 (live) | 5/0/9, major errors 9 vs 5; one note repeated a half-sentence 8 times, one pasted a cut-off excerpt | drop repeats and cut-off facts |
 | 10-22 | research | + repeated, cut-off ("...") and broken-quote facts dropped | 5 of those with major errors | 2/0/3 (before 3/0/2), major errors 2 (before 5) | keep |
+| 10-22 | research (judge) | judge also given other outlets' reports of the same event (research is meant to use them) | 14 (live run), 5 (fix) | 40-story run: 3/0/11, major errors 7 vs 2; the fix on 5: 2/0/3, major errors 4 (before 3) under this judge, 2 (before 5) under the old one | on 5 stories the two judges disagree: noise; the fix only removes text, so keep; a wider research run is needed |
 | 10-21 | mood/type | cloud prompt | 40 | almost all empty or invalid | fixed labels |
 | 10-22 | mood | labels held to the list | 40 | 9/18/13, major errors 11 vs 6 | keep |
 | 10-22 | mood | same, today | 40 | 6/15/19, major errors 15 vs 4 | add label meanings |
@@ -72,5 +73,6 @@ trying anything, so nothing that already failed is tried again.
 
 - A small model fails worst when it writes freely across many facts or stories. Facts it copies from
   the text and that code checks hold up.
-- Every number above is one pool and one judge, so differences of ±3 wins are noise.
+- Every number above is one pool and one judge, so differences of ±3 wins are noise. On 5 stories, two
+  versions of the judge disagreed on 3 of 5 research errors: small research checks cannot show a gain.
 - Story-specific wording never goes into prompts: fix the error class with a rule or check.

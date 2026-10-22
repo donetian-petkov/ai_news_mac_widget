@@ -10,12 +10,23 @@ const ids = fs.readFileSync(idsFile, 'utf8').split('\n').filter(Boolean);
 const dir = new URL('.', import.meta.url).pathname;
 const arts = fs.existsSync(dir + 'data/articles-tools.json') ? JSON.parse(fs.readFileSync(dir + 'data/articles-tools.json', 'utf8')) : {};
 
-const COLS = ['key', 'itemId', 'neutralTitleStatus', 'title', 'source', 'contextText', 'linkText', 'summary', 'titleBg', 'titleEn', 'neutralTitle', 'neutralTitleBg', 'neutralTitleEn', 'research', 'mood', 'newsType', 'topicLabelsJson'];
+const COLS = ['key', 'itemId', 'publishedMs', 'neutralTitleStatus', 'title', 'source', 'contextText', 'linkText', 'summary', 'titleBg', 'titleEn', 'neutralTitle', 'neutralTitleBg', 'neutralTitleEn', 'research', 'mood', 'newsType', 'topicLabelsJson'];
 const rows = db => {
   const q = `SELECT ${COLS.map(c => `"${c}"`).join(',')} FROM NewsItemRecord WHERE key IN (${ids.map(i => `'${i.replace(/'/g, "''")}'`).join(',')})`;
   return Object.fromEntries(JSON.parse(execFileSync('sqlite3', ['-readonly', '-json', db, q], { maxBuffer: 64e6 }).toString() || '[]').map(r => [r.key, r]));
 };
 const L = rows(localDb), C = rows(cloudDb);
+// Research reads other outlets' reports of the same event, so the judge gets them too; otherwise every fact
+// taken from another outlet was graded as unsupported. Same event: another outlet, within 36 hours, and at
+// least 40% of the headline's word stems shared (both models had the same reports to work from).
+const stemsOf = t => new Set((String(t).toLowerCase().match(/[\p{L}\p{N}]{4,}/gu) || []).map(w => w.slice(0, 5)));
+const others = s => {
+  const q = `SELECT title, source, contextText, publishedMs FROM NewsItemRecord WHERE source <> '${String(s.source).replace(/'/g, "''")}' AND title <> '' ORDER BY publishedMs DESC LIMIT 3000`;
+  const all = JSON.parse(execFileSync('sqlite3', ['-readonly', '-json', cloudDb, q], { maxBuffer: 64e6 }).toString() || '[]');
+  const mine = stemsOf(s.title), at = Number(s.publishedMs || 0);
+  return all.filter(o => (!at || Math.abs(o.publishedMs - at) <= 36 * 3600e3) && mine.size
+    && [...stemsOf(o.title)].filter(w => mine.has(w)).length / mine.size >= 0.4).slice(0, 3);
+};
 // Ask-agent answers are not stored by the app; ws-tools.mjs saved them by item id.
 const askOf = file => file && fs.existsSync(file) ? JSON.parse(fs.readFileSync(file, 'utf8')).replies || {} : {};
 const askL = askOf(process.env.ASK_LOCAL), askC = askOf(process.env.ASK_CLOUD);
@@ -30,7 +41,7 @@ const TOOLS = {
   // rather than as a missing output.
   neutralTitle: { get: r => [r.neutralTitle, r.neutralTitleBg, r.neutralTitleEn].filter(Boolean).join(' | ') || (r.neutralTitleStatus === 'unchanged' ? `(kept the original headline) ${r.title}` : ''),
     good: 'a calm, factual headline with no clickbait, exaggeration or emotional words, keeping the real news; keeping the original headline is right when it is already calm and factual' },
-  research: { get: r => r.research, good: 'a short detailed briefing (about 150 words) that goes beyond the summary, compares what outlets report, and states nothing the article does not support' },
+  research: { get: r => r.research, good: 'a short detailed briefing (about 150 words) that goes beyond the summary, compares what outlets report, and states nothing the article or the other outlets\' reports do not support' },
   mood: { get: r => r.mood, good: 'the correct overall mood of the story' },
   newsType: { get: r => r.newsType, good: 'the correct type of news story' },
   ask: { get: r => r.ask, good: 'a direct answer to "what is the most important point of this story and why does it matter", based only on the article, saying so when the article does not tell' },
@@ -49,7 +60,7 @@ async function grade(tool, s, a, b) {
 Headline: ${s.title}
 Source: ${s.source}
 Article text: ${(arts[s.key] || s.linkText || s.contextText || '').slice(0, 6000)}
-
+${tool === 'research' ? others(s).map(o => `Other outlet's report (${o.source}): ${o.title}. ${String(o.contextText || '').slice(0, 800)}`).join('\n') + '\n' : ''}
 Output A: ${a || '(none)'}
 Output B: ${b || '(none)'}
 
