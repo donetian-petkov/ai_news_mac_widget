@@ -83,20 +83,24 @@ Found so far:
 
 ## Results so far
 
-All runs used 40 stories from the last 12 hours, from 11 sources, 15 of them in English. The cloud reference is the summary the app actually showed.
+The pool is the 40 newest stories from 11 sources, 15 of them in English. The reference is the cloud
+model (gpt-6-luna) running the same tool in a copy of the app. Outputs were graded blind by `judge-tools.mjs`.
+"Before" is the app's cloud prompt on the local model; "after" is the local pipeline now in the app.
 
-| Run | Local better | Tie | Cloud better | Accurate, local vs cloud | Time per story |
-|---|---|---|---|---|---|
-| Feed snippet only (earlier pool) | 6 | 1 | 32 | 34 vs 34 | ~12 s |
-| Full article, all fixes, 3 at once, rests after each group | 21 | 4 | 15 | 29 vs 31 | 22 s |
-| Full article, continuous pool, 2 at once, 40% busy cap | 20 | 5 | 15 | 29 vs 30 | 10 s |
+| Tool (stories) | Before: local / tie / cloud, major errors L/C | After: local / tie / cloud, major errors L/C |
+|---|---|---|
+| Summary (40) | 10 / 0 / 30, 31 / 11 | 15 / 4 / 21, 20 / 10 |
+| Research (14) | 0 / 0 / 24, 23 / 3 | 3 / 0 / 11, 5 / 5 |
+| Neutral title (~22) | 0 / 0 / 21, 21 / 12 (none produced) | 8 / 0 / 15, 12 / 12 |
+| Mood (40) | 0 / 0 / 40, 40 / 5 (none saved) | 9 / 18 / 13, 11 / 6 |
+| News type (40) | 0 / 0 / 40, 40 / 3 (none saved) | 2 / 33 / 5, 6 / 4 |
+| Ask (15) | 2 / 0 / 13, 10 / 3 | 5 / 0 / 10, 5 / 6 |
+| Title translation BG (40) | 0 / 28 / 12, 9 / 2 | not changed |
+| Title translation EN (40) | 3 / 17 / 20, 11 / 6 | not changed |
 
-- The local model's remaining mistakes are mostly stating hedged claims more firmly than the article does ("may have" becoming "did"), plus a few misattributions.
-- Not yet tested locally:
-  - title translation
-  - neutral titles
-  - research
-  - mood, type and topic labels
-  - ask agent
-  - alert rules
-  - briefing ratings, grouping and digest
+The local model now makes about as many major errors as the cloud. In research, Ask and neutral titles
+the cloud still writes richer text. Speed: a research click returns in 7-10 s; background work runs inside
+the gate's limits (2 at once, model busy at most 40% of a minute).
+
+Not done yet: the briefing (ratings, grouping, digest) on the local model, alert rules, the Android app,
+and a switch and status for the local model in the app's settings.
