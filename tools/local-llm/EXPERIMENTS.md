@@ -62,6 +62,8 @@ trying anything, so nothing that already failed is tried again.
 | 10-22 | type | labels held to the list | 40 | 1/31/8, major errors 7 vs 1 | keep |
 | 10-22 | neutral title | JSON held to keys | 40 | 7 rewritten, 8 failed | rewrite step held too |
 | 10-22 | neutral title | rewrite step held, no full stop | 40 | 14 rewritten, 0 failed | keep |
+| 10-22 | title BG/EN | story text in view, meaning not word by word, alphabet/length/back-translation checks | 7 of the 10 with major errors | 2 better, 2 worse, 3 the same | no gain |
+| 10-22 | title BG/EN | + two translations (with and without the story), keep the one whose meaning comes back best; leave out below half | 10 with major errors | 0/5/15, major errors 13 (4 left out, which the judge counts as major) vs 10 before; the kept translations had the same mistakes ("exercise" → "female student") | reverted; a limit of the 4B model, the patch is in the scratchpad |
 | 10-22 | neutral title | judge counts "kept the calm headline" | 40 | 7/18/15, major errors 8 vs 10 | at cloud level |
 | 10-22 | Ask | cloud prompt + rules | 15 | 2/0/13, major errors 10 vs 3 | replaced |
 | 10-22 | Ask | facts that answer → answer from them | 15 | 5/0/10 and 4/0/11, major errors 5 vs 6 and 4 vs 3 | keep; thin |
