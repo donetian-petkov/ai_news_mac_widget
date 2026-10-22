@@ -45,6 +45,8 @@ PW=$(openssl rand -hex 12)
 TOK=$(curl -s -m 10 127.0.0.1:3200/api/auth/register -H 'content-type: application/json' -d "{\"username\":\"battery$(date +%s)\",\"password\":\"$PW\"}" | python3 -c "import json,sys; print(json.load(sys.stdin)['token'])")
 # The token is checked against the copy's own database; register the same name in the other copy.
 TOKL=$(curl -s -m 10 127.0.0.1:3100/api/auth/register -H 'content-type: application/json' -d "{\"username\":\"battery$(date +%s)l\",\"password\":\"$PW\"}" | python3 -c "import json,sys; print(json.load(sys.stdin)['token'])")
+# A copy that refused the sign-in would refuse every job request and the run would carry on with nothing.
+[ ${#TOK} -gt 20 ] && [ ${#TOKL} -gt 20 ] || { echo "sign-in failed in a copy; stopping"; exit 1; }
 token() { [ "$1" = 3100 ] && echo "$TOKL" || echo "$TOK"; }
 left() { curl -s -m 5 127.0.0.1:$1/api/ops/ai-jobs -H "authorization: Bearer $(token $1)" | python3 -c "import json,sys; print(sum(json.load(sys.stdin)['queue']['countsByKind'].values()))" 2>/dev/null || echo 1; }
 waitq() { until [ "$(left $1)" = "0" ]; do sleep 10; done; }

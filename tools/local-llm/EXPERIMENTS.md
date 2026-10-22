@@ -26,6 +26,8 @@ trying anything, so nothing that already failed is tried again.
 | 10-21 | Click on a story already queued | dropped as a duplicate, waited behind the backlog | Promote the queued job |
 | 10-22 | First `<article>` on a page | other stories' text used (video and live pages) | Use the best-matching article; skip pages under 34% headline overlap |
 | 10-22 | Briefing, all candidates rated | first local briefing took 11 min | Top 20 rated on local |
+| 10-22 | battery.sh sign-in failed in the local copy | every job request refused, the run carried on with nothing | Stop when a sign-in fails |
+| 10-22 | Self-check, one call per candidate | each call re-read the article, ~10 calls a story | One call checks all candidates |
 
 ## Quality experiments
 
@@ -36,14 +38,17 @@ trying anything, so nothing that already failed is tried again.
 | 10-22 | summary | app pipeline with the merge step | 40 | 16/4/20, major errors 19 vs 10 | merge off (no gain, misattributions) |
 | 10-22 | summary | + self-check + article fit | 40 | 15/5/20, major errors 14 vs 10 | keep |
 | 10-22 | summary | same, today's pool | 40 | 6/2/32, major errors 17 vs 5; 7 missing; informative 2.1 vs 3.3 | the first step picks side facts; reframe |
-| 10-22 | summary | first step asks the reader's question, 5 answers | 10 | (running) | |
+| 10-22 | summary | first step asks the reader's question, 5 answers, one-call self-check | 25 (live) | 3/0/23, major errors 6 vs 1; English stories 12 of 18 losses and 4 of 5 errors; informative 2.9 | fix translation and vagueness |
+| 10-22 | summary | + translation with article context, round-trip word check, right script, most specific confirmed sentence, "unknown"-only sentences dropped | 10 | (running) | |
+| 10-22 | type | + label meanings | 10 | (running) | |
 | 10-21 | research | cloud prompt as-is | 40 | 0/0/40, major errors 37 vs 10 (invented sources) | replaced |
 | 10-21 | research | + no-invention rules | 24 | 1/0/23, major errors 17 vs 5 | not enough |
 | 10-22 | research | facts → checks → write note | 14 | 1/0/13, major errors 8 vs 2 | the writing step mixes facts up |
 | 10-22 | research | the note is the checked facts | 14 | 3/0/11, major errors 5 vs 5 | keep; thin (informative 2.4 vs 4.1) |
 | 10-21 | mood/type | cloud prompt | 40 | almost all empty or invalid | fixed labels |
 | 10-22 | mood | labels held to the list | 40 | 9/18/13, major errors 11 vs 6 | keep |
-| 10-22 | mood | same, today | 40 | 6/15/19, major errors 15 vs 4 | add label meanings (running) |
+| 10-22 | mood | same, today | 40 | 6/15/19, major errors 15 vs 4 | add label meanings |
+| 10-22 | mood | + label meanings | 34 (live) | 5/19/10, major errors 7 vs 2 | keep; recheck in the fix run |
 | 10-22 | type | labels held to the list | 40 | 1/31/8, major errors 7 vs 1 | keep |
 | 10-22 | neutral title | JSON held to keys | 40 | 7 rewritten, 8 failed | rewrite step held too |
 | 10-22 | neutral title | rewrite step held, no full stop | 40 | 14 rewritten, 0 failed | keep |
