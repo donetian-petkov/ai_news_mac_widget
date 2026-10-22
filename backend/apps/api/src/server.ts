@@ -6974,6 +6974,7 @@ async function askAgentAboutItem(
   chatResearch?: string
 ): Promise<string | undefined> {
   const safeQuestion = String(question || '').slice(0, ASK_AGENT_MAX_CHARS);
+  if (aiProvider === 'local') return localAskAgent(safeQuestion, item, chatResearch);
   const input =
     `${askAgentInstruction(researchLang)}\n` +
     `Question: ${safeQuestion}\n` +
@@ -6988,6 +6989,40 @@ async function askAgentAboutItem(
     (item.__linkText ? `Article text (may be partial): ${item.__linkText}\n` : '');
 
   return generateAiText('ask', input, budgetToTokensAsk(budget), 0.2, `Ask agent: ${item.source} - ${item.title}`);
+}
+
+// On a local model the Ask answer is built in steps: the model picks the facts in the article (and the
+// story's research note) that answer the question; code keeps only facts grounded in that text; with none,
+// the answer says the article does not tell; otherwise the answer is written from those facts alone.
+async function localAskAgent(question: string, item: NewsInternal, chatResearch?: string): Promise<string | undefined> {
+  const bg = /[а-яА-Я]/.test(question);
+  const research = (chatResearch && chatResearch.trim()) || (item.research || '').trim();
+  const text = [item.__linkText || item.__ctx || '', research ? `Research note: ${research}` : '', item.summary ? `Summary: ${item.summary}` : '']
+    .filter(Boolean).join('\n').replace(/"([^"\n]{1,80})"/g, '„$1“').replace(/"/g, '“').slice(0, 7000);
+  if (!text.trim()) return undefined;
+  const answer = await generateAiText('ask', [
+    'From the text below, list up to 4 facts that answer the question, each one short complete sentence, copied names and numbers exactly.',
+    'If the text does not answer the question, return an empty list.',
+    `Write the facts in ${bg ? 'Bulgarian' : 'English'}.`,
+    `Question: ${question}`,
+    `Headline: ${item.title}`,
+    `Text: ${text}`
+  ].join('\n'), 360, 0, `Ask agent facts: ${item.source} - ${item.title}`, undefined, false, {
+    schema: { type: 'object', additionalProperties: false, required: ['facts'], properties: { facts: { type: 'array', maxItems: 4, items: { type: 'string' } } } }
+  });
+  let facts: string[] = [];
+  try { facts = ((JSON.parse(answer || '{}') as { facts?: string[] }).facts || []).map(f => String(f || '').trim()).filter(Boolean); } catch {}
+  facts = facts.filter(f => f.split(/\s+/).length >= 4 && factIsGrounded(f, `${item.title} ${text}`));
+  if (!facts.length) {
+    return bg ? 'Статията не дава отговор на този въпрос.' : 'The article does not answer this question.';
+  }
+  const reply = await generateAiText('ask', [
+    `Answer the question in ${bg ? 'Bulgarian' : 'English'} in at most 80 words, using only these facts. Add nothing else.`,
+    `Question: ${question}`,
+    'Facts:',
+    ...facts.map(f => `- ${f}`)
+  ].join('\n'), 220, 0.2, `Ask agent: ${item.source} - ${item.title}`);
+  return reply ? cleanResearch(reply) || reply : facts.join(' ');
 }
 // -----------------------------------------
 
