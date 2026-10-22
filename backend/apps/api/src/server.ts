@@ -5982,14 +5982,18 @@ async function fetchWithTimeout(url: string, options: RequestInit, timeoutMs: nu
   }
 }
 
-function extractMainTextFromHtml(html: string): string {
+function extractMainTextFromHtml(html: string, headline = ''): string {
   const cleaned = String(html || '')
     .replace(/<script[\s\S]*?>[\s\S]*?<\/script>/gi, ' ')
     .replace(/<style[\s\S]*?>[\s\S]*?<\/style>/gi, ' ');
 
-  // Prefer <article> if present
-  const articleMatch = cleaned.match(/<article[\s\S]*?<\/article>/i);
-  const chunk = articleMatch ? articleMatch[0] : cleaned;
+  // Prefer <article>. A page can hold several (live blogs, "read also" boxes), so the one that shares the
+  // most words with the story's headline is used, not simply the first: the first was sometimes another story.
+  const articles = cleaned.match(/<article[\s\S]*?<\/article>/gi) || [];
+  const best = articles.length > 1 && headline
+    ? articles.map(a => ({ a, score: headlineOverlap(headline, stripHtml(a).slice(0, 3000)) })).sort((x, y) => y.score - x.score)[0].a
+    : articles[0];
+  const chunk = best || cleaned;
 
   // Strip tags -> text
   const text = stripHtml(chunk);
@@ -5998,7 +6002,24 @@ function extractMainTextFromHtml(html: string): string {
   return text;
 }
 
-async function fetchArticleText(link: string, maxChars: number): Promise<string> {
+/** Share of the headline's content words (five-letter stems) that the text contains. */
+function headlineOverlap(headline: string, text: string): number {
+  const stems = (t: string) => new Set((t.toLowerCase().match(/[\p{L}\p{N}]{5,}/gu) || []).map(w => w.slice(0, 5)));
+  const h = stems(headline);
+  if (!h.size) return 0;
+  const body = stems(text);
+  return [...h].filter(w => body.has(w)).length / h.size;
+}
+
+/**
+ * The fetched page is used only if it is about the story: at least a third of the headline's content words
+ * appear in it. Otherwise the summary and research would be written from another story on the same page.
+ */
+function articleFitsHeadline(headline: string, text: string): boolean {
+  return !headline || headlineOverlap(headline, text) >= 0.34;
+}
+
+async function fetchArticleText(link: string, maxChars: number, headline = ''): Promise<string> {
   if (!link || !/^https?:\/\//i.test(link)) return '';
   try {
     const res = await fetchWithTimeout(
@@ -6015,7 +6036,8 @@ async function fetchArticleText(link: string, maxChars: number): Promise<string>
     const ctype = res.headers.get('content-type') || '';
     if (!ctype.includes('text/html')) return '';
     const html = await res.text();
-    const text = extractMainTextFromHtml(html);
+    const text = extractMainTextFromHtml(html, headline);
+    if (!articleFitsHeadline(headline, text)) return '';
     return text.slice(0, Math.max(0, maxChars));
   } catch {
     return '';
@@ -6867,7 +6889,7 @@ async function otherOutletReports(it: NewsInternal): Promise<OtherReport[]> {
     if (picked.length >= AI_RESEARCH_OTHER_REPORTS) break;
     if (!picked.some(item => item.source === other.source)) picked.push(other);
   }
-  const texts = await Promise.allSettled(picked.map(other => fetchArticleText(other.link, AI_RESEARCH_OTHER_REPORT_MAX_CHARS)));
+  const texts = await Promise.allSettled(picked.map(other => fetchArticleText(other.link, AI_RESEARCH_OTHER_REPORT_MAX_CHARS, other.title)));
   return picked.flatMap((other, index) => {
     const result = texts[index];
     const text = result.status === 'fulfilled' && result.value ? result.value : String(other.summary || other.__ctx || '').slice(0, 600);
@@ -8089,7 +8111,7 @@ async function runOneJob(job: AiJob) {
       const ctx = it.__ctx || '';
       let linkText = it.__linkText || '';
       if (!hasUsefulSummaryContext(it.title, ctx) && !hasUsefulSummaryContext(it.title, linkText) && it.link) {
-        linkText = await fetchArticleText(it.link, AI_SUMMARY_ARTICLE_MAX_CHARS);
+        linkText = await fetchArticleText(it.link, AI_SUMMARY_ARTICLE_MAX_CHARS, it.title);
         if (linkText) it.__linkText = linkText;
       }
       recordSummaryDebugEvent({
@@ -8441,7 +8463,7 @@ async function runOneJob(job: AiJob) {
       let linkText = it.__linkText || '';
       if (!linkText) {
         try {
-          linkText = await fetchArticleText(it.link, AI_RESEARCH_ARTICLE_MAX_CHARS);
+          linkText = await fetchArticleText(it.link, AI_RESEARCH_ARTICLE_MAX_CHARS, it.title);
         } catch {
           linkText = '';
         }
