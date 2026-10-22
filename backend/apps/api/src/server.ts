@@ -6641,7 +6641,15 @@ async function localSummary(feedUrl: string, title: string, source: string, text
     for (let attempt = 0; attempt < 2; attempt++) {
       const answer = attempt === 0 ? first : await ask(false);
       try {
-        const t = String((JSON.parse(answer || '{}') as { text?: string }).text || '').trim();
+        // A name copied from the original with its first letter slipped into the other alphabet ("Бouches-du-Rhône")
+        // gets the original spelling back; the rest of such a translation was fine.
+        const originalWords = sentence.split(/\s+/).map(w => w.replace(/^[^\p{L}]+|[^\p{L}]+$/gu, ''));
+        const t = String((JSON.parse(answer || '{}') as { text?: string }).text || '').trim()
+          .replace(/[\p{L}-]+/gu, w => {
+            if (!(/[а-яА-Я]/.test(w) && /[a-zA-Z]/.test(w))) return w;
+            const original = originalWords.find(o => o.length > 2 && o.slice(1) === w.slice(1));
+            return original || w;
+          });
         // The translation must be in the language asked for: an English sentence came back as the "Bulgarian" half.
         // Bulgarian also means Bulgarian letters only: a "Bulgarian" half came back in Serbian (ћ, ј, њ).
         const rightScript = /[а-яА-Я]/.test(t) === (to === 'Bulgarian') && (to !== 'Bulgarian' || !/[ђјљњћџѓќѕыэёЂЈЉЊЋЏЃЌЅЫЭЁ]/.test(t))
