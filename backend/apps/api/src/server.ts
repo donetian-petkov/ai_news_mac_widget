@@ -6035,9 +6035,19 @@ function extractMainTextFromHtml(html: string, headline = ''): string {
   // Prefer <article>. A page can hold several (live blogs, "read also" boxes), so the one that shares the
   // most words with the story's headline is used, not simply the first: the first was sometimes another story.
   const articles = cleaned.match(/<article[\s\S]*?<\/article>/gi) || [];
-  const best = articles.length > 1 && headline
-    ? articles.map(a => ({ a, score: headlineOverlap(headline, stripHtml(a).slice(0, 3000)) })).sort((x, y) => y.score - x.score)[0].a
-    : articles[0];
+  // Of the ones that fit the headline, the longest wins: on news-agency pages with dozens of <article> cards,
+  // a card holding only the headline matched as well as the story itself, and the summary had 76 characters.
+  const scored = articles.length > 1 && headline
+    ? articles.map(a => { const text = stripHtml(a); return { a, score: headlineOverlap(headline, text.slice(0, 3000)), length: text.length }; })
+    : [];
+  const fitting = scored.filter(x => x.score >= 0.34).sort((x, y) => y.length - x.length);
+  const best = scored.length ? (fitting[0] || scored.sort((x, y) => y.score - x.score)[0]).a : articles[0];
+  // An <article> with little more than a headline in it means the story text sits elsewhere: the page's
+  // paragraphs are used instead (the whole page would start with its menus).
+  if (!best || stripHtml(best).length < 600) {
+    const paragraphs = (cleaned.match(/<p[\s>][\s\S]*?<\/p>/gi) || []).map(stripHtml).filter(t => t.length > 60).join(' ');
+    if (paragraphs.length >= 600) return paragraphs;
+  }
   const chunk = best || cleaned;
 
   // Strip tags -> text
@@ -6530,7 +6540,15 @@ async function localSummary(feedUrl: string, title: string, source: string, text
     });
     try { return ((JSON.parse(answer || '{}') as { facts?: string[] }).facts || []); } catch { return []; }
   };
-  let facts = keep(await factsCall(''));
+  const firstFacts = await factsCall('');
+  // With LOCAL_SUMMARY_DEBUG=1, every fact a filter drops is logged with the filter that dropped it.
+  if (process.env.LOCAL_SUMMARY_DEBUG === '1') {
+    const why = (x: string) => !(words(x) >= 5 && words(x) <= 22) ? 'length' : /\.\.\.|…/.test(x) ? 'cut off'
+      : !factIsGrounded(x, `${title} ${body}`) ? 'name or number not in text' : novelty(x) < (asks ? 0.6 : 0.5) ? 'repeats headline'
+      : keep([x]).length ? 'kept' : 'other filter';
+    console.log('[facts debug]', JSON.stringify({ title, facts: firstFacts.map(x => ({ fact: x, result: why(String(x || '').trim()) })) }));
+  }
+  let facts = keep(firstFacts);
   if (!facts.length) facts = keep(await factsCall('The reader already knows the headline: give only facts the headline does NOT say (a cause, a result, a number, a name, a date, a place).'));
   if (!facts.length) return undefined;
 
@@ -6569,17 +6587,24 @@ async function localSummary(feedUrl: string, title: string, source: string, text
     const verdict = await generateAiText('summary', [
       'For each numbered sentence: does the text fully support it, with the same people, numbers, places, dates,',
       'who said or did what, and the same certainty (a claim or a possibility is not a fact)? List the numbers of the supported ones.',
+      'Then give the number of the supported sentence a reader who has seen only the headline most needs: the main news, not a side detail.',
       ...candidates.map((c, i) => `${i + 1}. ${c}`),
       `Text: ${body}`
-    ].join('\n'), 40, 0, `Summary check: ${source} - ${title}`, undefined, false, {
-      schema: { type: 'object', additionalProperties: false, required: ['supported'], properties: { supported: { type: 'array', items: { type: 'integer', minimum: 1, maximum: candidates.length } } } }
+    ].join('\n'), 60, 0, `Summary check: ${source} - ${title}`, undefined, false, {
+      schema: { type: 'object', additionalProperties: false, required: ['supported', 'main'], properties: {
+        supported: { type: 'array', items: { type: 'integer', minimum: 1, maximum: candidates.length } },
+        main: { type: 'integer', minimum: 1, maximum: candidates.length } } }
     });
     let supportedNumbers: number[] = [];
-    try { supportedNumbers = ((JSON.parse(verdict || '{}') as { supported?: number[] }).supported || []); } catch {}
-    if (process.env.LOCAL_SUMMARY_DEBUG === '1') console.log('[summary debug]', JSON.stringify({ title, candidates, supportedNumbers }));
+    let main = 0;
+    try { const v = JSON.parse(verdict || '{}') as { supported?: number[]; main?: number }; supportedNumbers = v.supported || []; main = Number(v.main || 0); } catch {}
+    if (process.env.LOCAL_SUMMARY_DEBUG === '1') console.log('[summary debug]', JSON.stringify({ title, candidates, supportedNumbers, main }));
     // Of the supported candidates, the most specific wins: the safest sentence the check confirms is often
     // the emptiest one ("councillors are preparing a ban"). Concrete names and numbers and what is new beyond
     // the headline count.
+    // The model's own pick of the main news wins when it is supported and adds something beyond the headline:
+    // sorting by names and numbers alone led with side details ("he has served 5 years, 7 months").
+    if (supportedNumbers.includes(main) && concrete(candidates[main - 1]) + novelty(candidates[main - 1]) > 0.5) return candidates[main - 1];
     return candidates
       .filter((_, i) => supportedNumbers.includes(i + 1))
       .sort((a, b) => (concrete(b) + 2 * novelty(b)) - (concrete(a) + 2 * novelty(a)))[0];
@@ -8250,8 +8275,13 @@ async function runOneJob(job: AiJob) {
 
       const ctx = it.__ctx || '';
       let linkText = it.__linkText || '';
-      if (!hasUsefulSummaryContext(it.title, ctx) && !hasUsefulSummaryContext(it.title, linkText) && it.link) {
-        linkText = await fetchArticleText(it.link, AI_SUMMARY_ARTICLE_MAX_CHARS, it.title);
+      // A local model always reads the article when there is one: a feed snippet of 140 characters counted as
+      // enough, so most local summaries were written from the snippet and had one or two facts to choose from.
+      const wantArticle = aiProvider === 'local' ? !linkText : !hasUsefulSummaryContext(it.title, ctx) && !hasUsefulSummaryContext(it.title, linkText);
+      if (wantArticle && it.link) {
+        // A local model gets more of the article: the first 2,200 characters of a page are often mostly menus,
+        // and the cloud copes with a short excerpt better than a small model does.
+        linkText = await fetchArticleText(it.link, aiProvider === 'local' ? Math.max(AI_SUMMARY_ARTICLE_MAX_CHARS, 4000) : AI_SUMMARY_ARTICLE_MAX_CHARS, it.title);
         if (linkText) it.__linkText = linkText;
       }
       recordSummaryDebugEvent({

@@ -1,4 +1,5 @@
-// Fetches each story's page the way the app's Research does (prefer <article>, strip tags), up to 6000 chars.
+// Fetches each story's page the way the app does: the longest <article> that fits the headline, else the
+// page's paragraphs when the <article> is only a headline card (news-agency pages), up to 6000 chars.
 import fs from 'fs';
 const dir = new URL('.', import.meta.url).pathname;
 const data = dir + 'data/';
@@ -13,8 +14,11 @@ await Promise.all(stories.map(async s => {
     clearTimeout(t);
     if (!r.ok || !(r.headers.get('content-type') || '').includes('text/html')) return;
     const html = await r.text();
-    const art = html.match(/<article[\s\S]*?<\/article>/i)?.[0];
-    out[s.id] = strip(art || html).slice(0, 6000);
+    const stems = t => new Set((t.toLowerCase().match(/[\p{L}\p{N}]{5,}/gu) || []).map(w => w.slice(0, 5)));
+    const head = stems(s.title || ''); const fits = t => { const b = stems(t); return head.size ? [...head].filter(w => b.has(w)).length / head.size : 0; };
+    const arts = (html.match(/<article[\s\S]*?<\/article>/gi) || []).map(strip).filter(t => fits(t.slice(0, 3000)) >= 0.34).sort((a, b) => b.length - a.length);
+    const paras = (html.match(/<p[\s>][\s\S]*?<\/p>/gi) || []).map(strip).filter(t => t.length > 60).join(' ');
+    out[s.id] = (arts[0] && arts[0].length >= 600 ? arts[0] : paras.length >= 600 ? paras : arts[0] || strip(html)).slice(0, 6000);
   } catch {}
 }));
 fs.writeFileSync(data + (process.env.ARTS || 'articles.json'), JSON.stringify(out));
