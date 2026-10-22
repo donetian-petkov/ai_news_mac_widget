@@ -7108,7 +7108,14 @@ async function classifyNewsTypeForItem(
     (research ? `Research: ${research}\n` : '');
   const text = await generateAiText('research', input, aiProvider === 'local' ? 70 : Math.max(16, Math.min(34, budgetToTokensSummary(budget))), 0, `Type classification: ${source} - ${title}`, undefined, false, { labels: Object.values(NewsTypeValue), about: true });
   if (!text) return undefined;
-  const label = labelFromAnswer(text);
+  let label = labelFromAnswer(text);
+  // A small local model fell back on "other" when world, politics or culture fitted: it is asked once more
+  // without "other", and keeps "other" only if it then cannot decide.
+  if (aiProvider === 'local' && label === 'other') {
+    const retry = labelFromAnswer(await generateAiText('research', `${input}\nThe answer "other" is not allowed this time: pick the closest label, or "unclear" if none is close.`,
+      70, 0, `Type classification: ${source} - ${title}`, undefined, false, { labels: Object.values(NewsTypeValue).filter(v => v !== 'other'), about: true }) || '');
+    if (retry && retry !== 'unclear') label = retry;
+  }
   // "unclear" means the model could not decide: no type rather than a guessed one.
   if (label === 'unclear') return undefined;
   return normalizeNewsType(label) || 'other';
