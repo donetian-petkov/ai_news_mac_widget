@@ -29,6 +29,7 @@ trying anything, so nothing that already failed is tried again.
 | 10-22 | battery.sh sign-in failed in the local copy | every job request refused, the run carried on with nothing | Stop when a sign-in fails |
 | 10-22 | Self-check, one call per candidate | each call re-read the article, ~10 calls a story | One call checks all candidates |
 | 10-22 | Research and Ask skip the busy limit | a bulk research run carries the same task name as a click: model 97% busy, fans 5,400+ | Clicks one at a time above 40%; every request waits above 75% |
+| 10-22 | Model server stalled mid-run (14:40) | no answer to health checks, memory pushed to swap (3 GB to 278 MB) while other apps held 5 of 6 GB of swap; the gate showed 1 running and 100% busy | restarted; model-watch.sh now restarts it after 90 s without an answer while work waits |
 
 ## Quality experiments
 
