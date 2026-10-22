@@ -6588,6 +6588,11 @@ async function translateTitleBilingual(
   return { bg, en };
 }
 
+/** The headline from a local model's {"headline": ...} answer, without a closing full stop. */
+function localHeadline(text: string | undefined): string {
+  try { return String((JSON.parse(text || '{}') as { headline?: string }).headline || '').trim().replace(/\.+$/, ''); } catch { return String(text || ''); }
+}
+
 /** A small local model ends rewritten headlines with a full stop, which the headline check rejects. */
 function withoutTitleFullStops(json: string): string {
   try {
@@ -6700,6 +6705,7 @@ async function neutralizeTitleInSourceLanguage(
 
   const input = [
     `Rewrite the headline as a neutral factual headline in ${language}.`,
+    aiProvider === 'local' ? 'The new headline must differ from the original: state the plain fact instead of the teaser, quote or emotional words. No full stop at the end.' : '',
     'Return plain text only. Do not translate to another language. No quotes, no markdown, no commentary.',
     'Preserve names, places, numbers, dates, roles, outcomes, and uncertainty. Do not invent facts.',
     'Make it shorter or similar length where possible.',
@@ -6717,9 +6723,12 @@ async function neutralizeTitleInSourceLanguage(
     Math.max(90, Math.min(180, budgetToTokensSummary(budget) + 90)),
     0,
     `Neutral title source-language retry: ${item.source} - ${originalTitle}`,
-    { itemId: item.id, feedUrl: item.feedUrl, source: item.source, title: originalTitle }
+    { itemId: item.id, feedUrl: item.feedUrl, source: item.source, title: originalTitle },
+    false,
+    // A local model is held to a single headline field (it otherwise returned the old headline or a sentence).
+    { schema: { type: 'object', additionalProperties: false, required: ['headline'], properties: { headline: { type: 'string' } } } }
   );
-  const candidate = trimNeutralTitle(text);
+  const candidate = trimNeutralTitle(aiProvider === 'local' ? localHeadline(text) : text);
   if (!candidate) return undefined;
   if (!neutralTitleLooksLikeHeadline(originalTitle, candidate)) return undefined;
   if (!titleMateriallyChanged(originalTitle, candidate)) return undefined;
