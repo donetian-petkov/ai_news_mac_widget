@@ -33,6 +33,14 @@ for side in local cloud; do
   sqlite3 "$W/$side.db" "UPDATE NewsItemRecord SET summary=NULL, research=NULL, titleBg=NULL, titleEn=NULL, neutralTitle=NULL, neutralTitleBg=NULL, neutralTitleEn=NULL, neutralTitleStatus=NULL, neutralTitleCheckedAtMs=NULL, mood=NULL, newsType=NULL, topicLabelsJson=NULL, linkText=NULL WHERE key IN ($IN)"
 done
 log "copies ready, $(wc -l < "$W/ids.txt" | tr -d ' ') stories"
+# The judge needs the articles before live judging starts: with an old article cache it graded today's
+# stories against about 100 characters of feed text and called supported details invented.
+(cd "$K" && node -e "
+const fs=require('fs'); const {execFileSync}=require('child_process');
+const rows=JSON.parse(execFileSync('sqlite3',['-readonly','-json','$W/cloud.db',\"SELECT key AS id, title, link, source, publishedMs, contextText FROM NewsItemRecord WHERE key IN ($IN)\"]).toString());
+fs.writeFileSync('data/battery-pool.json', JSON.stringify(rows));" && POOL=battery-pool.json ARTS=articles-battery.json N=$N node fetch-articles.mjs)
+cp "$K/data/articles-battery.json" "$K/data/articles-tools.json"
+log "articles fetched for the judge"
 
 # 2. Start both copies.
 start_copy() { # side port provider
@@ -70,11 +78,6 @@ for P in 3200 3100; do (
 
 # 4. Grade every tool blind, and the two briefings.
 cp "$W/ids.txt" "$K/data/battery-ids.txt"
-(cd "$K" && POOL=battery-pool.json ARTS=articles-battery.json node -e "
-const fs=require('fs'); const {execFileSync}=require('child_process');
-const rows=JSON.parse(execFileSync('sqlite3',['-readonly','-json','$W/cloud.db',\"SELECT key AS id, title, link, source, publishedMs, contextText FROM NewsItemRecord WHERE key IN ($IN)\"]).toString());
-fs.writeFileSync('data/battery-pool.json', JSON.stringify(rows));" && POOL=battery-pool.json ARTS=articles-battery.json N=$N node fetch-articles.mjs)
-cp "$K/data/articles-battery.json" "$K/data/articles-tools.json"
 (cd "$K" && ASK_LOCAL="$W/ask-3100.json" ASK_CLOUD="$W/ask-3200.json" node judge-tools.mjs "$W/local.db" "$W/cloud.db" "$W/ids.txt" "$W/judge-tools.json" 2>/dev/null) | tee "$W/results.txt"
 page() { python3 -c "import json,sys; print(json.load(open(sys.argv[1]))['item']['id'])" "$1"; }
 cp_html=$(ls "$A/dist-cloud/.data/briefings/" | grep "^$(page "$W/briefing-3200.json")" | head -1)
