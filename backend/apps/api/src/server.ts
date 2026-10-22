@@ -36,7 +36,8 @@ import {
   type DigestBullet,
   type DigestItem,
   type GroupingItem,
-  type StoryGrouping
+  type StoryGrouping,
+  IMPACT_DIMENSIONS
 } from './briefing';
 
 function bootstrapEnv() {
@@ -10293,6 +10294,32 @@ function briefingLanguage(): 'en' | 'bg' {
   return summaryLang === 'en' ? 'en' : 'bg';
 }
 
+const BRIEFING_RATING_SCHEMA = (() => {
+  const score = { type: 'integer', minimum: 0, maximum: 3 };
+  const why = { type: 'string' };
+  return {
+    type: 'object', additionalProperties: false, required: ['ratings'],
+    properties: { ratings: { type: 'array', items: { type: 'object', additionalProperties: false,
+      required: ['id', 'severity', 'severityWhy', 'scale', 'scaleWhy', 'urgency', 'urgencyWhy', 'interest', 'interestWhy', 'dimension'],
+      properties: { id: { type: 'string' }, severity: score, severityWhy: why, scale: score, scaleWhy: why, urgency: score, urgencyWhy: why,
+        interest: score, interestWhy: why, dimension: { type: 'string', enum: [...IMPACT_DIMENSIONS] } } } } }
+  };
+})();
+
+const BRIEFING_GROUPING_SCHEMA = {
+  type: 'object', additionalProperties: false, required: ['duplicates', 'storylines', 'resolutions'],
+  properties: {
+    duplicates: { type: 'array', items: { type: 'object', additionalProperties: false, required: ['ids', 'why'], properties: { ids: { type: 'array', items: { type: 'string' } }, why: { type: 'string' } } } },
+    storylines: { type: 'array', items: { type: 'object', additionalProperties: false, required: ['label', 'why', 'ids'], properties: { label: { type: 'string' }, why: { type: 'string' }, ids: { type: 'array', items: { type: 'string' } } } } },
+    resolutions: { type: 'array', items: { type: 'object', additionalProperties: false, required: ['ids', 'resolvedBy', 'label', 'summary'], properties: { ids: { type: 'array', items: { type: 'string' } }, resolvedBy: { type: 'string' }, label: { type: 'string' }, summary: { type: 'string' } } } }
+  }
+};
+const BRIEFING_DIGEST_SCHEMA = {
+  type: 'object', additionalProperties: false, required: ['bullets'],
+  properties: { bullets: { type: 'array', minItems: 1, maxItems: 6, items: { type: 'object', additionalProperties: false, required: ['kind', 'text', 'ids'],
+    properties: { kind: { type: 'string', enum: ['critical', 'leading', 'interesting'] }, text: { type: 'string' }, ids: { type: 'array', items: { type: 'string' } } } } } }
+};
+
 async function rateBriefingStoriesWithAi(candidates: AiRatingCandidate[], feedUrlById: Map<string, string>): Promise<AiStoryRating[]> {
   if (!aiAvailable) throw new Error('No AI provider is set up');
   // Keyed by language too: switching it must not reuse notes written in the other one.
@@ -10300,20 +10327,37 @@ async function rateBriefingStoriesWithAi(candidates: AiRatingCandidate[], feedUr
   const cached = candidates.map(candidate => briefingAiRatings.get(cacheKey(candidate.id))).filter((r): r is AiStoryRating => !!r);
   const missing = candidates.filter(candidate => !briefingAiRatings.has(cacheKey(candidate.id)));
   if (!missing.length) return cached;
-  const text = await withTimeout(
-    generateAiText(
-      'research',
-      buildAiRatingPrompt(missing, briefingLanguage(), localRegion),
-      Math.max(800, Math.min(9000, 300 + missing.length * 320)),
-      0,
-      'Briefing rating',
-      undefined,
-      true
-    ),
-    90_000,
-    'Briefing rating'
-  );
-  const fresh = parseAiRatings(text || '');
+  let fresh: AiStoryRating[];
+  if (aiProvider === 'local') {
+    // A local model rates a few stories per call, each answer held to the rating fields: one call for every
+    // story wrote thousands of words and ran past its time limit, so the briefing fell back to keywords.
+    fresh = [];
+    for (let i = 0; i < missing.length; i += 4) {
+      const batch = missing.slice(i, i + 4);
+      const text = await withTimeout(
+        generateAiText('research', buildAiRatingPrompt(batch, briefingLanguage(), localRegion), 300 + batch.length * 320, 0, 'Briefing rating', undefined, true,
+          { schema: BRIEFING_RATING_SCHEMA }),
+        aiCallTimeout(90_000, 5 * 60_000),
+        'Briefing rating'
+      );
+      fresh.push(...parseAiRatings(text || '').filter(r => batch.some(b => b.id === r.id)));
+    }
+  } else {
+    const text = await withTimeout(
+      generateAiText(
+        'research',
+        buildAiRatingPrompt(missing, briefingLanguage(), localRegion),
+        Math.max(800, Math.min(9000, 300 + missing.length * 320)),
+        0,
+        'Briefing rating',
+        undefined,
+        true
+      ),
+      90_000,
+      'Briefing rating'
+    );
+    fresh = parseAiRatings(text || '');
+  }
   if (!fresh.length) throw new Error('AI returned no ratings');
   for (const rating of fresh) briefingAiRatings.set(cacheKey(rating.id), rating);
   while (briefingAiRatings.size > 3000) {
@@ -10326,6 +10370,7 @@ async function rateBriefingStoriesWithAi(candidates: AiRatingCandidate[], feedUr
 }
 
 async function groupBriefingStorylinesWithAi(items: GroupingItem[]): Promise<StoryGrouping> {
+  if (aiProvider === 'local') return localBriefingGrouping(items);
   const text = await withTimeout(
     generateAiText(
       'research',
@@ -10334,23 +10379,97 @@ async function groupBriefingStorylinesWithAi(items: GroupingItem[]): Promise<Sto
       0,
       'Briefing storylines',
       undefined,
-      true
+      true,
+      // A local model is held to the grouping JSON; it otherwise returned text the parser could not read.
+      { schema: BRIEFING_GROUPING_SCHEMA }
     ),
-    60_000,
+    aiCallTimeout(60_000, 10 * 60_000),
     'Briefing storylines'
   );
   return parseStorylines(text || '');
 }
 
 async function writeBriefingDigestWithAi(items: DigestItem[]): Promise<DigestBullet[]> {
+  if (aiProvider === 'local') return localBriefingDigest(items);
   const text = await withTimeout(
-    generateAiText('research', buildDigestPrompt(items, briefingLanguage(), localRegion), 1500, 0, 'Briefing summary', undefined, true),
-    60_000,
+    generateAiText('research', buildDigestPrompt(items, briefingLanguage(), localRegion), 1500, 0, 'Briefing summary', undefined, true, { schema: BRIEFING_DIGEST_SCHEMA }),
+    aiCallTimeout(60_000, 10 * 60_000),
     'Briefing summary'
   );
   const bullets = parseDigest(text || '');
   if (!bullets.length) throw new Error('AI returned no summary');
   return bullets;
+}
+
+// On a local model grouping is done pair by pair, as tested in tools/local-llm: code picks candidate pairs
+// (headlines that name the same people or things), the model labels each pair same / related / unrelated,
+// code joins the pairs into duplicate sets and storylines, and one short call names each storyline.
+// A single call over every headline came back with no groups at all.
+async function localBriefingGrouping(items: GroupingItem[]): Promise<StoryGrouping> {
+  const stems = (t: string) => new Set((t.toLowerCase().match(/[\p{L}\p{N}]{5,}/gu) || []).map(w => w.slice(0, 5)));
+  const byId = new Map(items.map(it => [it.id, it]));
+  const pairs: Array<[GroupingItem, GroupingItem]> = [];
+  for (let i = 0; i < items.length; i++) for (let j = i + 1; j < items.length; j++) {
+    const a = items[i], b = items[j];
+    const shared = [...stems(a.title)].filter(w => stems(b.title).has(w)).length;
+    if (sameEventTitles(a.title, b.title) || shared >= 2 || a.maybeSameAs?.includes(b.id) || b.maybeSameAs?.includes(a.id)) pairs.push([a, b]);
+  }
+  const labelled: Array<{ a: string; b: string; relation: string }> = [];
+  for (const [a, b] of pairs.slice(0, 60)) {
+    const answer = await generateAiText('research', [
+      'Do these two news items report the SAME happening (one event, statement or decision covered by different outlets),',
+      'RELATED happenings (different events in one ongoing situation), or are they UNRELATED (only a name or topic in common)?',
+      `A: ${a.title}${a.summary ? ` — ${a.summary}` : ''}`,
+      `B: ${b.title}${b.summary ? ` — ${b.summary}` : ''}`
+    ].join('\n'), 40, 0, 'Briefing storylines', undefined, true, { labels: ['same', 'related', 'unrelated'] });
+    labelled.push({ a: a.id, b: b.id, relation: labelFromAnswer(answer || '') });
+  }
+  const groups = (relations: string[]) => {
+    const parent = new Map<string, string>();
+    const find = (x: string): string => { const p = parent.get(x) ?? x; if (p === x) return x; const r = find(p); parent.set(x, r); return r; };
+    const linked = labelled.filter(p => relations.includes(p.relation));
+    for (const p of linked) parent.set(find(p.a), find(p.b));
+    const sets = new Map<string, string[]>();
+    for (const id of new Set(linked.flatMap(p => [p.a, p.b]))) { const r = find(id); sets.set(r, [...(sets.get(r) || []), id]); }
+    return [...sets.values()].filter(ids => ids.length > 1);
+  };
+  const duplicates = groups(['same']);
+  const storylines = new Map<string, string>();
+  const storylineWhy = new Map<string, string>();
+  for (const ids of groups(['same', 'related'])) {
+    if (duplicates.some(d => d.length === ids.length && d.every(x => ids.includes(x)))) continue;
+    const answer = await generateAiText('research', [
+      `Name the ongoing situation these news items belong to in at most 6 words, in ${briefingLanguage() === 'en' ? 'English' : 'Bulgarian'}. Use only what the headlines say.`,
+      ...ids.map(id => `- ${byId.get(id)?.title || ''}`)
+    ].join('\n'), 40, 0, 'Briefing storylines', undefined, true,
+      { schema: { type: 'object', additionalProperties: false, required: ['name'], properties: { name: { type: 'string' } } } });
+    let name = '';
+    try { name = String((JSON.parse(answer || '{}') as { name?: string }).name || '').trim(); } catch {}
+    // "Not confirmed" and similar are the model declining to name the situation, not a name.
+    if (!name || /потвърден|посочен|неясн|не знам|not (?:confirmed|stated|clear)|unclear|unknown/i.test(name)) continue;
+    for (const id of ids) storylines.set(id, name);
+    storylineWhy.set(name, briefingLanguage() === 'en' ? `${ids.length} reports about one ongoing situation.` : `${ids.length} новини за една и съща ситуация.`);
+  }
+  const duplicateWhy = duplicates.map(() => briefingLanguage() === 'en' ? 'The reports describe the same happening.' : 'Съобщенията описват едно и също събитие.');
+  return { duplicates, duplicateWhy, storylines, storylineWhy };
+}
+
+// On a local model the digest is written without new text: the top stories by score, one bullet each, made
+// of the story's own checked summary (or its headline). A small model asked to write the digest joined
+// unrelated stories into one bullet and turned the injured into the dead.
+function localBriefingDigest(items: DigestItem[]): DigestBullet[] {
+  const ranked = items.slice().sort((a, b) => b.score - a.score);
+  const text = (it: DigestItem) => {
+    const summary = String(it.summary || '').split(/\s\/\s/)[briefingLanguage() === 'en' ? 1 : 0] || it.summary || '';
+    return summary.trim() ? `${it.title.trim().replace(/[.!?]?$/, ':')} ${summary.trim()}` : it.title.trim();
+  };
+  const critical = ranked.filter(it => it.level === 'critical').slice(0, 3);
+  const leading = ranked.filter(it => !critical.includes(it) && it.level !== 'routine').slice(0, Math.max(0, 5 - critical.length));
+  const bullets: DigestBullet[] = [
+    ...critical.map(it => ({ kind: 'critical' as const, text: text(it), ids: [it.id] })),
+    ...leading.map(it => ({ kind: 'leading' as const, text: text(it), ids: [it.id] }))
+  ];
+  return bullets.length ? bullets : ranked.slice(0, 3).map(it => ({ kind: 'leading' as const, text: text(it), ids: [it.id] }));
 }
 
 type BriefingScope = { feedUrls?: string[]; onlyMatches?: boolean; label?: string };

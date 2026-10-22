@@ -45,7 +45,8 @@ const MAX_PAR = Number(process.env.MAX_PAR || 2);
 const BUSY_SHARE = Number(process.env.BUSY_SHARE || 0.4);
 const QUEUE_MAX = Number(process.env.QUEUE_MAX || 60);
 const WAIT_MS = Number(process.env.WAIT_MS || 10 * 60e3);
-const RUN_MS = Number(process.env.RUN_MS || 90e3);
+// Long enough for a briefing rating batch (about 1,500 words written at a busy model's pace).
+const RUN_MS = Number(process.env.RUN_MS || 300e3);
 
 let running = 0, busySince = 0;
 const busyLog = [];
