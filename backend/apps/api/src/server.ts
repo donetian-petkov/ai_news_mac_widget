@@ -7129,23 +7129,33 @@ async function localAskAgent(question: string, item: NewsInternal, chatResearch?
     .filter(Boolean).join('\n').replace(/"([^"\n]{1,80})"/g, '„$1“').replace(/"/g, '“').slice(0, 7000);
   if (!text.trim()) return undefined;
   const answer = await generateAiText('ask', [
-    'From the text below, list up to 4 facts that answer the question, each one short complete sentence, copied names and numbers exactly.',
-    'If the text does not answer the question, return an empty list.',
+    // Answers were thin (informative 2.7 vs 4.4): the facts now cover the stakes as well as the event.
+    'From the text below, list up to 5 facts that answer the question, each one short complete sentence, copied names and numbers exactly:',
+    'first what happened and who did it, then why it matters as the text states it (who is affected, the consequences, what comes next).',
+    'Return an empty list only when the text says nothing about the subject of the question.',
     `Write the facts in ${bg ? 'Bulgarian' : 'English'}.`,
     `Question: ${question}`,
     `Headline: ${item.title}`,
     `Text: ${text}`
   ].join('\n'), 360, 0, `Ask agent facts: ${item.source} - ${item.title}`, undefined, false, {
-    schema: { type: 'object', additionalProperties: false, required: ['facts'], properties: { facts: { type: 'array', maxItems: 4, items: { type: 'string' } } } }
+    schema: { type: 'object', additionalProperties: false, required: ['facts'], properties: { facts: { type: 'array', maxItems: 5, items: { type: 'string' } } } }
   });
   let facts: string[] = [];
   try { facts = ((JSON.parse(answer || '{}') as { facts?: string[] }).facts || []).map(f => String(f || '').trim()).filter(Boolean); } catch {}
   facts = facts.filter(f => f.split(/\s+/).length >= 4 && factIsGrounded(f, `${item.title} ${text}`));
+  // The story's own checked summary is a fact too: the model said "the article does not answer" about
+  // stories whose summary did. The half in the question's language is used.
+  if (!facts.length && item.summary) {
+    const halves = item.summary.split(' / ').map(x => x.trim()).filter(Boolean);
+    const own = halves.find(h => /[а-яА-Я]/.test(h) === bg);
+    if (own) facts = [own];
+  }
   if (!facts.length) {
     return bg ? 'Статията не дава отговор на този въпрос.' : 'The article does not answer this question.';
   }
   const reply = await generateAiText('ask', [
     `Answer the question in ${bg ? 'Bulgarian' : 'English'} in at most 80 words, using only these facts. Add nothing else.`,
+    'Say the main point first, then why it matters. If no fact says why it matters, say that the text does not say; do not list other things the text leaves out.',
     `Question: ${question}`,
     'Facts:',
     ...facts.map(f => `- ${f}`)

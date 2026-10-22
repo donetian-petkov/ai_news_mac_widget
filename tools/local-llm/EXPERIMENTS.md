@@ -67,9 +67,13 @@ trying anything, so nothing that already failed is tried again.
 | 10-22 | neutral title | judge counts "kept the calm headline" | 40 | 7/18/15, major errors 8 vs 10 | at cloud level |
 | 10-22 | Ask | cloud prompt + rules | 15 | 2/0/13, major errors 10 vs 3 | replaced |
 | 10-22 | Ask | facts that answer → answer from them | 15 | 5/0/10 and 4/0/11, major errors 5 vs 6 and 4 vs 3 | keep; thin |
+| 10-22 | Ask | facts cover why it matters too; main point first, then why; the checked summary is used when no fact is found; no lists of what the text leaves out | 10 (same as the 40-story run) | 3/0/7 (before 2/0/8), major errors 3 (before 5), informative 3.2 (before 3.0); all 10 answered with briefings running, none timed out | keep; still thin on why it matters |
 | 10-22 | briefing | cloud calls as-is | 1 | timed out, keyword fallback | replaced |
 | 10-22 | briefing | AI-written digest | 1 | mixed unrelated stories, "injured" became "killed" | digest = top stories' own summaries |
 | 10-22 | briefing | digest from summaries | 1 | digest accuracy 5 vs 5, 0 major errors; ranking 1 vs 4 (server stopped mid-run) | rerun ranking |
+| 10-22 | briefing | built at the same moment as the cloud (earlier runs compared different 24-hour windows) | 1 | digest accuracy 5 vs 5, usefulness 2 vs 5, ranking 2 vs 4; 529 s vs 38 s | the cloud's top 3 (PHP alert, Zelensky, diesel tanker) were never rated: the keyword score kept them out of the local 20 |
+| 10-22 | briefing | each reason before its score | 1 | accuracy 4, usefulness 2, ranking 2; 531 s | no gain, reverted |
+| 10-22 | briefing | scores only (reasons ~320 tokens a story), 8 stories a call, as many stories as the cloud | 1 | 70 rated (PHP alert, Zelensky now scored), 480 s; accuracy 5, usefulness 2, ranking 2, storylines 2 (before 4), 1 major error; scores coarse (0-3, many ties), a house fire with one death got severity 3 | no gain, reverted; the scores themselves are the limit |
 
 ## Lessons
 
