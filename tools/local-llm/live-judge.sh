@@ -4,11 +4,13 @@
 # newest major local error. Usage: live-judge.sh <battery work dir>
 W=${1:?}; K=$(cd "$(dirname "$0")" && pwd); done_file="$W/live-judged.txt"; touch "$done_file"
 cols="summary titleBg neutralTitleStatus research mood newsType"
+# Only the run's own stories: older ones keep the real app's output in both copies and showed as ties.
+IN=$(python3 -c "import sys; print(','.join(\"'\"+l.strip().replace(\"'\",\"''\")+\"'\" for l in open(sys.argv[1]) if l.strip()))" "$W/ids.txt")
 while true; do
   for tool in summary research mood newsType; do
     col=$tool; [ $tool = newsType ] && col=newsType
-    sqlite3 -readonly "$W/local.db" "SELECT key FROM NewsItemRecord WHERE key IN (SELECT key FROM NewsItemRecord ORDER BY publishedMs DESC LIMIT 40) AND $col IS NOT NULL AND $col <> ''" 2>/dev/null | sort > "$W/l.$tool"
-    sqlite3 -readonly "$W/cloud.db" "SELECT key FROM NewsItemRecord WHERE key IN (SELECT key FROM NewsItemRecord ORDER BY publishedMs DESC LIMIT 40) AND $col IS NOT NULL AND $col <> ''" 2>/dev/null | sort > "$W/c.$tool"
+    sqlite3 -readonly "$W/local.db" "SELECT key FROM NewsItemRecord WHERE key IN ($IN) AND $col IS NOT NULL AND $col <> ''" 2>/dev/null | sort > "$W/l.$tool"
+    sqlite3 -readonly "$W/cloud.db" "SELECT key FROM NewsItemRecord WHERE key IN ($IN) AND $col IS NOT NULL AND $col <> ''" 2>/dev/null | sort > "$W/c.$tool"
     comm -12 "$W/l.$tool" "$W/c.$tool" | while read -r k; do grep -qxF "$tool|$k" "$done_file" || echo "$k"; done > "$W/new.$tool"
     if [ -s "$W/new.$tool" ]; then
       (cd "$K" && ONLY_TOOLS=$tool node judge-tools.mjs "$W/local.db" "$W/cloud.db" "$W/new.$tool" "$W/live-$tool-$(date +%s).json" > /dev/null 2>&1)
