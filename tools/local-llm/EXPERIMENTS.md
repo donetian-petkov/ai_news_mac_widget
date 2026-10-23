@@ -137,3 +137,20 @@ Per-story tools took 2,921 s local vs 1,073 s cloud; briefing 553 s vs 114 s. Th
 battery.sh was edited while it ran, and bash read the shifted file ("line 70: n: command not found").
 Never edit a script that is running.
 
+## 20-story run, 10-23 11:02 (this morning's news, every fix up to the article reading; judged with the articles)
+
+| Tool | Local / tie / cloud | Major errors local vs cloud |
+|---|---|---|
+| Summary | 6 / 0 / 14 | 7 vs 4 |
+| Title BG | 0 / 17 / 3 | 1 vs 1 |
+| Title EN | 2 / 7 / 11 | 3 vs 0 |
+| Neutral title | 2 / 10 / 8 | 4 vs 4 |
+| Research | 1 / 0 / 9 | 5 vs 3 |
+| Mood | 3 / 7 / 10 | 4 vs 2 |
+| News type | 0 / 18 / 2 | 0 vs 0 |
+| Ask | 3 / 0 / 7 | 7 vs 3 |
+| Briefing | digest accuracy 5 vs 5, usefulness 3 vs 5, ranking 2 vs 5 | 1 vs 0 |
+
+Per-story tools took 1,178 s local vs 604 s cloud; briefing 357 s vs 70 s. Ask was 6/0/9 with 3 vs 8 errors
+on yesterday's 15: one pool of 10 is noise.
+
