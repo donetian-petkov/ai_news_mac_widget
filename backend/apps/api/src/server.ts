@@ -6587,6 +6587,8 @@ async function localSummary(feedUrl: string, title: string, source: string, text
     const verdict = await generateAiText('summary', [
       'For each numbered sentence: does the text fully support it, with the same people, numbers, places, dates,',
       'who said or did what, and the same certainty (a claim or a possibility is not a fact)? List the numbers of the supported ones.',
+      // A shortened sentence moved the action to another thing ("the funding was cancelled" when the tender was).
+      'A sentence is not supported if what it says happened did not happen to that same thing in the text.',
       'Then give the number of the supported sentence a reader who has seen only the headline most needs: the main news, not a side detail.',
       ...candidates.map((c, i) => `${i + 1}. ${c}`),
       `Text: ${body}`
