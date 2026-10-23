@@ -6953,7 +6953,8 @@ async function localResearch(
   const sources = [{ name: source, text: articleText }, ...otherReports.map(r => ({ name: outletName(r.source, ''), text: `${r.title}\n${r.text}` }))]
     .filter(x => x.text.trim());
   if (!sources.length) return undefined;
-  const sourceText = sources.map(x => `[${x.name}]\n${x.text.slice(0, 5000)}`).join('\n\n').slice(0, 9000);
+  // HTML codes (&ldquo;) were copied into notes as they stood.
+  const sourceText = sources.map(x => `[${x.name}]\n${decodeHtmlEntities(x.text).slice(0, 5000)}`).join('\n\n').slice(0, 9000);
   const factsAnswer = await generateAiText('research', [
     'List up to 8 facts from these texts that the summary below does not already say, the most important first.',
     'Cover what a reader needs beyond the summary: what exactly happened, who is involved and their role, the numbers,',
