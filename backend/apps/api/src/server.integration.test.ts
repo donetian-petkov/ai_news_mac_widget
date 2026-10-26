@@ -25,7 +25,9 @@ const healthUrl = `http://127.0.0.1:${apiPort}/health`;
 
 const distDir = path.resolve(__dirname, '../dist');
 const serverEntry = path.join(distDir, 'server.js');
-const dataDir = path.join(distDir, '.data');
+// The test server's own data folder: the running app rewrites dist/.data/state.json every few seconds, so a seed
+// written there was overwritten before the test server read it, and the test was writing into the app's files.
+const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ai-news-api-int-data-'));
 const statePath = path.join(dataDir, 'state.json');
 
 let apiProc: ChildProcess | null = null;
@@ -61,7 +63,9 @@ async function waitForHealth() {
 
 function seedStateFile() {
   const seededState = {
-    version: 1,
+    // The server's current state version: an older one gets the default feeds added on load (the upgrade steps),
+    // and the test server then fetched live news that pushed the seeded story out of the first snapshot.
+    version: 4,
     keywords: [],
     feeds: [
       { url: 'http://127.0.0.1:9/rss', label: 'Seed Feed', kind: 'rss', intervalSec: 300 }
@@ -142,7 +146,8 @@ async function startApi() {
     // Never touch the real app's runtime file: the installed app follows it to find its backend,
     // so a test server writing there makes the app switch to a server that is about to exit.
     AI_NEWS_MAC_WIDGET_RUNTIME_FILE: path.join(os.tmpdir(), `ai-news-api-int-runtime-${Date.now()}.json`),
-    DATABASE_URL: `file:${dbPath}`
+    DATABASE_URL: `file:${dbPath}`,
+    AI_NEWS_DATA_DIR: dataDir
   };
 
   // The server expects the full schema, so build it in the throwaway test DB first, the same
@@ -302,13 +307,15 @@ describe('api integration: keyword rematch', () => {
     }
     const { ws, messages } = await collectWsMessages(wsUrl);
     try {
-      await waitFor(
-        () => messages.some(m => m.type === 'config') && messages.some(m => m.type === 'news' && m.id === 'seed-news-1'),
-        8_000,
-        'initial config and seeded news snapshot'
-      );
+      await waitFor(() => messages.some(m => m.type === 'config'), 8_000, 'initial config');
+      // Stories are not pushed on connect any more: a client asks for each feed's page, as the app does.
+      ws.send(JSON.stringify({ type: 'load_feed_page', feedUrl: 'http://127.0.0.1:9/rss', limit: 20, replace: true }));
+      const seededIn = (m: Record<string, unknown>) =>
+        m.type === 'feed_page' && Array.isArray(m.items) && (m.items as WireNews[]).some(item => item.id === 'seed-news-1');
+      await waitFor(() => messages.some(seededIn), 8_000, 'seeded news in the feed page');
 
-      const initialNews = messages.find((m): m is WireNews => m.type === 'news' && m.id === 'seed-news-1');
+      const page = messages.find(seededIn) as { items: WireNews[] };
+      const initialNews = page.items.find(item => item.id === 'seed-news-1');
       expect(initialNews?.isMatch).toBe(false);
 
       ws.send(JSON.stringify({ type: 'set_keywords', keywords: 'energy, crisis' }));

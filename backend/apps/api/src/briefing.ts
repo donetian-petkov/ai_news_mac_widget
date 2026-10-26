@@ -47,8 +47,8 @@ export type BriefingStory = {
   impact?: string;
   coverUrl?: string;
   /**
-   * The start of the article or feed text. It carries the dates a short summary can drop ("in the second half
-   * of August, fires..."), so the AI can tell a recalled event from today's news even with an older summary.
+   * The start of the article or feed text. It carries the dates a short summary can drop, so the AI can tell a
+   * recalled event from today's news even with an older summary.
    */
   articleStart?: string;
 };
@@ -83,9 +83,9 @@ export type AiStoryRating = {
   dimension: ImpactDimension;
   impacts: StoryImpacts;
   /**
-   * "background" when the story mainly looks back at earlier events (an analysis of last summer's fires) rather
-   * than reporting something new in this period. The code caps such a story's severity and urgency, since the
-   * model scored recalled fires as current even when it named their month.
+   * "background" when the story mainly looks back at earlier events rather than reporting something new in this
+   * period. The code caps such a story's severity and urgency, since the model scored a recalled event as current
+   * even when it named the month it happened in.
    */
   timing?: 'new' | 'background';
 };
@@ -558,7 +558,7 @@ function titleKeys(title: string): { keys: Set<string>; names: Set<string> } {
   const tokens = String(title || '').split(/[^\p{L}\p{N}]+/u).filter(Boolean);
   const capitalised = (token: string) => /^\p{Lu}/u.test(token);
   // The first word is capitalised in any headline, so it says nothing about Title Case. Title Case is an English
-  // habit: a short Cyrillic headline with three names ("В Пловдив Гюров побеждава Йотова") is not it.
+  // habit: a short Cyrillic headline with two or three names in it is not Title Case.
   const rest = tokens.slice(1);
   const latinScript = !/\p{Script=Cyrillic}/u.test(String(title || ''));
   const titleCase = latinScript && rest.filter(token => token.length > 1 && capitalised(token)).length > rest.length / 2;
@@ -566,7 +566,7 @@ function titleKeys(title: string): { keys: Set<string>; names: Set<string> } {
   const names = new Set<string>();
   tokens.forEach((token, index) => {
     const name = !titleCase && index > 0 && capitalised(token) && token.length >= 3;
-    // A name keeps its vowels: a consonant skeleton loses short names ("Йотова" would be "tv").
+    // A name keeps its vowels: a consonant skeleton loses short names (a six-letter name could shrink to two letters).
     if (name) names.add(Array.from(token.toLowerCase(), letter => LATIN_OF[letter] ?? letter).join('').slice(0, 5));
     const key = wordKey(token);
     if (key.length < 3) return;
@@ -631,12 +631,12 @@ export function clusterStories(stories: BriefingStory[], loose = true, exactOnly
 // ---- AI rating ----
 
 /**
- * Articles retell earlier events as background ("in the second half of August, fires in Serbia..."). A summary
- * that drops the date makes old fires read as today's news, and every later step (rating, the briefing's
- * summary) believes it. Every prompt that writes text for the reader carries this rule too.
+ * Articles retell earlier events as background. A summary that drops the date makes an old event read as today's
+ * news, and every later step (rating, the briefing's summary) believes it. Every prompt that writes text for the
+ * reader carries this rule too.
  */
 export const PAST_EVENTS_RULE = [
-  'When the text tells of something that happened earlier (last summer, in August, years ago) as background,',
+  'When the text tells of something that happened earlier (weeks, months or years ago) as background,',
   'say when it happened or leave it out; never write it as if it is happening now. The news is what the text reports as new.'
 ].join(' ');
 
@@ -667,14 +667,14 @@ export function buildAiRatingPrompt(candidates: AiRatingCandidate[], language: '
     '  interestWhy names the most surprising thing about the story, which is usually its main claim in the headline',
     '  (a car that flies, not its acceleration). Use a side detail or a number only when that detail is itself the surprise.',
     '  The summary adds details the headline leaves out; read both before deciding what the story is about.',
-    'A roundup headline lists several stories ("Three minutes: A. B. C.", "Morning briefing: A; B"): rate the story its',
+    'A roundup headline lists several stories ("Roundup: A. B. C."): rate the story its',
     'headline names first, even when the summary describes a later item.',
-    'Rate what is new in this period. A feature or analysis that recalls earlier events (last summer\'s fires, an old',
-    'scandal) is about its present subject; the recalled events do not count for severity, scale or urgency.',
+    'Rate what is new in this period. A feature or analysis that recalls earlier events is about its present',
+    'subject; the recalled events do not count for severity, scale or urgency.',
     'Set "timing": "new" when the story reports something that happened or was announced in the last few days,',
     '"background" when it mainly looks back at earlier events (weeks or months ago) or explains a long-running situation.',
-    'Decisions on who governs a country (a national election or its result, a referendum, a government falling or',
-    'being formed) score at least 2 for severity and 2 for scale.',
+    'Decisions on who governs a country (a nationwide vote or its result, a government falling or being formed)',
+    'score at least 2 for severity and 2 for scale.',
     'For each criterion add "<criterion>Why": at most 15 words naming the fact, e.g. "29 pupils killed when a school roof fell in Khyber Pakhtunkhwa".',
     'Fill it for low scores too, saying what this story lacks, e.g. severityWhy "A TV casting change; no one is harmed and no money is at stake".',
     `Pick one dimension from: ${IMPACT_DIMENSIONS.join(', ')}.`,
@@ -783,9 +783,9 @@ export function buildStorylinePrompt(items: GroupingItem[], language: 'en' | 'bg
     '   Put an item in a storyline only if its subject IS that situation. A sports, celebrity or entertainment item',
     '   never joins a war, politics or economy storyline, even when it uses words like "war", "attack" or "drama".',
     `   Give each a 2-5 word label, a "why" sentence saying how its items connect, and the ids that belong to it.`,
-    '   One big event seen from many angles is ONE storyline even when every headline differs: an election (results,',
-    '   turnout, the candidates\' reactions, the vote abroad, what comes next), a disaster (damage, victims, rescue,',
-    '   blame) or a trial (charges, hearings, verdict). Put every item about it in that storyline.',
+    '   One big event seen from many angles is ONE storyline even when every headline differs: its outcome, the',
+    '   numbers, the reactions of the people involved, the analysis and what comes next are all the same storyline.',
+    '   Put every item about it in that storyline.',
     '   "namesSameAs" lists items whose headlines name a person, party or place this one also names: check them first.',
     '   An item can be in at most one storyline. Most items belong to none.',
     '3. "resolutions": events that began AND were resolved within these items: a later item ends what an earlier one',
@@ -959,9 +959,9 @@ function withStorylineCoverage(entries: RatedStory[], aiRan: boolean, language: 
 }
 
 /**
- * Names many outlets put in their headlines in the same period: the mark of a big event (an election's two
- * candidates, a disaster's town). Headlines about it often carry none of the keywords ("Yotova leads with 35%
- * at 47% of the protocols"), so without this the keyword pre-ranking can keep the whole event from the AI.
+ * Names many outlets put in their headlines in the same period: the mark of a big event (the people at its
+ * centre, the place it happens). Headlines about it often carry none of the keywords (a count, a result, a
+ * reaction), so without this the keyword pre-ranking can keep the whole event from the AI.
  * A name counts when at least `minHeadlines` headlines from at least `minSources` outlets carry it, and it is
  * not in most headlines of the period.
  */
@@ -971,7 +971,7 @@ export function burstNames(stories: BriefingStory[], minHeadlines = 6, minSource
   const byName = new Map<string, BriefingStory[]>();
   for (const story of stories) {
     const names = new Set(titleKeys(story.title).names);
-    // A headline that opens with a name ("Гюров печели...") counts it, when other headlines show it is a name.
+    // A headline that opens with a name counts it, when other headlines show it is a name.
     const first = String(story.title || '').split(/[^\p{L}\p{N}]+/u).find(Boolean) || '';
     if (first.length >= 3 && known.has(nameKey(first))) names.add(nameKey(first));
     for (const name of names) byName.set(name, [...(byName.get(name) || []), story]);
@@ -1056,9 +1056,8 @@ export function buildDigestPrompt(items: DigestItem[], language: 'en' | 'bg', re
     `- ${LITERAL_FACTS_RULE} The story summaries below may themselves repeat a headline's figure of speech; do not copy it.`,
     '- A story with "resolved" began and ended within this period: give it one bullet that says how it ended.',
     '- "articleStart" is the start of the story\'s article: check it for when things happened, since a summary can drop the date.',
-    '- Report what happened in this period. When a story only recalls earlier events (an analysis of last summer\'s',
-    '  fires), its news is its present subject; never write the recalled events as if they happened now, and if you',
-    '  mention them say when they happened.',
+    '- Report what happened in this period. When a story only recalls earlier events, its news is its present',
+    '  subject; never write the recalled events as if they happened now, and if you mention them say when they happened.',
     '- Finish with one bullet of kind "interesting" for the most surprising or unusual story not covered above, if any.',
     '- kind: "critical" for bullets about stories rated critical, "leading" for the other important ones, "interesting" for the last.',
     '- ids: the ids of the stories the bullet is about.',

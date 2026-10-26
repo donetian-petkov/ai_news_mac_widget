@@ -2599,7 +2599,8 @@ function extractOpenAiLikeText(resp: any): { text: string; extractionSource: str
 }
 
 // ---------------- Persistence (JSON) ----------------
-const DATA_DIR = path.join(__dirname, '.data');
+// AI_NEWS_DATA_DIR lets a test server keep its files apart: the running app rewrites its own .data/state.json.
+const DATA_DIR = process.env.AI_NEWS_DATA_DIR || path.join(__dirname, '.data');
 const STATE_PATH = path.join(DATA_DIR, 'state.json');
 const APP_STATE_ROW_ID = 1;
 
