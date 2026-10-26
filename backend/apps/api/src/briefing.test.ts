@@ -209,6 +209,17 @@ describe('parseAiRatings', () => {
     }]);
     expect(parseAiRatings('not json')).toEqual([]);
   });
+
+  it('caps severity and urgency of a story the AI marks as looking back at earlier events', async () => {
+    const [background] = parseAiRatings('{"ratings":[{"id":"fires","timing":"background","severity":3,"scale":3,"urgency":3,"interest":2,"dimension":"environment"}]}');
+    expect(background.timing).toBe('background');
+    const { buildBriefing } = await import('./briefing.js');
+    const briefing = await buildBriefing([story({ id: 'fires', title: 'Защо България все още няма летателна техника за гасене на пожари' })], {
+      period: 'hour', scope: 'All', window: hour, language: 'bg', rateWithAi: async () => [background]
+    });
+    const data = pageData(briefing.html);
+    expect(data.stories[0].scores).toMatchObject({ severity: 1, urgency: 1, scale: 3 });
+  });
 });
 
 function pageData(html: string) {
@@ -557,6 +568,8 @@ describe('prompt rules for big events, roundups and recalled events', () => {
     expect(rating).toContain('Decisions on who governs a country');
     expect(buildDigestPrompt([], 'bg', 'България')).toContain('never write the recalled events as if they happened now');
     expect(buildDigestPrompt([], 'bg', 'България')).toContain('leads with its main outcome');
+    expect(buildDigestPrompt([], 'bg', 'България')).toContain('check it for when things happened');
+    expect(rating).toContain('articleStart (the start of the article');
     const { PAST_EVENTS_RULE } = await import('./briefing.js');
     expect(PAST_EVENTS_RULE).toContain('say when it happened or leave it out');
   });

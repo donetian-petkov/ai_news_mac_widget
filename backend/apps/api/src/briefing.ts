@@ -46,6 +46,11 @@ export type BriefingStory = {
   /** "Why it matters" text the story-impact AI feature already wrote, if any. */
   impact?: string;
   coverUrl?: string;
+  /**
+   * The start of the article or feed text. It carries the dates a short summary can drop ("in the second half
+   * of August, fires..."), so the AI can tell a recalled event from today's news even with an older summary.
+   */
+  articleStart?: string;
 };
 
 export const CRITERIA = ['severity', 'scale', 'urgency', 'interest', 'coverage', 'relevance'] as const;
@@ -77,6 +82,12 @@ export type AiStoryRating = {
   interestWhy: string;
   dimension: ImpactDimension;
   impacts: StoryImpacts;
+  /**
+   * "background" when the story mainly looks back at earlier events (an analysis of last summer's fires) rather
+   * than reporting something new in this period. The code caps such a story's severity and urgency, since the
+   * model scored recalled fires as current even when it named their month.
+   */
+  timing?: 'new' | 'background';
 };
 
 export type AiRatingCandidate = {
@@ -85,6 +96,7 @@ export type AiRatingCandidate = {
   summary: string;
   source: string;
   alsoReportedBy: string[];
+  articleStart?: string;
 };
 
 export type PriorityLevel = 'critical' | 'high' | 'notable' | 'routine';
@@ -643,7 +655,7 @@ export const LITERAL_FACTS_RULE = [
 export function buildAiRatingPrompt(candidates: AiRatingCandidate[], language: 'en' | 'bg', region: string): string {
   return [
     `You are a news editor rating how much each story matters to an ordinary reader in ${region || 'their country'}.`,
-    'Use only each headline and summary. Be specific to each story: every explanation must name the concrete fact behind it',
+    'Use only each headline, summary and articleStart (the start of the article, which gives dates the summary may leave out). Be specific to each story: every explanation must name the concrete fact behind it',
     '(a number, place, person, decision, amount or date). Never write generic phrases such as "significant impact",',
     '"important development", "affects many people" or "relevant to readers".',
     LITERAL_FACTS_RULE,
@@ -659,13 +671,15 @@ export function buildAiRatingPrompt(candidates: AiRatingCandidate[], language: '
     'headline names first, even when the summary describes a later item.',
     'Rate what is new in this period. A feature or analysis that recalls earlier events (last summer\'s fires, an old',
     'scandal) is about its present subject; the recalled events do not count for severity, scale or urgency.',
+    'Set "timing": "new" when the story reports something that happened or was announced in the last few days,',
+    '"background" when it mainly looks back at earlier events (weeks or months ago) or explains a long-running situation.',
     'Decisions on who governs a country (a national election or its result, a referendum, a government falling or',
     'being formed) score at least 2 for severity and 2 for scale.',
     'For each criterion add "<criterion>Why": at most 15 words naming the fact, e.g. "29 pupils killed when a school roof fell in Khyber Pakhtunkhwa".',
     'Fill it for low scores too, saying what this story lacks, e.g. severityWhy "A TV casting change; no one is harmed and no money is at stake".',
     `Pick one dimension from: ${IMPACT_DIMENSIONS.join(', ')}.`,
     `Write every text field in ${language === 'bg' ? 'Bulgarian' : 'English'}.`,
-    'Return strict JSON only: {"ratings":[{"id":"...","severity":0,"severityWhy":"...","scale":0,"scaleWhy":"...","urgency":0,"urgencyWhy":"...","interest":0,"interestWhy":"...","dimension":"economy"}]}',
+    'Return strict JSON only: {"ratings":[{"id":"...","timing":"new","severity":0,"severityWhy":"...","scale":0,"scaleWhy":"...","urgency":0,"urgencyWhy":"...","interest":0,"interestWhy":"...","dimension":"economy"}]}',
     'Include every candidate exactly once.',
     `Candidates: ${JSON.stringify(candidates)}`
   ].join('\n');
@@ -706,7 +720,8 @@ export function parseAiRatings(text: string): AiStoryRating[] {
       interest: clamp(item.interest as number),
       interestWhy: textOf(item.interestWhy, 200),
       dimension: IMPACT_DIMENSIONS.includes(item.dimension as ImpactDimension) ? item.dimension as ImpactDimension : 'other',
-      impacts
+      impacts,
+      ...(item.timing === 'background' || item.timing === 'new' ? { timing: item.timing as 'new' | 'background' } : {})
     }];
   });
 }
@@ -1015,6 +1030,8 @@ export type DigestItem = {
   resolved?: string;
   /** The storyline's other headlines, so a bullet can state its outcome even when another story reports it. */
   alsoInStoryline?: string[];
+  /** The start of the article: the dates a summary can drop. */
+  articleStart?: string;
 };
 
 /**
@@ -1038,6 +1055,7 @@ export function buildDigestPrompt(items: DigestItem[], language: 'en' | 'bg', re
     '  "significant development" or "affects many people".',
     `- ${LITERAL_FACTS_RULE} The story summaries below may themselves repeat a headline's figure of speech; do not copy it.`,
     '- A story with "resolved" began and ended within this period: give it one bullet that says how it ended.',
+    '- "articleStart" is the start of the story\'s article: check it for when things happened, since a summary can drop the date.',
     '- Report what happened in this period. When a story only recalls earlier events (an analysis of last summer\'s',
     '  fires), its news is its present subject; never write the recalled events as if they happened now, and if you',
     '  mention them say when they happened.',
@@ -1077,8 +1095,16 @@ function applyAiRating(rule: StoryRating, ai: AiStoryRating): StoryRating {
   for (const key of Object.keys(judged) as Array<keyof typeof judged>) {
     notes[key] = judged[key] || rule.notes[key];
   }
+  // A look back is not news of this period: whatever harm it recalls already happened.
+  const background = ai.timing === 'background';
   return {
-    scores: { ...rule.scores, severity: ai.severity, scale: ai.scale, urgency: ai.urgency, interest: ai.interest },
+    scores: {
+      ...rule.scores,
+      severity: background ? Math.min(ai.severity, 1) : ai.severity,
+      scale: ai.scale,
+      urgency: background ? Math.min(ai.urgency, 1) : ai.urgency,
+      interest: ai.interest
+    },
     notes,
     dimension: ai.dimension,
     impacts: ai.impacts,
@@ -1960,7 +1986,8 @@ export async function buildBriefing(stories: BriefingStory[], options: BriefingO
       title: entry.story.title,
       summary: String(entry.story.summary || '').slice(0, 400),
       source: String(entry.story.source || ''),
-      alsoReportedBy: distinctSources(entry.related)
+      alsoReportedBy: distinctSources(entry.related),
+      ...(entry.story.articleStart ? { articleStart: entry.story.articleStart.slice(0, 400) } : {})
     });
     // Small batches in parallel: each answer stays short enough to finish, and one failed
     // batch only leaves its own stories on rule ratings.
@@ -2031,6 +2058,7 @@ export async function buildBriefing(stories: BriefingStory[], options: BriefingO
         storyline: entry.storyline || '',
         sources: distinctSources([entry.story, ...entry.related]).length,
         impacts: entry.rating.impacts,
+        ...(entry.story.articleStart ? { articleStart: entry.story.articleStart.slice(0, 300) } : {}),
         ...(entry.storyline
           ? { alsoInStoryline: merged.filter(other => other !== entry && other.storyline === entry.storyline).map(other => other.story.title).slice(0, 10) }
           : {}),

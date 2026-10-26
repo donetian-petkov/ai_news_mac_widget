@@ -10730,7 +10730,8 @@ async function generateBriefing(period: BriefingPeriod, window: { startMs: numbe
       publishedMs: item.publishedMs,
       summary: item.summary,
       impact: item.insights?.impact?.summary,
-      coverUrl: item.coverUrl
+      coverUrl: item.coverUrl,
+      articleStart: String((item as { __ctx?: string; contextText?: string }).__ctx || (item as { contextText?: string }).contextText || '').slice(0, 600) || undefined
     }));
   const feedUrlById = new Map(stories.map(story => [story.id, story.feedUrl]));
   const bg = briefingLanguage() === 'bg';
