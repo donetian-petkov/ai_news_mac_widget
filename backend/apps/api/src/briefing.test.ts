@@ -8,6 +8,8 @@ import {
   createBriefingStore,
   levelOf,
   applyGrouping,
+  sharedNameHints,
+  burstNames,
   parseAiRatings,
   parseDigest,
   parseStorylines,
@@ -175,6 +177,21 @@ describe('applyGrouping', () => {
       entry('cska', 30, 'sports'), entry('coach', 28, 'sports')
     ], groups);
     expect(grouped.map(g => g.storyline)).toEqual(['Ukraine war', 'Ukraine war', undefined, 'CSKA', 'CSKA']);
+  });
+
+  it("gives a storyline's strongest story the coverage of the whole storyline", () => {
+    // Four angles on one election, each from a different outlet: one by one each looks single-source.
+    const groups = parseStorylines(JSON.stringify({ storylines: [{ label: 'Presidential election', ids: ['results', 'turnout', 'reactions', 'abroad'] }] }));
+    const rows = [entry('fire', 60, 'environment'), entry('results', 55, 'politics'), entry('turnout', 40, 'politics'), entry('reactions', 35, 'politics'), entry('abroad', 30, 'politics')];
+    const grouped = applyGrouping(rows, groups, true, 'en');
+    const lead = grouped.find(g => g.story.id === 'results')!;
+    expect(lead.rating.scores.coverage).toBe(3);
+    expect(lead.rating.notes.coverage).toBe('4 sources cover this storyline: results, turnout, reactions, abroad');
+    expect(lead.score).toBe(scoreOf(lead.rating.scores));
+    expect(lead.score).toBeGreaterThan(scoreOf({ ...lead.rating.scores, coverage: 0 }));
+    // Only the lead takes it, so one event does not fill the page with "widely covered" rows.
+    expect(grouped.find(g => g.story.id === 'turnout')!.rating.scores.coverage).toBe(0);
+    expect(grouped.find(g => g.story.id === 'fire')!.score).toBe(60);
   });
 
   it('ignores a duplicate list so long it must be a whole topic, not one happening', () => {
@@ -506,5 +523,58 @@ describe('sameEventTitles', () => {
     expect(sameEventTitles('Пороен дъжд наводни Истанбул, трима загинали', 'Трима загинали при наводнения в Истанбул след пороен дъжд')).toBe(true);
     expect(sameEventTitles('Путин предложи среща с Тръмп и Си за бъдещето на Украйна', 'Без Зеленски и Европа: Путин опитва да организира среща с Тръмп и Си Дзинпин за Украйна')).toBe(true);
     expect(sameEventTitles('Зеленски обсъди войната с европейските лидери', 'Зеленски посети болница в Лвов')).toBe(false);
+  });
+});
+
+describe('sharedNameHints', () => {
+  it('links headlines that name the same person, but not by a name in most of them', () => {
+    const titles = [
+      ['a', 'Три минути: Йотова и Гюров отиват на балотаж'],
+      ['b', 'Ако Йотова загуби - губи Радев'],
+      ['c', 'Пожар в склад край Пловдив'],
+      ['d', 'Ден за България: Гюров печели вота от чужбина'],
+      ['e', 'Цените в България растат'],
+      ['f', 'Футбол: България би Унгария'],
+      ['g', 'Министър в България подаде оставка'],
+      ['h', 'Сняг затвори пътя за Банско']
+    ].map(([id, title]) => story({ id, title }));
+    const hints = sharedNameHints(titles);
+    expect(hints.get('a')).toEqual(['b', 'd']);
+    expect(hints.get('b')).toEqual(['a']);
+    // "България" is in half the headlines: too common to tie stories together.
+    expect(hints.get('e')).toBeUndefined();
+    expect(hints.get('c')).toBeUndefined();
+  });
+});
+
+describe('prompt rules for big events, roundups and recalled events', () => {
+  it('asks to group the angles of one big event, rate a roundup by its first item and not count recalled events', async () => {
+    const { buildAiRatingPrompt, buildStorylinePrompt, buildDigestPrompt } = await import('./briefing.js');
+    expect(buildStorylinePrompt([], 'bg')).toContain('One big event seen from many angles is ONE storyline');
+    const rating = buildAiRatingPrompt([], 'bg', 'България');
+    expect(rating).toContain('rate the story its');
+    expect(rating).toContain('the recalled events do not count');
+    expect(rating).toContain('Decisions on who governs a country');
+    expect(buildDigestPrompt([], 'bg', 'България')).toContain('never write the recalled events as if they happened now');
+    expect(buildDigestPrompt([], 'bg', 'България')).toContain('leads with its main outcome');
+    const { PAST_EVENTS_RULE } = await import('./briefing.js');
+    expect(PAST_EVENTS_RULE).toContain('say when it happened or leave it out');
+  });
+});
+
+describe('burstNames', () => {
+  it('finds the names many outlets put in their headlines, without needing any keyword', () => {
+    const results = ['Илияна Йотова е на първо място с 35%', 'Андрей Гюров е на второ място с 31%', 'Разликата между Гюров и Йотова е под 3 пункта',
+      'ЦИК: Йотова води пред Гюров с 2,6 пункта', 'Гюров печели вота от чужбина', 'Йотова и Гюров отиват на балотаж', 'В Пловдив Гюров побеждава Йотова']
+      .map((title, i) => story({ id: `r${i}`, title, source: ['dnevnik', 'standart', 'actualno', 'bta'][i % 4] }));
+    const other = Array.from({ length: 10 }, (_, i) => story({ id: `o${i}`, title: `Новина за Пловдив номер ${i}`, source: 'dnevnik' }));
+    const bursts = burstNames([...results, ...other], 5, 3);
+    // "Йотова и Гюров отиват..." and "Гюров печели..." open with the name and still count; "В Пловдив Гюров
+    // побеждава Йотова" is not mistaken for an English Title Case headline.
+    expect([...bursts.keys()].sort()).toEqual(['gyuro', 'yotov']);
+    expect(bursts.get('yotov')!.length).toBe(5);
+    expect(bursts.get('gyuro')!.length).toBe(6);
+    // One outlet repeating a name is not a big event.
+    expect(burstNames(other.map(o => ({ ...o, title: `Иван Петров ${o.id}` }))).size).toBe(0);
   });
 });

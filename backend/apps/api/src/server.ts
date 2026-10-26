@@ -21,6 +21,7 @@ import {
   buildBriefing,
   buildDigestPrompt,
   LITERAL_FACTS_RULE,
+  PAST_EVENTS_RULE,
   buildStorylinePrompt,
   createBriefingStore,
   sameEventTitles,
@@ -5221,7 +5222,7 @@ function generateDailyBriefingPayload(
 }
 
 function summaryInstruction(lang: SummaryLang): string {
-  const quality = `Use the context/article text, not the headline alone. Add one concrete detail that is NOT already in the headline. If no extra factual detail is available, return exactly NO_SUMMARY. ${LITERAL_FACTS_RULE}`;
+  const quality = `Use the context/article text, not the headline alone. Add one concrete detail that is NOT already in the headline. If no extra factual detail is available, return exactly NO_SUMMARY. ${LITERAL_FACTS_RULE} ${PAST_EVENTS_RULE}`;
   if (lang === 'bg') return `${quality} Write ONE short sentence in Bulgarian (max 22 words). Do NOT include English text. Do NOT use "/" separators.`;
   if (lang === 'en') return `${quality} Write ONE short sentence in English (max 22 words). Do NOT include Bulgarian text. Do NOT use "/" separators.`;
   return `${quality} Write TWO short sentences: first Bulgarian (max 18 words), then English (max 18 words). Separate with " / ".`;
@@ -5239,7 +5240,7 @@ function enforceSummaryLanguage(summaryRaw: string, lang: SummaryLang): string {
 }
 
 function summaryInstructionWithoutTranslation(title: string): string {
-  const quality = `Use the context/article text, not the headline alone. Add one concrete detail that is NOT already in the headline. If no extra factual detail is available, return exactly NO_SUMMARY. ${LITERAL_FACTS_RULE}`;
+  const quality = `Use the context/article text, not the headline alone. Add one concrete detail that is NOT already in the headline. If no extra factual detail is available, return exactly NO_SUMMARY. ${LITERAL_FACTS_RULE} ${PAST_EVENTS_RULE}`;
   if (looksBulgarianTitle(title)) {
     return `${quality} Write ONE short sentence in Bulgarian (max 22 words). Do not translate.`;
   }
@@ -6532,6 +6533,7 @@ async function localSummary(feedUrl: string, title: string, source: string, text
       // Local summaries lost mostly on wording (clarity 3.9 vs 4.8): the article's own sentences are fluent.
       'Where a sentence in the text says it, keep that sentence\'s own wording, shortened if needed, instead of rewording it.',
       'Say who actually does each thing, and keep the text\'s caution words ("alleged", "trying to", "може да", "според").',
+      PAST_EVENTS_RULE,
       extra,
       `Headline: ${title}`,
       `Text: ${body}`

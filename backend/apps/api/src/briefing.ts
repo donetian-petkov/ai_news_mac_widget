@@ -158,6 +158,7 @@ const UI = {
     figureOfSpeech: (quote: string, area: string) => `${quote} — figure of speech in a ${area.toLowerCase()} story`,
     severalCountries: (list: string) => `Involves several countries: ${list}`,
     reportedBy: (names: string) => `Reported by ${names}`,
+    storylineReported: (count: number, names: string) => `${count} sources cover this storyline: ${names}`,
     onlyOne: (name: string) => `Only ${name} reports it`,
     oneSource: 'one source',
     zero: {
@@ -248,6 +249,7 @@ const UI = {
     figureOfSpeech: (quote: string, area: string) => `${quote} — в преносен смисъл, новина от „${area}“`,
     severalCountries: (list: string) => `Засяга няколко държави: ${list}`,
     reportedBy: (names: string) => `Съобщават: ${names}`,
+    storylineReported: (count: number, names: string) => `${count} източника отразяват тази тема: ${names}`,
     onlyOne: (name: string) => `Съобщава само ${name}`,
     oneSource: 'един източник',
     zero: {
@@ -543,15 +545,20 @@ function wordKey(word: string): string {
 function titleKeys(title: string): { keys: Set<string>; names: Set<string> } {
   const tokens = String(title || '').split(/[^\p{L}\p{N}]+/u).filter(Boolean);
   const capitalised = (token: string) => /^\p{Lu}/u.test(token);
-  const titleCase = tokens.filter(token => token.length > 1 && capitalised(token)).length > tokens.length / 2;
+  // The first word is capitalised in any headline, so it says nothing about Title Case. Title Case is an English
+  // habit: a short Cyrillic headline with three names ("В Пловдив Гюров побеждава Йотова") is not it.
+  const rest = tokens.slice(1);
+  const latinScript = !/\p{Script=Cyrillic}/u.test(String(title || ''));
+  const titleCase = latinScript && rest.filter(token => token.length > 1 && capitalised(token)).length > rest.length / 2;
   const keys = new Set<string>();
   const names = new Set<string>();
   tokens.forEach((token, index) => {
+    const name = !titleCase && index > 0 && capitalised(token) && token.length >= 3;
+    // A name keeps its vowels: a consonant skeleton loses short names ("Йотова" would be "tv").
+    if (name) names.add(Array.from(token.toLowerCase(), letter => LATIN_OF[letter] ?? letter).join('').slice(0, 5));
     const key = wordKey(token);
     if (key.length < 3) return;
-    const name = !titleCase && index > 0 && capitalised(token);
     if (token.length >= 4 || name) keys.add(key);
-    if (name) names.add(key);
   });
   return { keys, names };
 }
@@ -612,6 +619,16 @@ export function clusterStories(stories: BriefingStory[], loose = true, exactOnly
 // ---- AI rating ----
 
 /**
+ * Articles retell earlier events as background ("in the second half of August, fires in Serbia..."). A summary
+ * that drops the date makes old fires read as today's news, and every later step (rating, the briefing's
+ * summary) believes it. Every prompt that writes text for the reader carries this rule too.
+ */
+export const PAST_EVENTS_RULE = [
+  'When the text tells of something that happened earlier (last summer, in August, years ago) as background,',
+  'say when it happened or leave it out; never write it as if it is happening now. The news is what the text reports as new.'
+].join(' ');
+
+/**
  * Headlines speak in figures of speech ("Черно море удари българската реколта"); taken
  * literally they turn a sea into the one blocking grain exports. Every prompt that writes
  * text for the reader carries this rule.
@@ -638,6 +655,12 @@ export function buildAiRatingPrompt(candidates: AiRatingCandidate[], language: '
     '  interestWhy names the most surprising thing about the story, which is usually its main claim in the headline',
     '  (a car that flies, not its acceleration). Use a side detail or a number only when that detail is itself the surprise.',
     '  The summary adds details the headline leaves out; read both before deciding what the story is about.',
+    'A roundup headline lists several stories ("Three minutes: A. B. C.", "Morning briefing: A; B"): rate the story its',
+    'headline names first, even when the summary describes a later item.',
+    'Rate what is new in this period. A feature or analysis that recalls earlier events (last summer\'s fires, an old',
+    'scandal) is about its present subject; the recalled events do not count for severity, scale or urgency.',
+    'Decisions on who governs a country (a national election or its result, a referendum, a government falling or',
+    'being formed) score at least 2 for severity and 2 for scale.',
     'For each criterion add "<criterion>Why": at most 15 words naming the fact, e.g. "29 pupils killed when a school roof fell in Khyber Pakhtunkhwa".',
     'Fill it for low scores too, saying what this story lacks, e.g. severityWhy "A TV casting change; no one is harmed and no money is at stake".',
     `Pick one dimension from: ${IMPACT_DIMENSIONS.join(', ')}.`,
@@ -698,6 +721,8 @@ export type GroupingItem = {
   summary?: string;
   /** Ids whose headlines name the same people or things: a hint to check, not a verdict. */
   maybeSameAs?: string[];
+  /** Ids whose headlines share a name with this one: candidates for the same storyline. */
+  namesSameAs?: string[];
 };
 export type StoryGrouping = {
   /** Sets of ids that report the very same happening. */
@@ -743,6 +768,10 @@ export function buildStorylinePrompt(items: GroupingItem[], language: 'en' | 'bg
     '   Put an item in a storyline only if its subject IS that situation. A sports, celebrity or entertainment item',
     '   never joins a war, politics or economy storyline, even when it uses words like "war", "attack" or "drama".',
     `   Give each a 2-5 word label, a "why" sentence saying how its items connect, and the ids that belong to it.`,
+    '   One big event seen from many angles is ONE storyline even when every headline differs: an election (results,',
+    '   turnout, the candidates\' reactions, the vote abroad, what comes next), a disaster (damage, victims, rescue,',
+    '   blame) or a trial (charges, hearings, verdict). Put every item about it in that storyline.',
+    '   "namesSameAs" lists items whose headlines name a person, party or place this one also names: check them first.',
     '   An item can be in at most one storyline. Most items belong to none.',
     '3. "resolutions": events that began AND were resolved within these items: a later item ends what an earlier one',
     '   reported (a missing person found, hostages freed, a fire contained, a closed road or airport reopened, a strike',
@@ -881,11 +910,84 @@ export function applyGrouping(rated: RatedStory[], grouping: StoryGrouping, aiRa
     const key = lineOf(entry);
     if (key && fits(entry)) counts.set(key, (counts.get(key) || 0) + 1);
   }
-  return kept.map(entry => {
+  const lined = kept.map(entry => {
     const label = grouping.storylines.get(entry.story.id) || '';
     if (entry.resolution || !fits(entry) || (counts.get(topicKey(label)) || 0) < 2) return entry;
     return { ...entry, storyline: label, storylineWhy: grouping.storylineWhy?.get(label) || undefined };
   });
+  return withStorylineCoverage(lined, aiRan, language);
+}
+
+/**
+ * A big event reaches the page as many stories about different angles of it (results, turnout, reactions), each
+ * reported by one outlet. Counted one by one, none looks widely covered and the event drops out of the top;
+ * so a storyline's strongest story takes the coverage of the whole storyline.
+ */
+function withStorylineCoverage(entries: RatedStory[], aiRan: boolean, language: BriefingLanguage): RatedStory[] {
+  const byLine = new Map<string, RatedStory[]>();
+  for (const entry of entries) if (entry.storyline) byLine.set(topicKey(entry.storyline), [...(byLine.get(topicKey(entry.storyline)) || []), entry]);
+  const leads = new Map<RatedStory, string[]>();
+  for (const members of byLine.values()) {
+    const sources = distinctSources(members.flatMap(member => [member.story, ...member.related]));
+    const lead = [...members].sort((a, b) => b.score - a.score || b.story.publishedMs - a.story.publishedMs)[0];
+    if (coverageScore(sources.length) > lead.rating.scores.coverage) leads.set(lead, sources);
+  }
+  return entries.map(entry => {
+    const sources = leads.get(entry);
+    if (!sources) return entry;
+    const scores = { ...entry.rating.scores, coverage: coverageScore(sources.length) };
+    const notes = { ...entry.rating.notes, coverage: UI[language].storylineReported(sources.length, sources.map(shortSource).join(', ')) };
+    const raw = scoreOf(scores);
+    const score = aiRan && entry.rating.ratedBy === 'rules' ? Math.min(raw, UNCHECKED_SCORE_CAP) : raw;
+    return { ...entry, rating: { ...entry.rating, scores, notes }, score, level: levelOf(score) };
+  });
+}
+
+/**
+ * Names many outlets put in their headlines in the same period: the mark of a big event (an election's two
+ * candidates, a disaster's town). Headlines about it often carry none of the keywords ("Yotova leads with 35%
+ * at 47% of the protocols"), so without this the keyword pre-ranking can keep the whole event from the AI.
+ * A name counts when at least `minHeadlines` headlines from at least `minSources` outlets carry it, and it is
+ * not in most headlines of the period.
+ */
+export function burstNames(stories: BriefingStory[], minHeadlines = 6, minSources = 3): Map<string, BriefingStory[]> {
+  const nameKey = (token: string) => Array.from(token.toLowerCase(), letter => LATIN_OF[letter] ?? letter).join('').slice(0, 5);
+  const known = new Set(stories.flatMap(story => Array.from(titleKeys(story.title).names)));
+  const byName = new Map<string, BriefingStory[]>();
+  for (const story of stories) {
+    const names = new Set(titleKeys(story.title).names);
+    // A headline that opens with a name ("Гюров печели...") counts it, when other headlines show it is a name.
+    const first = String(story.title || '').split(/[^\p{L}\p{N}]+/u).find(Boolean) || '';
+    if (first.length >= 3 && known.has(nameKey(first))) names.add(nameKey(first));
+    for (const name of names) byName.set(name, [...(byName.get(name) || []), story]);
+  }
+  const bursts = new Map<string, BriefingStory[]>();
+  for (const [name, carriers] of byName) {
+    if (carriers.length < minHeadlines || carriers.length > stories.length / 2) continue;
+    if (distinctSources(carriers).length < minSources) continue;
+    bursts.set(name, carriers);
+  }
+  return bursts;
+}
+
+/**
+ * For each story, the others whose headlines share a name with it (a person, party, place): candidates for one
+ * storyline. A name in more than a quarter of the headlines (the country itself, a world leader) is too common
+ * to tie stories together.
+ */
+export function sharedNameHints(stories: BriefingStory[]): Map<string, string[]> {
+  const names = new Map(stories.map(story => [story.id, titleKeys(story.title).names]));
+  const frequency = new Map<string, number>();
+  for (const set of names.values()) for (const name of set) frequency.set(name, (frequency.get(name) || 0) + 1);
+  const limit = Math.max(2, Math.floor(stories.length / 4));
+  const hints = new Map<string, string[]>();
+  for (const story of stories) {
+    const own = Array.from(names.get(story.id) || []).filter(name => (frequency.get(name) || 0) <= limit);
+    if (!own.length) continue;
+    const others = stories.filter(other => other.id !== story.id && own.some(name => names.get(other.id)?.has(name))).map(other => other.id).slice(0, 8);
+    if (others.length) hints.set(story.id, others);
+  }
+  return hints;
 }
 
 /** Sets of ids the loose title rule thinks are the same event, as hints or a fallback. */
@@ -911,6 +1013,8 @@ export type DigestItem = {
   impacts: StoryImpacts;
   /** Set when the story began and ended within the period: how it went. */
   resolved?: string;
+  /** The storyline's other headlines, so a bullet can state its outcome even when another story reports it. */
+  alsoInStoryline?: string[];
 };
 
 /**
@@ -926,11 +1030,17 @@ export function buildDigestPrompt(items: DigestItem[], language: 'en' | 'bg', re
     '- Start with what is critical, then what leads. Put stories about the same situation in one bullet and say how',
     '  they connect. Never join unrelated stories; a sports or entertainment story never shares a bullet with a war,',
     '  politics or economy story.',
+    '- A bullet about a storyline leads with its main outcome (who won or goes on, what was decided, how many were',
+    '  hurt), taken from whichever of its stories says it, and only then the details (turnout, reactions, analysis).',
+    '  "alsoInStoryline" lists the storyline\'s other headlines: the outcome is often in one of them.',
     '- Each bullet is one or two plain sentences, at most 40 words: what happened, with the concrete fact (who, what,',
     '  number, place), and what it means for the reader. Do not just repeat the headline. No generic phrases such as',
     '  "significant development" or "affects many people".',
     `- ${LITERAL_FACTS_RULE} The story summaries below may themselves repeat a headline's figure of speech; do not copy it.`,
     '- A story with "resolved" began and ended within this period: give it one bullet that says how it ended.',
+    '- Report what happened in this period. When a story only recalls earlier events (an analysis of last summer\'s',
+    '  fires), its news is its present subject; never write the recalled events as if they happened now, and if you',
+    '  mention them say when they happened.',
     '- Finish with one bullet of kind "interesting" for the most surprising or unusual story not covered above, if any.',
     '- kind: "critical" for bullets about stories rated critical, "leading" for the other important ones, "interesting" for the last.',
     '- ids: the ids of the stories the bullet is about.',
@@ -1828,7 +1938,22 @@ export async function buildBriefing(stories: BriefingStory[], options: BriefingO
   if (options.rateWithAi && rated.length) {
     // Every story that can reach the page goes to the AI (a few spare, since merging the
     // same event shrinks the list), so keyword guesses never decide what leads.
-    const candidates = [...rated].sort((a, b) => b.score - a.score).slice(0, options.aiCandidateLimit ?? pageSize + 10);
+    const ranked = [...rated].sort((a, b) => b.score - a.score);
+    const candidates = ranked.slice(0, options.aiCandidateLimit ?? pageSize + 10);
+    // A big event's own reports go to the AI too, a few per event, however they are worded: its strongest by the
+    // keyword score, then the newest, so the latest state of it (a count, a result) is among them.
+    const chosen = new Set(candidates);
+    for (const carriers of burstNames(rated.map(entry => entry.story)).values()) {
+      const ids = new Set(carriers.map(story => story.id));
+      const own = ranked.filter(entry => ids.has(entry.story.id));
+      const newest = [...own].sort((a, b) => b.story.publishedMs - a.story.publishedMs);
+      for (const entry of [...own.slice(0, 2), ...newest.slice(0, 3)]) {
+        if (!chosen.has(entry)) {
+          chosen.add(entry);
+          candidates.push(entry);
+        }
+      }
+    }
     const rateWithAi = options.rateWithAi;
     const toCandidate = (entry: RatedStory): AiRatingCandidate => ({
       id: entry.story.id,
@@ -1873,14 +1998,17 @@ export async function buildBriefing(stories: BriefingStory[], options: BriefingO
   let merged = [...rated].sort((a, b) => b.score - a.score || b.story.publishedMs - a.story.publishedMs).slice(0, pageSize);
   if (options.groupWithAi && merged.length >= 2) {
     const hints = possibleDuplicates(merged);
+    const nameHints = sharedNameHints(merged.map(entry => entry.story));
     try {
       const groups = await options.groupWithAi(merged.map(entry => {
         const maybeSameAs = hints.find(set => set.includes(entry.story.id))?.filter(id => id !== entry.story.id);
+        const namesSameAs = nameHints.get(entry.story.id)?.filter(id => !maybeSameAs?.includes(id));
         return {
           id: entry.story.id,
           title: entry.story.title,
           summary: String(entry.story.summary || '').slice(0, 200),
-          ...(maybeSameAs?.length ? { maybeSameAs } : {})
+          ...(maybeSameAs?.length ? { maybeSameAs } : {}),
+          ...(namesSameAs?.length ? { namesSameAs } : {})
         };
       }));
       merged = applyGrouping(merged, groups, aiRan, language);
@@ -1903,6 +2031,9 @@ export async function buildBriefing(stories: BriefingStory[], options: BriefingO
         storyline: entry.storyline || '',
         sources: distinctSources([entry.story, ...entry.related]).length,
         impacts: entry.rating.impacts,
+        ...(entry.storyline
+          ? { alsoInStoryline: merged.filter(other => other !== entry && other.storyline === entry.storyline).map(other => other.story.title).slice(0, 10) }
+          : {}),
         ...(entry.resolution ? { resolved: entry.resolution.summary || entry.resolution.label } : {})
       })));
     } catch {

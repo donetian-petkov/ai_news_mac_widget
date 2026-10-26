@@ -97,6 +97,8 @@ trying anything, so nothing that already failed is tried again.
 | 10-22 | briefing | built at the same moment as the cloud (earlier runs compared different 24-hour windows) | 1 | digest accuracy 5 vs 5, usefulness 2 vs 5, ranking 2 vs 4; 529 s vs 38 s | the cloud's top 3 (PHP alert, Zelensky, diesel tanker) were never rated: the keyword score kept them out of the local 20 |
 | 10-22 | briefing | each reason before its score | 1 | accuracy 4, usefulness 2, ranking 2; 531 s | no gain, reverted |
 | 10-22 | briefing | scores only (reasons ~320 tokens a story), 8 stories a call, as many stories as the cloud | 1 | 70 rated (PHP alert, Zelensky now scored), 480 s; accuracy 5, usefulness 2, ranking 2, storylines 2 (before 4), 1 major error; scores coarse (0-3, many ties), a house fire with one death got severity 3 | no gain, reverted; the scores themselves are the limit |
+| 10-26 | briefing (cloud) | Bulgaria's presidential election (first round 10-25, 30+ headlines from 5 outlets) missing from the daily briefing's summary; August fires shown as news. Causes: (1) result headlines carry no keyword ("Йотова е на първо място с 35%"), so the keyword pre-rank kept them from the AI; (2) the event's angles were each a single-source story, never one storyline; (3) a roundup rated on a murder in its summary; (4) the story summary dropped "in the second half of August" | 1 briefing, old vs new build on one DB snapshot, built at the same moment, 4 runs | old: election first at #11-12, in the summary 0 or 1 time without the result, the fires bullet in 1 of 4; new: a big-event signal (a name in 6+ headlines from 3+ outlets sends a few of its stories to the AI), storyline coverage to its strongest story, storyline headlines to the summary writer, outcome-first, roundup and recalled-event rules: 19-story storyline, first at #7-9, summary "Йотова води пред Гюров с 34,763%... отиват на балотаж" (checked against 3 sources), no fires bullet | keep, committed |
+| 10-26 | summary (cloud) | past-events rule: a recalled event keeps its date or is left out | 8 stories whose text recalls earlier events | fires story fixed ("През втората половина на август 2026 г. ..."), IKEA now leads with the new investment, 6 the same | keep |
 
 ## Lessons
 
@@ -106,6 +108,9 @@ trying anything, so nothing that already failed is tried again.
 - Every number above is one pool and one judge, so differences of ±3 wins are noise. On 5 stories, two
   versions of the judge disagreed on 3 of 5 research errors: small research checks cannot show a gain.
 - Story-specific wording never goes into prompts: fix the error class with a rule or check.
+- A keyword pre-filter in front of the AI decides what the AI never sees: a big event worded without keywords
+  must have its own way in (here: names many outlets share in one period).
+- Bulgarian has no Title Case: name detection that assumes it loses names in short Cyrillic headlines.
 
 ## 40-story run, 10-22 12:25 (today's news, code before the 13:15 commit)
 
