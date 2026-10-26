@@ -14,6 +14,7 @@ import { registerProductFeatureApi, type ProductFeatureRuntime } from './product
 import { chunk, fingerprintRecord, takeChangedRecords } from './newsPersistence';
 import { titleTokens as cachedTitleTokens } from './titleTokens';
 import { cleanSummary, wholeSentences } from './summaryText';
+import { contextWithFullTitle, headlineFromFeedTitle } from './feedTitle';
 import { AI_RULES, withAiRules } from './aiRules';
 import { DEFAULT_MODEL_POLICY, fetchModels, fetchPrices, pickDefault, resolveChoice, withPrices, type ModelChoice, type ModelInfo, type ModelPolicy } from './modelCatalog';
 import {
@@ -2660,10 +2661,12 @@ function normalizePersistedMs(value: number): bigint {
 }
 
 function newsFromPersistedRow(row: PersistedNewsRow): NewsInternal {
+  // Stored before overlong feed titles were cut to a headline.
+  const headline = headlineFromFeedTitle(row.title);
   return {
     type: 'news',
     id: row.itemId,
-    title: row.title,
+    title: headline.title,
     titleBg: row.titleBg || undefined,
     titleEn: row.titleEn || undefined,
     neutralTitle: row.neutralTitle || undefined,
@@ -2693,7 +2696,7 @@ function newsFromPersistedRow(row: PersistedNewsRow): NewsInternal {
     emergingSignal: safeJsonParseString<EmergingStorySignal>(row.emergingSignalJson),
     mood: (row.mood as Mood | null) || undefined,
     newsType: (row.newsType as NewsType | null) || undefined,
-    __ctx: row.contextText || undefined,
+    __ctx: contextWithFullTitle(headline.fullText, row.contextText || undefined),
     __linkText: row.linkText || undefined
   };
 }
@@ -9173,7 +9176,9 @@ async function processFeed(fi: FeedInfo) {
 
       const { published, publishedMs } = toPublishedMs(item);
 
-      const title = item.title ?? '(no title)';
+      const headline = headlineFromFeedTitle(String(item.title ?? ''));
+      const title = headline.title || '(no title)';
+      const rssContext = contextWithFullTitle(headline.fullText, pickRssContextCombined(item, 1500)) || '';
       const source = feed.title ?? labelForFeed(fi) ?? 'unknown';
       const coverUrl = extractCoverUrlFromItem(item, fi, link);
       const reusable = findReusableNewsItem(fi.url, source, title, link, publishedMs);
@@ -9184,7 +9189,7 @@ async function processFeed(fi: FeedInfo) {
           published,
           publishedMs,
           source,
-          __ctx: pickRssContextCombined(item, 1500),
+          __ctx: rssContext,
           coverUrl
         });
         if (changed) {
@@ -9200,7 +9205,7 @@ async function processFeed(fi: FeedInfo) {
       let isMatch = false;
       let matchScore = 0;
       let titleVec: number[] | null = null;
-      const ctx = pickRssContextCombined(item, 1500);
+      const ctx = rssContext;
 
       try {
         const m = await hybridMatch(title, ctx);
